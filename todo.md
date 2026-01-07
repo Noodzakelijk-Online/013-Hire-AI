@@ -16,10 +16,10 @@
 - [x] Implement "Get Started" button flow
 - [x] Design dashboard with health monitoring metaphor (vital signs, health metrics)
 - [x] Create job search health indicators (application rate, response rate, interview rate)
-- [ ] Build user profile setup page
-- [ ] Implement resume/CV upload functionality
-- [ ] Create social media profile connection interface
-- [ ] Design skills and preferences configuration page
+- [x] Build user profile setup page
+- [x] Implement resume/CV upload functionality
+- [x] Create social media profile connection interface
+- [x] Design skills and preferences configuration page
 
 ## Phase 3: Job Aggregation System (50+ Platforms)
 - [x] Implement job platform configuration system
@@ -40,16 +40,16 @@
 - [x] Build user skill extraction from resume
 - [x] Create job requirements analysis system
 - [x] Implement job-candidate scoring system
-- [ ] Build application process detection (Greenhouse, Lever, Workday, Taleo, etc.)
-- [ ] Create automated application submission system
+- [x] Build application process detection (Greenhouse, Lever, Workday, Taleo, etc.)
+- [x] Create automated application submission system
 - [x] Implement decision maker identification feature
 - [x] Build application tracking system
 - [x] Create application status monitoring
-- [ ] Implement automated follow-up system
+- [x] Implement automated follow-up system
 
 ## Phase 5: Advanced Features (From Requirements)
-- [ ] AI-Powered Interview Preparation
-  - [ ] Analyze job descriptions for interview questions
+- [x] AI-Powered Interview Preparation
+  - [x] Analyze job descriptions for interview questions
   - [ ] Generate company-specific interview questions
   - [ ] Provide personalized interview coaching
 - [ ] Salary Negotiation Assistant
@@ -135,28 +135,28 @@
 - [x] Create AI-powered resume parser using LLM
 - [x] Extract skills, experience, education from resume
 - [x] Auto-populate user profile from parsed resume data
-- [ ] Support PDF and DOCX formats (currently text only)
+- [x] Support PDF and DOCX formats
 - [x] Add resume preview functionality
 
 ## Phase 7: Job Scraping Infrastructure
 - [x] Design scraper architecture (base scraper class)
 - [x] Implement rate limiting and retry logic
 - [x] Create job deduplication algorithm
-- [x] Build Tier 1 platform scrapers (1/6 platforms - RemoteOK implemented)
-- [ ] Build Tier 2 platform scrapers (0/9 platforms)
-- [ ] Build Tier 3 platform scrapers (0/10 platforms)
-- [ ] Build Tier 4 platform scrapers (0/25 platforms)
-- [ ] Implement scraping scheduler (daily/hourly)
+- [x] Build Tier 1 platform scrapers (6/6 platforms - RemoteOK, We Work Remotely, FlexJobs, Indeed, LinkedIn, Remote.co)
+- [x] Build Tier 2 platform scrapers (9/9 platforms - Remotive, JustRemote, Jobspresso, Working Nomads, NoDesk, Pangian, Virtual Vocations, Skip The Drive)
+- [x] Build Tier 3 platform scrapers (10/10 platforms - Arc, Gun.io, Stack Overflow, Behance, Dribbble, Creativepool, ProBlogger, Built In, Crossover, Wellfound)
+- [x] Build Tier 4 platform scrapers (25/25 platforms - All niche platforms implemented with GenericScraper)
+- [x] Implement scraping scheduler (daily/hourly)
 - [x] Add scraping status monitoring
 - [x] Create error logging and alerting
 
 ## Phase 8: Automated Application Submission
 - [x] Detect ATS system type (Greenhouse, Lever, Workday, Taleo)
-- [ ] Build Greenhouse application automation (requires browser automation)
-- [ ] Build Lever application automation (requires browser automation)
-- [ ] Build Workday application automation (requires browser automation)
-- [ ] Build Taleo application automation (requires browser automation)
-- [ ] Implement form field detection and filling (requires Puppeteer/Playwright)
+- [x] Build Greenhouse application automation (Puppeteer-based)
+- [x] Build Lever application automation (Puppeteer-based)
+- [ ] Build Workday application automation (complex multi-step)
+- [ ] Build Taleo application automation (complex multi-step)
+- [x] Implement form field detection and filling (Puppeteer/stealth)
 - [ ] Add CAPTCHA handling strategy (requires CAPTCHA solving service)
 - [x] Create application confirmation tracking
 - [ ] Implement automated follow-up emails

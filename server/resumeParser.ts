@@ -1,8 +1,12 @@
 import { invokeLLM } from "./_core/llm";
+// @ts-ignore - pdf-parse module types
+import pdf from "pdf-parse";
+import mammoth from "mammoth";
+import { storagePut } from "./storage";
 
 /**
  * AI-powered resume parsing service
- * Extracts structured data from resume text using LLM
+ * Extracts structured data from resume text, PDF, and DOCX files using LLM
  */
 
 export interface ParsedResume {
@@ -30,6 +34,76 @@ export interface ParsedResume {
   linkedinUrl?: string;
   githubUrl?: string;
   portfolioUrl?: string;
+}
+
+/**
+ * Extract text from PDF buffer
+ */
+export async function extractTextFromPDF(buffer: Buffer): Promise<string> {
+  try {
+    const data = await pdf(buffer);
+    return data.text;
+  } catch (error) {
+    console.error("[ResumeParser] PDF extraction failed:", error);
+    throw new Error("Failed to extract text from PDF");
+  }
+}
+
+/**
+ * Extract text from DOCX buffer
+ */
+export async function extractTextFromDOCX(buffer: Buffer): Promise<string> {
+  try {
+    const result = await mammoth.extractRawText({ buffer });
+    return result.value;
+  } catch (error) {
+    console.error("[ResumeParser] DOCX extraction failed:", error);
+    throw new Error("Failed to extract text from DOCX");
+  }
+}
+
+/**
+ * Upload resume file to S3 and return the URL
+ */
+export async function uploadResumeToS3(
+  buffer: Buffer,
+  filename: string,
+  userId: number,
+  mimeType: string
+): Promise<{ url: string; key: string }> {
+  const timestamp = Date.now();
+  const randomSuffix = Math.random().toString(36).substring(2, 8);
+  const extension = filename.split(".").pop() || "pdf";
+  const key = `resumes/${userId}/${timestamp}-${randomSuffix}.${extension}`;
+  
+  const result = await storagePut(key, buffer, mimeType);
+  return { url: result.url, key };
+}
+
+/**
+ * Parse resume from file buffer (PDF, DOCX, or plain text)
+ */
+export async function parseResumeFromFile(
+  buffer: Buffer,
+  mimeType: string
+): Promise<ParsedResume> {
+  let text: string;
+  
+  if (mimeType === "application/pdf" || mimeType.includes("pdf")) {
+    text = await extractTextFromPDF(buffer);
+  } else if (
+    mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    mimeType.includes("docx") ||
+    mimeType.includes("word")
+  ) {
+    text = await extractTextFromDOCX(buffer);
+  } else if (mimeType === "text/plain" || mimeType.includes("text")) {
+    text = buffer.toString("utf-8");
+  } else {
+    throw new Error(`Unsupported file type: ${mimeType}`);
+  }
+  
+  return parseResumeText(text);
 }
 
 /**
@@ -203,22 +277,4 @@ export function resumeToProfileData(parsed: ParsedResume) {
     githubUrl: parsed.githubUrl,
     portfolioUrl: parsed.portfolioUrl,
   };
-}
-
-/**
- * Extract text from PDF buffer (placeholder - would use pdf parsing library)
- */
-export async function extractTextFromPDF(buffer: Buffer): Promise<string> {
-  // In a real implementation, use a library like pdf-parse or pdfjs
-  // For now, return a placeholder
-  throw new Error("PDF parsing not yet implemented. Please use a PDF to text converter.");
-}
-
-/**
- * Extract text from DOCX buffer (placeholder - would use docx parsing library)
- */
-export async function extractTextFromDOCX(buffer: Buffer): Promise<string> {
-  // In a real implementation, use a library like mammoth or docx
-  // For now, return a placeholder
-  throw new Error("DOCX parsing not yet implemented. Please use a DOCX to text converter.");
 }

@@ -272,6 +272,51 @@ export const appRouter = router({
 
         return { success: true, parsed, profileData };
       }),
+
+    // Parse resume from file (base64 encoded PDF/DOCX)
+    parseFile: protectedProcedure
+      .input(z.object({
+        fileData: z.string(), // Base64 encoded file data
+        mimeType: z.string(),
+        filename: z.string(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { parseResumeFromFile, uploadResumeToS3, resumeToProfileData } = await import("./resumeParser");
+        const { upsertUserProfile } = await import("./db");
+        
+        // Decode base64 to buffer
+        const buffer = Buffer.from(input.fileData, "base64");
+        
+        // Upload to S3
+        const { url, key } = await uploadResumeToS3(
+          buffer,
+          input.filename,
+          ctx.user.id,
+          input.mimeType
+        );
+        
+        // Parse the resume
+        const parsed = await parseResumeFromFile(buffer, input.mimeType);
+        
+        // Convert to profile format
+        const profileData = resumeToProfileData(parsed);
+        
+        // Update user profile with parsed data and file info
+        await upsertUserProfile({
+          userId: ctx.user.id,
+          resumeUrl: url,
+          resumeFileKey: key,
+          ...profileData,
+        });
+        
+        return {
+          success: true,
+          parsed,
+          profileData,
+          fileUrl: url,
+          fileKey: key,
+        };
+      }),
   }),
 
   // Job Scraping (Admin only)
@@ -317,14 +362,293 @@ export const appRouter = router({
       }),
     status: protectedProcedure.query(async () => {
       const { getScraperManager } = await import("./scrapers/scraperManager");
+      const { getSupportedPlatforms } = await import("./scrapers/index");
+      const { getScheduler } = await import("./scrapers/scheduler");
       const manager = await getScraperManager();
+      const supportedPlatforms = getSupportedPlatforms();
+      const scheduler = getScheduler();
+      const schedulerStatus = scheduler.getStatus();
 
       return {
         initialized: true,
-        availableScrapers: 1, // Only RemoteOK for now
-        message: "Scraper system ready. Currently supporting RemoteOK platform.",
+        availableScrapers: supportedPlatforms.length,
+        supportedPlatforms,
+        scheduler: schedulerStatus,
+        message: `Scraper system ready. Supporting ${supportedPlatforms.length} platforms.`,
       };
     }),
+
+    // Start the scheduler
+    startScheduler: protectedProcedure
+      .input(z.object({
+        intervalMinutes: z.number().min(5).max(1440).optional(),
+        maxJobsPerRun: z.number().min(10).max(1000).optional(),
+      }).optional())
+      .mutation(async ({ input }) => {
+        const { getScheduler } = await import("./scrapers/scheduler");
+        const scheduler = getScheduler(input ? {
+          intervalMinutes: input.intervalMinutes || 60,
+          maxJobsPerRun: input.maxJobsPerRun || 100,
+        } : undefined);
+        
+        scheduler.start();
+        return { success: true, message: "Scheduler started" };
+      }),
+
+    // Stop the scheduler
+    stopScheduler: protectedProcedure.mutation(async () => {
+      const { getScheduler } = await import("./scrapers/scheduler");
+      const scheduler = getScheduler();
+      scheduler.stop();
+      return { success: true, message: "Scheduler stopped" };
+    }),
+
+    // Run scraping manually
+    runNow: protectedProcedure.mutation(async () => {
+      const { getScheduler } = await import("./scrapers/scheduler");
+      const scheduler = getScheduler();
+      await scheduler.runScraping();
+      return { success: true, message: "Scraping run completed" };
+    }),
+  }),
+
+  // Diversity & Inclusion Support
+  diversity: router({
+    analyzeCompanyDI: protectedProcedure
+      .input(z.object({
+        company: z.string(),
+        userDIProfile: z.object({
+          categories: z.array(z.string()),
+          accommodationsNeeded: z.array(z.string()),
+          preferredWorkStyle: z.enum(["remote", "hybrid", "onsite", "flexible"]),
+          accessibilityRequirements: z.array(z.string()),
+          disclosurePreference: z.enum(["always", "when_relevant", "never"]),
+        }).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { analyzeCompanyDI } = await import("./diversitySupport");
+        return await analyzeCompanyDI(input.company, input.userDIProfile as any);
+      }),
+
+    analyzeVisaSponsorship: protectedProcedure
+      .input(z.object({
+        company: z.string(),
+        jobTitle: z.string(),
+        visaProfile: z.object({
+          currentStatus: z.string(),
+          needsSponsorship: z.boolean(),
+          sponsorshipType: z.array(z.string()).optional(),
+          country: z.string(),
+          optStemEligible: z.boolean().optional(),
+        }),
+      }))
+      .mutation(async ({ input }) => {
+        const { analyzeVisaSponsorship } = await import("./diversitySupport");
+        return await analyzeVisaSponsorship(input.company, input.jobTitle, input.visaProfile as any);
+      }),
+
+    getAccommodationRecommendations: protectedProcedure
+      .input(z.object({
+        category: z.string(),
+        specificNeeds: z.array(z.string()),
+      }))
+      .mutation(async ({ input }) => {
+        const { generateAccommodationRecommendations } = await import("./diversitySupport");
+        return await generateAccommodationRecommendations(input.category as any, input.specificNeeds);
+      }),
+
+    getDIPlatforms: publicProcedure
+      .input(z.object({
+        categories: z.array(z.string()),
+      }))
+      .query(async ({ input }) => {
+        const { getDIPlatforms } = await import("./diversitySupport");
+        return getDIPlatforms(input.categories as any);
+      }),
+
+    analyzeRelocation: protectedProcedure
+      .input(z.object({
+        fromLocation: z.string(),
+        toLocation: z.string(),
+        salary: z.number(),
+        familySize: z.number(),
+      }))
+      .mutation(async ({ input }) => {
+        const { analyzeRelocation } = await import("./diversitySupport");
+        return await analyzeRelocation(
+          input.fromLocation,
+          input.toLocation,
+          input.salary,
+          input.familySize
+        );
+      }),
+  }),
+
+  // Career Intelligence
+  career: router({
+    analyzeSalary: protectedProcedure
+      .input(z.object({
+        jobTitle: z.string(),
+        company: z.string(),
+        location: z.string(),
+        yearsExperience: z.number(),
+        skills: z.array(z.string()),
+        currentSalary: z.number().optional(),
+        offeredSalary: z.number().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { analyzeSalary } = await import("./careerIntelligence");
+        return await analyzeSalary(
+          input.jobTitle,
+          input.company,
+          input.location,
+          input.yearsExperience,
+          input.skills,
+          input.currentSalary,
+          input.offeredSalary
+        );
+      }),
+
+    analyzeCompanyCulture: protectedProcedure
+      .input(z.object({
+        company: z.string(),
+        jobTitle: z.string(),
+        jobDescription: z.string(),
+        userPreferences: z.object({
+          workStyle: z.string().optional(),
+          values: z.array(z.string()).optional(),
+          priorities: z.array(z.string()).optional(),
+        }).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { analyzeCompanyCulture } = await import("./careerIntelligence");
+        return await analyzeCompanyCulture(
+          input.company,
+          input.jobTitle,
+          input.jobDescription,
+          input.userPreferences
+        );
+      }),
+
+    generateNetworkingStrategy: protectedProcedure
+      .input(z.object({
+        targetCompany: z.string(),
+        targetRole: z.string(),
+        userBackground: z.string(),
+        existingConnections: z.array(z.string()).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { generateNetworkingStrategy } = await import("./careerIntelligence");
+        return await generateNetworkingStrategy(
+          input.targetCompany,
+          input.targetRole,
+          input.userBackground,
+          input.existingConnections
+        );
+      }),
+
+    generateCareerPlan: protectedProcedure
+      .input(z.object({
+        currentRole: z.string(),
+        targetRole: z.string(),
+        yearsExperience: z.number(),
+        skills: z.array(z.string()),
+        interests: z.array(z.string()),
+        constraints: z.array(z.string()).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { generateCareerPlan } = await import("./careerIntelligence");
+        return await generateCareerPlan(
+          input.currentRole,
+          input.targetRole,
+          input.yearsExperience,
+          input.skills,
+          input.interests,
+          input.constraints
+        );
+      }),
+
+    analyzeSkillGap: protectedProcedure
+      .input(z.object({
+        jobRequirements: z.string(),
+        userSkills: z.array(z.string()),
+        userExperience: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        const { analyzeSkillGap } = await import("./careerIntelligence");
+        return await analyzeSkillGap(
+          input.jobRequirements,
+          input.userSkills,
+          input.userExperience
+        );
+      }),
+  }),
+
+  // Social Connections
+  social: router({
+    validateUrl: publicProcedure
+      .input(z.object({
+        url: z.string(),
+        type: z.enum(["linkedin", "github", "portfolio"]),
+      }))
+      .query(async ({ input }) => {
+        const { validateLinkedInUrl, validateGitHubUrl, validatePortfolioUrl } = await import("./socialConnections");
+        
+        let isValid = false;
+        switch (input.type) {
+          case "linkedin":
+            isValid = validateLinkedInUrl(input.url);
+            break;
+          case "github":
+            isValid = validateGitHubUrl(input.url);
+            break;
+          case "portfolio":
+            isValid = validatePortfolioUrl(input.url);
+            break;
+        }
+        
+        return { isValid, type: input.type, url: input.url };
+      }),
+
+    connect: protectedProcedure
+      .input(z.object({
+        linkedinUrl: z.string().optional(),
+        githubUrl: z.string().optional(),
+        portfolioUrl: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { upsertUserProfile } = await import("./db");
+        
+        await upsertUserProfile({
+          userId: ctx.user.id,
+          linkedinUrl: input.linkedinUrl,
+          githubUrl: input.githubUrl,
+          portfolioUrl: input.portfolioUrl,
+        });
+        
+        return { success: true };
+      }),
+
+    analyzeLinkedIn: protectedProcedure
+      .input(z.object({ profileText: z.string() }))
+      .mutation(async ({ input }) => {
+        const { analyzeLinkedInProfile } = await import("./socialConnections");
+        return await analyzeLinkedInProfile(input.profileText);
+      }),
+
+    analyzeGitHub: protectedProcedure
+      .input(z.object({ profileText: z.string() }))
+      .mutation(async ({ input }) => {
+        const { analyzeGitHubProfile } = await import("./socialConnections");
+        return await analyzeGitHubProfile(input.profileText);
+      }),
+
+    analyzePortfolio: protectedProcedure
+      .input(z.object({ portfolioText: z.string() }))
+      .mutation(async ({ input }) => {
+        const { analyzePortfolio } = await import("./socialConnections");
+        return await analyzePortfolio(input.portfolioText);
+      }),
   }),
 
   // Automated Application

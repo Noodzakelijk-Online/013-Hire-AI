@@ -1,5 +1,5 @@
 import type { BaseScraper, ScrapeResult } from "./baseScraper";
-import { RemoteOKScraper } from "./remoteokScraper";
+import { getScraperForPlatform, getSupportedPlatforms, hasScraper } from "./index";
 import { getDb } from "../db";
 import { jobs, jobPlatforms } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
@@ -49,18 +49,21 @@ export class ScraperManager {
    * Create a scraper instance for a platform
    */
   private createScraper(platformName: string, platformId: number): BaseScraper | null {
-    // Map platform names to scraper classes
-    // For now, we only have RemoteOK implemented
-    const scraperMap: Record<string, (id: number) => BaseScraper> = {
-      RemoteOK: (id) => new RemoteOKScraper(id),
-      // Add more scrapers here as they are implemented
-      // "We Work Remotely": (id) => new WeWorkRemotelyScraper(id),
-      // "FlexJobs": (id) => new FlexJobsScraper(id),
-      // etc.
-    };
+    return getScraperForPlatform(platformName, platformId);
+  }
 
-    const scraperFactory = scraperMap[platformName];
-    return scraperFactory ? scraperFactory(platformId) : null;
+  /**
+   * Get list of supported platforms
+   */
+  getSupportedPlatforms(): string[] {
+    return getSupportedPlatforms();
+  }
+
+  /**
+   * Check if a platform has a scraper
+   */
+  hasScraper(platformName: string): boolean {
+    return hasScraper(platformName);
   }
 
   /**
