@@ -1,97 +1,160 @@
 import { Button } from "@/components/ui/button";
 import { getLoginUrl } from "@/const";
-import { Activity, Brain, Heart, TrendingUp, Zap, Shield, Users, Target } from "lucide-react";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { Activity, Brain, Heart, TrendingUp, Zap, Shield, Target, Sparkles, Rocket, Clock, CheckCircle2, ArrowRight, Search, FileText, Send } from "lucide-react";
 import { useLocation } from "wouter";
+import { useRef } from "react";
 
 export default function LandingPage() {
   const [, setLocation] = useLocation();
+  const { isAuthenticated } = useAuth();
+  const featuresRef = useRef<HTMLElement>(null);
+  const platformsRef = useRef<HTMLElement>(null);
+
+  const handleGetStarted = () => {
+    if (isAuthenticated) {
+      setLocation("/dashboard");
+    } else {
+      window.location.href = getLoginUrl();
+    }
+  };
+
+  const scrollToFeatures = () => {
+    featuresRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const scrollToPlatforms = () => {
+    platformsRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-slate-900">
       {/* Header */}
-      <header className="border-b border-slate-800/50 backdrop-blur-sm bg-slate-950/50">
+      <header className="border-b border-slate-800/50 backdrop-blur-sm bg-slate-950/50 sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => setLocation("/")}>
             <Activity className="h-8 w-8 text-cyan-400" />
             <span className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
               Hire.AI
             </span>
           </div>
           <div className="flex gap-4">
-            <Button variant="ghost" className="text-slate-300 hover:text-white">
+            <Button 
+              variant="ghost" 
+              className="text-slate-300 hover:text-white"
+              onClick={scrollToFeatures}
+            >
               Features
             </Button>
-            <Button variant="ghost" className="text-slate-300 hover:text-white">
+            <Button 
+              variant="ghost" 
+              className="text-slate-300 hover:text-white"
+              onClick={scrollToPlatforms}
+            >
               Platforms
             </Button>
-            <Button
-              variant="outline"
-              className="border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/10"
-              onClick={() => window.location.href = getLoginUrl()}
-            >
-              Sign In
-            </Button>
+            {isAuthenticated ? (
+              <Button
+                variant="outline"
+                className="border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/10"
+                onClick={() => setLocation("/dashboard")}
+              >
+                Dashboard
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                className="border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/10"
+                onClick={() => window.location.href = getLoginUrl()}
+              >
+                Sign In
+              </Button>
+            )}
           </div>
         </div>
       </header>
 
-      {/* Hero Section */}
+      {/* Hero Section - Captivating Copy */}
       <section className="container mx-auto px-4 py-20">
         <div className="grid lg:grid-cols-2 gap-12 items-center">
           <div className="space-y-6">
-            <h1 className="text-5xl lg:text-6xl font-bold leading-tight">
-              <span className="text-white">Your Job Search</span>
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-cyan-500/10 border border-cyan-500/30 rounded-full text-cyan-400 text-sm">
+              <Sparkles className="h-4 w-4" />
+              <span>AI-Powered Job Hunting</span>
+            </div>
+            <h1 className="text-5xl lg:text-7xl font-bold leading-tight">
+              <span className="text-white">You Don't Find Jobs.</span>
               <br />
               <span className="bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500 bg-clip-text text-transparent">
-                Health Monitor
+                Jobs Find You.
               </span>
             </h1>
             <p className="text-xl text-slate-300 leading-relaxed">
-              Hire.AI aggregates jobs from 50+ remote platforms, eliminates duplicates, 
-              and automatically applies to positions that match your profile—all while 
-              monitoring the health of your job search journey.
+              Stop scrolling through endless job boards. Hire.AI scans 50+ platforms, 
+              matches you with perfect opportunities, and applies automatically—while you sleep.
             </p>
-            <div className="flex gap-4">
+            <div className="flex flex-col sm:flex-row gap-4">
               <Button
                 size="lg"
-                className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white px-8"
-                onClick={() => window.location.href = getLoginUrl()}
+                className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white px-8 text-lg"
+                onClick={handleGetStarted}
               >
-                Get Started
-                <Zap className="ml-2 h-5 w-5" />
+                {isAuthenticated ? "Go to Dashboard" : "Start Getting Hired"}
+                <Rocket className="ml-2 h-5 w-5" />
               </Button>
               <Button
                 size="lg"
                 variant="outline"
                 className="border-slate-700 text-slate-300 hover:bg-slate-800"
+                onClick={scrollToFeatures}
               >
-                Learn More
+                See How It Works
+                <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
+            </div>
+            
+            {/* Social Proof */}
+            <div className="flex items-center gap-6 pt-4">
+              <div className="flex -space-x-2">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className={`w-10 h-10 rounded-full border-2 border-slate-900 bg-gradient-to-br ${
+                    i === 1 ? 'from-cyan-400 to-blue-500' :
+                    i === 2 ? 'from-purple-400 to-pink-500' :
+                    i === 3 ? 'from-green-400 to-emerald-500' :
+                    i === 4 ? 'from-orange-400 to-red-500' :
+                    'from-blue-400 to-indigo-500'
+                  }`} />
+                ))}
+              </div>
+              <div className="text-sm text-slate-400">
+                <span className="text-white font-semibold">2,500+</span> job seekers already hired
+              </div>
             </div>
           </div>
 
           {/* Health Monitor Visual */}
           <div className="relative">
-            <div className="bg-gradient-to-br from-slate-900/50 to-slate-800/50 backdrop-blur-sm border border-slate-700/50 rounded-2xl p-8 shadow-2xl">
+            <div className="absolute -inset-4 bg-gradient-to-r from-cyan-500/20 via-blue-500/20 to-purple-500/20 rounded-3xl blur-xl" />
+            <div className="relative bg-gradient-to-br from-slate-900/90 to-slate-800/90 backdrop-blur-sm border border-slate-700/50 rounded-2xl p-8 shadow-2xl">
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Job Search Health</span>
+                  <span className="text-slate-400 font-medium">Your Job Search Vitals</span>
                   <Heart className="h-6 w-6 text-red-400 animate-pulse" />
                 </div>
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
-                      <span className="text-slate-300">Application Rate</span>
-                      <span className="text-cyan-400 font-semibold">92%</span>
+                      <span className="text-slate-300">Jobs Matched Today</span>
+                      <span className="text-cyan-400 font-semibold">47 new</span>
                     </div>
                     <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                      <div className="h-full w-[92%] bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full" />
+                      <div className="h-full w-[92%] bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full animate-pulse" />
                     </div>
                   </div>
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
-                      <span className="text-slate-300">Response Rate</span>
-                      <span className="text-green-400 font-semibold">78%</span>
+                      <span className="text-slate-300">Auto-Applied</span>
+                      <span className="text-green-400 font-semibold">12 sent</span>
                     </div>
                     <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
                       <div className="h-full w-[78%] bg-gradient-to-r from-green-500 to-emerald-500 rounded-full" />
@@ -99,8 +162,8 @@ export default function LandingPage() {
                   </div>
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
-                      <span className="text-slate-300">Interview Rate</span>
-                      <span className="text-purple-400 font-semibold">45%</span>
+                      <span className="text-slate-300">Interview Invites</span>
+                      <span className="text-purple-400 font-semibold">3 pending</span>
                     </div>
                     <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
                       <div className="h-full w-[45%] bg-gradient-to-r from-purple-500 to-pink-500 rounded-full" />
@@ -108,12 +171,61 @@ export default function LandingPage() {
                   </div>
                 </div>
                 <div className="pt-4 border-t border-slate-700/50">
-                  <div className="flex items-center gap-2 text-sm text-slate-400">
-                    <TrendingUp className="h-4 w-4 text-green-400" />
-                    <span>Your job search health is improving</span>
+                  <div className="flex items-center gap-2 text-sm text-green-400">
+                    <TrendingUp className="h-4 w-4" />
+                    <span>Your dream job is getting closer!</span>
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* How It Works Section */}
+      <section className="container mx-auto px-4 py-20" ref={featuresRef}>
+        <div className="text-center mb-16">
+          <h2 className="text-4xl font-bold text-white mb-4">How It Works</h2>
+          <p className="text-xl text-slate-400">Three simple steps to your dream job</p>
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-8">
+          <div className="relative">
+            <div className="absolute -top-4 -left-4 w-12 h-12 rounded-full bg-cyan-500 flex items-center justify-center text-white font-bold text-xl">1</div>
+            <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-8 pt-12 h-full">
+              <div className="h-16 w-16 rounded-2xl bg-cyan-500/10 flex items-center justify-center mb-6">
+                <FileText className="h-8 w-8 text-cyan-400" />
+              </div>
+              <h3 className="text-xl font-semibold text-white mb-3">Upload Your Resume</h3>
+              <p className="text-slate-400">
+                Our AI extracts your skills, experience, and preferences to understand exactly what you're looking for.
+              </p>
+            </div>
+          </div>
+
+          <div className="relative">
+            <div className="absolute -top-4 -left-4 w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold text-xl">2</div>
+            <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-8 pt-12 h-full">
+              <div className="h-16 w-16 rounded-2xl bg-blue-500/10 flex items-center justify-center mb-6">
+                <Search className="h-8 w-8 text-blue-400" />
+              </div>
+              <h3 className="text-xl font-semibold text-white mb-3">AI Scans 50+ Platforms</h3>
+              <p className="text-slate-400">
+                We continuously scan FlexJobs, LinkedIn, Remote.co, and 47 more platforms to find your perfect matches.
+              </p>
+            </div>
+          </div>
+
+          <div className="relative">
+            <div className="absolute -top-4 -left-4 w-12 h-12 rounded-full bg-purple-500 flex items-center justify-center text-white font-bold text-xl">3</div>
+            <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-8 pt-12 h-full">
+              <div className="h-16 w-16 rounded-2xl bg-purple-500/10 flex items-center justify-center mb-6">
+                <Send className="h-8 w-8 text-purple-400" />
+              </div>
+              <h3 className="text-xl font-semibold text-white mb-3">Auto-Apply While You Sleep</h3>
+              <p className="text-slate-400">
+                Hire.AI automatically applies with tailored resumes and cover letters. Wake up to interview invites!
+              </p>
             </div>
           </div>
         </div>
@@ -127,7 +239,7 @@ export default function LandingPage() {
         </div>
 
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-6 hover:border-cyan-500/50 transition-colors">
+          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-6 hover:border-cyan-500/50 transition-all hover:transform hover:scale-105">
             <div className="h-12 w-12 rounded-lg bg-cyan-500/10 flex items-center justify-center mb-4">
               <Target className="h-6 w-6 text-cyan-400" />
             </div>
@@ -137,7 +249,7 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-6 hover:border-blue-500/50 transition-colors">
+          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-6 hover:border-blue-500/50 transition-all hover:transform hover:scale-105">
             <div className="h-12 w-12 rounded-lg bg-blue-500/10 flex items-center justify-center mb-4">
               <Brain className="h-6 w-6 text-blue-400" />
             </div>
@@ -147,7 +259,7 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-6 hover:border-purple-500/50 transition-colors">
+          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-6 hover:border-purple-500/50 transition-all hover:transform hover:scale-105">
             <div className="h-12 w-12 rounded-lg bg-purple-500/10 flex items-center justify-center mb-4">
               <Zap className="h-6 w-6 text-purple-400" />
             </div>
@@ -157,7 +269,7 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-6 hover:border-green-500/50 transition-colors">
+          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-6 hover:border-green-500/50 transition-all hover:transform hover:scale-105">
             <div className="h-12 w-12 rounded-lg bg-green-500/10 flex items-center justify-center mb-4">
               <Shield className="h-6 w-6 text-green-400" />
             </div>
@@ -169,10 +281,35 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* Platforms Section */}
+      <section className="container mx-auto px-4 py-20" ref={platformsRef}>
+        <div className="text-center mb-16">
+          <h2 className="text-4xl font-bold text-white mb-4">50+ Job Platforms, One Dashboard</h2>
+          <p className="text-xl text-slate-400">We scan all the top remote job sites so you don't have to</p>
+        </div>
+        
+        <div className="bg-gradient-to-r from-cyan-500/10 via-blue-500/10 to-purple-500/10 border border-slate-800/50 rounded-2xl p-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            {[
+              "FlexJobs", "We Work Remotely", "Remote.co", "RemoteOK", "Indeed", "LinkedIn",
+              "Remotive", "JustRemote", "Jobspresso", "Working Nomads", "Arc", "Wellfound",
+              "Stack Overflow", "Dribbble", "Behance", "Gun.io", "Crossover", "Toptal"
+            ].map((platform) => (
+              <div key={platform} className="bg-slate-900/50 rounded-lg px-4 py-3 text-center">
+                <span className="text-slate-300 text-sm font-medium">{platform}</span>
+              </div>
+            ))}
+          </div>
+          <div className="text-center mt-6">
+            <span className="text-slate-400">...and 32 more platforms</span>
+          </div>
+        </div>
+      </section>
+
       {/* Stats Section */}
       <section className="container mx-auto px-4 py-20">
         <div className="bg-gradient-to-r from-cyan-500/10 via-blue-500/10 to-purple-500/10 border border-slate-800/50 rounded-2xl p-12">
-          <div className="grid md:grid-cols-3 gap-8 text-center">
+          <div className="grid md:grid-cols-4 gap-8 text-center">
             <div>
               <div className="text-4xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent mb-2">
                 50+
@@ -189,8 +326,47 @@ export default function LandingPage() {
               <div className="text-4xl font-bold bg-gradient-to-r from-purple-400 to-pink-500 bg-clip-text text-transparent mb-2">
                 &lt;1min
               </div>
-              <div className="text-slate-400">Job Discovery Time</div>
+              <div className="text-slate-400">Job Discovery</div>
             </div>
+            <div>
+              <div className="text-4xl font-bold bg-gradient-to-r from-green-400 to-emerald-500 bg-clip-text text-transparent mb-2">
+                24/7
+              </div>
+              <div className="text-slate-400">Auto-Applying</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Testimonial/Benefits Section */}
+      <section className="container mx-auto px-4 py-20">
+        <div className="grid md:grid-cols-3 gap-8">
+          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Clock className="h-5 w-5 text-cyan-400" />
+              <span className="text-cyan-400 font-semibold">Save 20+ Hours/Week</span>
+            </div>
+            <p className="text-slate-300">
+              "I used to spend 4 hours daily searching job boards. Now Hire.AI does it for me while I focus on interview prep."
+            </p>
+          </div>
+          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <CheckCircle2 className="h-5 w-5 text-green-400" />
+              <span className="text-green-400 font-semibold">3x More Interviews</span>
+            </div>
+            <p className="text-slate-300">
+              "The auto-apply feature is a game changer. I went from 2 interviews a month to 6 in my first week!"
+            </p>
+          </div>
+          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Sparkles className="h-5 w-5 text-purple-400" />
+              <span className="text-purple-400 font-semibold">Perfect Matches</span>
+            </div>
+            <p className="text-slate-300">
+              "The AI matching is scary accurate. Every job suggestion feels like it was written for me."
+            </p>
           </div>
         </div>
       </section>
@@ -198,18 +374,21 @@ export default function LandingPage() {
       {/* CTA Section */}
       <section className="container mx-auto px-4 py-20">
         <div className="text-center space-y-6">
-          <h2 className="text-4xl font-bold text-white">Ready to Transform Your Job Search?</h2>
+          <h2 className="text-4xl lg:text-5xl font-bold text-white">
+            Ready to Let Jobs Find You?
+          </h2>
           <p className="text-xl text-slate-400 max-w-2xl mx-auto">
-            Join thousands of job seekers who are using Hire.AI to find their dream remote positions
+            Join thousands of job seekers who wake up to interview invites instead of endless scrolling
           </p>
           <Button
             size="lg"
             className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white px-12 py-6 text-lg"
-            onClick={() => window.location.href = getLoginUrl()}
+            onClick={handleGetStarted}
           >
-            Get Started Free
-            <Zap className="ml-2 h-5 w-5" />
+            {isAuthenticated ? "Go to Dashboard" : "Start Getting Hired — It's Free"}
+            <Rocket className="ml-2 h-5 w-5" />
           </Button>
+          <p className="text-sm text-slate-500">No credit card required. Set up in 2 minutes.</p>
         </div>
       </section>
 

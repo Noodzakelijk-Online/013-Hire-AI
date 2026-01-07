@@ -277,9 +277,45 @@ export default function Applications() {
                         <ApplicationCard key={app.id} application={app} />
                       ))}
                       {groupedApplications[tab as keyof typeof groupedApplications].length === 0 && (
-                        <div className="text-center py-12 text-slate-400">
-                          <FileText className="w-12 h-12 mx-auto mb-4 text-slate-600" />
-                          <p>No applications in this category</p>
+                        <div className="text-center py-16 px-4">
+                          <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-cyan-500/20 to-blue-500/20 flex items-center justify-center">
+                            <FileText className="w-10 h-10 text-cyan-400" />
+                          </div>
+                          {tab === 'all' ? (
+                            <>
+                              <h3 className="text-xl font-semibold text-white mb-2">No applications yet</h3>
+                              <p className="text-slate-400 mb-6 max-w-md mx-auto">
+                                Start your job search journey! Browse available positions and let our AI help you find the perfect match.
+                              </p>
+                              <Button 
+                                className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700"
+                                onClick={() => window.location.href = '/jobs'}
+                              >
+                                Browse Jobs
+                              </Button>
+                            </>
+                          ) : tab === 'interviewing' ? (
+                            <>
+                              <h3 className="text-xl font-semibold text-white mb-2">No interviews scheduled</h3>
+                              <p className="text-slate-400 max-w-md mx-auto">
+                                Keep applying! Interview invitations will appear here once employers respond to your applications.
+                              </p>
+                            </>
+                          ) : tab === 'offered' ? (
+                            <>
+                              <h3 className="text-xl font-semibold text-white mb-2">No offers yet</h3>
+                              <p className="text-slate-400 max-w-md mx-auto">
+                                Job offers will appear here. Keep interviewing and stay positive!
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <h3 className="text-xl font-semibold text-white mb-2">No applications in this category</h3>
+                              <p className="text-slate-400 max-w-md mx-auto">
+                                Applications matching this filter will appear here.
+                              </p>
+                            </>
+                          )}
                         </div>
                       )}
                     </div>

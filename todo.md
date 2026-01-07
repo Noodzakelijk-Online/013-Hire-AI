@@ -195,3 +195,37 @@
 - [x] Create application confirmation tracking
 - [x] Implement automated follow-up emails
 - [x] Add application rate limiting (avoid spam detection)
+
+
+## Phase 11: End User Testing Fixes (23 Issues)
+
+### Critical Issues
+- [x] Fix landing page copy - change to captivating "Jobs Find You" messaging
+- [x] Seed database with sample jobs so users see actual content (20 jobs added)
+- [x] Fix empty applications page with helpful guidance
+- [x] Fix dashboard to show real data instead of hardcoded fake stats
+- [x] Fix sidebar navigation - shows "Page 1, Page 2" instead of proper nav
+
+### High Priority Issues
+- [x] Update profile page file upload label (supports PDF/DOCX now)
+- [x] Fix profile placeholder data - show empty or load real user data
+- [x] Add Save button to profile page
+- [x] Fix landing page navigation for logged-in users
+- [x] Create Settings page for preferences
+### Medium Priority Issues
+
+- [x] Add onboarding flow for new users (in Dashboard)
+- [x] Add helpful empty states with CTAs
+- [x] Fix Quick Actions buttons on dashboard
+- [x] Add job scanning trigger button in UI
+- [x] Add job alerts configuration UI
+- [x] Add saved jobs feature in UI
+
+### Lower Priority / Polish
+- [x] Standardize page layouts across authenticated pages (DashboardLayout)
+- [ ] Add dark/light mode toggle
+- [ ] Add user avatar/profile picture upload
+- [x] Add logout button in UI (sidebar footer + header dropdown)
+- [ ] Test and fix mobile responsiveness
+- [x] Add error handling UI with toast notifications (sonner toasts)
+- [ ] Fix "Learn More" button on landing page

@@ -9,6 +9,9 @@ import Dashboard from "./pages/Dashboard";
 import JobSearch from "./pages/JobSearch";
 import Applications from "./pages/Applications";
 import Profile from "./pages/Profile";
+import Settings from "./pages/Settings";
+import JobAlerts from "./pages/JobAlerts";
+import SavedJobs from "./pages/SavedJobs";
 
 function Router() {
   return (
@@ -18,6 +21,9 @@ function Router() {
       <Route path={"/jobs"} component={JobSearch} />
       <Route path={"/applications"} component={Applications} />
       <Route path={"/profile"} component={Profile} />
+      <Route path={"/settings"} component={Settings} />
+      <Route path={"/alerts"} component={JobAlerts} />
+      <Route path={"/saved"} component={SavedJobs} />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}
       <Route component={NotFound} />
