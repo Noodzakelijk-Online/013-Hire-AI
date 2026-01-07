@@ -3,6 +3,37 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
+import { normalizeSalary, normalizeLocation, normalizeJobType, normalizeExperienceLevel, extractSkills, extractBenefits, getDeduplicator } from "./jobNormalization";
+import { getRecentJobs, searchJobs, getDiscoveryStats, getSubscriptionManager } from "./realTimeDiscovery";
+import { uploadResume, getActiveResume, getResumeVersions, setActiveVersion, deleteResumeVersion, getResumeStats, getResumeDownloadUrl } from "./resumeStorage";
+import {
+  saveJob,
+  unsaveJob,
+  getSavedJobs,
+  updateSavedJobNotes,
+  addApplicationNote,
+  getApplicationNotes,
+  updateApplicationNote,
+  deleteApplicationNote,
+  scheduleInterview,
+  getInterviewSchedules,
+  getUpcomingInterviews,
+  updateInterviewStatus,
+  rescheduleInterview,
+  createFollowUp,
+  getFollowUps,
+  markFollowUpSent,
+  markFollowUpResponseReceived,
+  generateFollowUpEmail,
+  createJobAlert,
+  getJobAlerts,
+  updateJobAlert,
+  toggleJobAlert,
+  deleteJobAlert,
+  generateInterviewQuestions,
+  conductMockInterview,
+  getVideoInterviewTips,
+} from "./applicationFeatures";
 
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -63,6 +94,52 @@ export const appRouter = router({
       .query(async ({ input }) => {
         const { getJobById } = await import("./db");
         return await getJobById(input.id);
+      }),
+
+    // Saved Jobs
+    saveJob: protectedProcedure
+      .input(z.object({
+        jobId: z.number(),
+        notes: z.string().optional(),
+        tags: z.string().optional(),
+        priority: z.enum(["low", "medium", "high"]).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return await saveJob({
+          userId: ctx.user.id,
+          jobId: input.jobId,
+          notes: input.notes,
+          tags: input.tags,
+          priority: input.priority,
+        });
+      }),
+
+    unsaveJob: protectedProcedure
+      .input(z.object({ jobId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        return await unsaveJob(ctx.user.id, input.jobId);
+      }),
+
+    getSavedJobs: protectedProcedure
+      .query(async ({ ctx }) => {
+        return await getSavedJobs(ctx.user.id);
+      }),
+
+    updateSavedJobNotes: protectedProcedure
+      .input(z.object({
+        jobId: z.number(),
+        notes: z.string(),
+        tags: z.string().optional(),
+        priority: z.enum(["low", "medium", "high"]).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return await updateSavedJobNotes(
+          ctx.user.id,
+          input.jobId,
+          input.notes,
+          input.tags,
+          input.priority
+        );
       }),
   }),
 
@@ -141,6 +218,120 @@ export const appRouter = router({
         const { updateApplicationStatus } = await import("./db");
         await updateApplicationStatus(input.applicationId, input.status);
         return { success: true };
+      }),
+
+    // Application Notes
+    addNote: protectedProcedure
+      .input(z.object({
+        applicationId: z.number(),
+        noteType: z.enum(["general", "interview", "followup", "research", "feedback"]),
+        content: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        return await addApplicationNote(input);
+      }),
+
+    getNotes: protectedProcedure
+      .input(z.object({ applicationId: z.number() }))
+      .query(async ({ input }) => {
+        return await getApplicationNotes(input.applicationId);
+      }),
+
+    updateNote: protectedProcedure
+      .input(z.object({ noteId: z.number(), content: z.string() }))
+      .mutation(async ({ input }) => {
+        return await updateApplicationNote(input.noteId, input.content);
+      }),
+
+    deleteNote: protectedProcedure
+      .input(z.object({ noteId: z.number() }))
+      .mutation(async ({ input }) => {
+        return await deleteApplicationNote(input.noteId);
+      }),
+
+    // Interview Scheduling
+    scheduleInterview: protectedProcedure
+      .input(z.object({
+        applicationId: z.number(),
+        interviewType: z.enum(["phone", "video", "onsite", "technical", "behavioral", "panel"]),
+        scheduledAt: z.string().transform((s) => new Date(s)),
+        duration: z.number().optional(),
+        location: z.string().optional(),
+        meetingLink: z.string().optional(),
+        interviewerName: z.string().optional(),
+        interviewerTitle: z.string().optional(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await scheduleInterview(input);
+      }),
+
+    getInterviews: protectedProcedure
+      .input(z.object({ applicationId: z.number() }))
+      .query(async ({ input }) => {
+        return await getInterviewSchedules(input.applicationId);
+      }),
+
+    getUpcomingInterviews: protectedProcedure
+      .query(async ({ ctx }) => {
+        return await getUpcomingInterviews(ctx.user.id);
+      }),
+
+    updateInterviewStatus: protectedProcedure
+      .input(z.object({
+        interviewId: z.number(),
+        status: z.enum(["scheduled", "completed", "cancelled", "rescheduled"]),
+      }))
+      .mutation(async ({ input }) => {
+        return await updateInterviewStatus(input.interviewId, input.status);
+      }),
+
+    rescheduleInterview: protectedProcedure
+      .input(z.object({
+        interviewId: z.number(),
+        newDate: z.string().transform((s) => new Date(s)),
+      }))
+      .mutation(async ({ input }) => {
+        return await rescheduleInterview(input.interviewId, input.newDate);
+      }),
+
+    // Follow-ups
+    createFollowUp: protectedProcedure
+      .input(z.object({
+        applicationId: z.number(),
+        message: z.string(),
+        sendDate: z.string().transform((s) => new Date(s)).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return await createFollowUp(input);
+      }),
+
+    getFollowUps: protectedProcedure
+      .input(z.object({ applicationId: z.number() }))
+      .query(async ({ input }) => {
+        return await getFollowUps(input.applicationId);
+      }),
+
+    markFollowUpSent: protectedProcedure
+      .input(z.object({ followUpId: z.number() }))
+      .mutation(async ({ input }) => {
+        return await markFollowUpSent(input.followUpId);
+      }),
+
+    markFollowUpResponse: protectedProcedure
+      .input(z.object({ followUpId: z.number() }))
+      .mutation(async ({ input }) => {
+        return await markFollowUpResponseReceived(input.followUpId);
+      }),
+
+    generateFollowUpEmail: protectedProcedure
+      .input(z.object({
+        applicationId: z.number(),
+        type: z.enum(["initial", "reminder", "thank_you", "status_check"]),
+      }))
+      .mutation(async ({ input }) => {
+        const email = await generateFollowUpEmail(input.applicationId, input.type);
+        return { email };
       }),
   }),
 
@@ -316,6 +507,54 @@ export const appRouter = router({
           fileUrl: url,
           fileKey: key,
         };
+      }),
+
+    // Upload resume with version history
+    uploadWithHistory: protectedProcedure
+      .input(z.object({
+        fileData: z.string(), // Base64 encoded
+        fileName: z.string(),
+        mimeType: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const buffer = Buffer.from(input.fileData, "base64");
+        return await uploadResume(ctx.user.id, buffer, input.fileName, input.mimeType);
+      }),
+
+    // Get active resume
+    getActive: protectedProcedure
+      .query(async ({ ctx }) => getActiveResume(ctx.user.id)),
+
+    // Get all versions
+    getVersions: protectedProcedure
+      .query(async ({ ctx }) => getResumeVersions(ctx.user.id)),
+
+    // Set active version
+    setActiveVersion: protectedProcedure
+      .input(z.object({ version: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const success = await setActiveVersion(ctx.user.id, input.version);
+        return { success };
+      }),
+
+    // Delete a version
+    deleteVersion: protectedProcedure
+      .input(z.object({ version: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const success = await deleteResumeVersion(ctx.user.id, input.version);
+        return { success };
+      }),
+
+    // Get resume stats
+    getStats: protectedProcedure
+      .query(async ({ ctx }) => getResumeStats(ctx.user.id)),
+
+    // Get download URL
+    getDownloadUrl: protectedProcedure
+      .input(z.object({ version: z.number().optional() }))
+      .query(async ({ ctx, input }) => {
+        const url = await getResumeDownloadUrl(ctx.user.id, input.version);
+        return { url };
       }),
   }),
 
@@ -716,6 +955,182 @@ export const appRouter = router({
         });
 
         return result;
+      }),
+  }),
+
+  // Job Normalization
+  normalization: router({
+    normalizeSalary: publicProcedure
+      .input(z.object({ salary: z.string() }))
+      .query(({ input }) => normalizeSalary(input.salary)),
+
+    normalizeLocation: publicProcedure
+      .input(z.object({ location: z.string() }))
+      .query(({ input }) => normalizeLocation(input.location)),
+
+    normalizeJobType: publicProcedure
+      .input(z.object({ jobType: z.string() }))
+      .query(({ input }) => normalizeJobType(input.jobType)),
+
+    normalizeExperienceLevel: publicProcedure
+      .input(z.object({ text: z.string() }))
+      .query(({ input }) => normalizeExperienceLevel(input.text)),
+
+    extractSkills: publicProcedure
+      .input(z.object({ description: z.string() }))
+      .query(({ input }) => extractSkills(input.description)),
+
+    extractBenefits: publicProcedure
+      .input(z.object({ description: z.string() }))
+      .query(({ input }) => extractBenefits(input.description)),
+
+    checkDuplicate: protectedProcedure
+      .input(z.object({ text: z.string(), threshold: z.number().optional() }))
+      .query(({ input }) => {
+        const deduplicator = getDeduplicator();
+        return deduplicator.isDuplicate(input.text, input.threshold || 0.85);
+      }),
+
+    addToCorpus: protectedProcedure
+      .input(z.object({ id: z.number(), text: z.string() }))
+      .mutation(({ input }) => {
+        const deduplicator = getDeduplicator();
+        deduplicator.addDocument(input.id, input.text);
+        return { success: true, stats: deduplicator.getStats() };
+      }),
+  }),
+
+  // Real-Time Job Discovery
+  discovery: router({
+    getRecentJobs: publicProcedure
+      .input(z.object({
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+        keywords: z.array(z.string()).optional(),
+        locations: z.array(z.string()).optional(),
+        platformIds: z.array(z.number()).optional(),
+        minSalary: z.number().optional(),
+      }))
+      .query(async ({ input }) => getRecentJobs(input)),
+
+    searchJobs: publicProcedure
+      .input(z.object({
+        query: z.string(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }))
+      .query(async ({ input }) => searchJobs(input.query, { limit: input.limit, offset: input.offset })),
+
+    getStats: publicProcedure
+      .query(async () => getDiscoveryStats()),
+
+    subscribe: protectedProcedure
+      .input(z.object({
+        keywords: z.array(z.string()).optional(),
+        locations: z.array(z.string()).optional(),
+        platformIds: z.array(z.number()).optional(),
+        minSalary: z.number().optional(),
+      }))
+      .mutation(({ ctx, input }) => {
+        const manager = getSubscriptionManager();
+        manager.subscribe({
+          userId: ctx.user.id,
+          filters: input,
+          callback: (event) => console.log(`[Discovery] Event for user ${ctx.user.id}:`, event.type),
+        });
+        return { success: true, message: "Subscribed to job updates" };
+      }),
+
+    unsubscribe: protectedProcedure
+      .mutation(({ ctx }) => {
+        const manager = getSubscriptionManager();
+        manager.unsubscribe(ctx.user.id);
+        return { success: true, message: "Unsubscribed from job updates" };
+      }),
+
+    triggerCheck: protectedProcedure
+      .mutation(async () => {
+        const manager = getSubscriptionManager();
+        const jobs = await manager.triggerCheck();
+        return { jobs, count: jobs.length };
+      }),
+  }),
+
+  // Job Alerts
+  alerts: router({
+    create: protectedProcedure
+      .input(z.object({
+        name: z.string(),
+        keywords: z.string().optional(),
+        locations: z.string().optional(),
+        platforms: z.string().optional(),
+        minSalary: z.number().optional(),
+        jobTypes: z.string().optional(),
+        frequency: z.enum(["instant", "daily", "weekly"]),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return await createJobAlert({
+          userId: ctx.user.id,
+          ...input,
+        });
+      }),
+
+    list: protectedProcedure
+      .query(async ({ ctx }) => {
+        return await getJobAlerts(ctx.user.id);
+      }),
+
+    update: protectedProcedure
+      .input(z.object({
+        alertId: z.number(),
+        name: z.string().optional(),
+        keywords: z.string().optional(),
+        locations: z.string().optional(),
+        platforms: z.string().optional(),
+        minSalary: z.number().optional(),
+        jobTypes: z.string().optional(),
+        frequency: z.enum(["instant", "daily", "weekly"]).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { alertId, ...updates } = input;
+        return await updateJobAlert(alertId, updates);
+      }),
+
+    toggle: protectedProcedure
+      .input(z.object({ alertId: z.number(), isActive: z.boolean() }))
+      .mutation(async ({ input }) => {
+        return await toggleJobAlert(input.alertId, input.isActive);
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ alertId: z.number() }))
+      .mutation(async ({ input }) => {
+        return await deleteJobAlert(input.alertId);
+      }),
+  }),
+
+  // Interview Preparation
+  interviewPrep: router({
+    generateQuestions: protectedProcedure
+      .input(z.object({ jobId: z.number() }))
+      .mutation(async ({ input }) => {
+        return await generateInterviewQuestions(input.jobId);
+      }),
+
+    mockInterview: protectedProcedure
+      .input(z.object({
+        jobId: z.number(),
+        userResponse: z.string(),
+        questionIndex: z.number(),
+      }))
+      .mutation(async ({ input }) => {
+        return await conductMockInterview(input.jobId, input.userResponse, input.questionIndex);
+      }),
+
+    videoTips: protectedProcedure
+      .input(z.object({ jobTitle: z.string() }))
+      .query(async ({ input }) => {
+        return await getVideoInterviewTips(input.jobTitle);
       }),
   }),
 });

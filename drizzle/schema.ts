@@ -217,6 +217,91 @@ export const followUps = mysqlTable("follow_ups", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+/**
+ * User Resumes
+ * Stores resume files with version history
+ */
+export const userResumes = mysqlTable("user_resumes", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  fileName: varchar("file_name", { length: 255 }).notNull(),
+  fileUrl: varchar("file_url", { length: 1000 }).notNull(),
+  fileKey: varchar("file_key", { length: 500 }).notNull(),
+  fileSize: int("file_size").notNull(),
+  mimeType: varchar("mime_type", { length: 100 }).notNull(),
+  version: int("version").default(1).notNull(),
+  isActive: int("is_active").default(1).notNull(),
+  uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/**
+ * Saved Jobs (Bookmarks)
+ * Stores jobs saved by users for later review
+ */
+export const savedJobs = mysqlTable("saved_jobs", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  jobId: int("job_id").notNull(),
+  notes: text("notes"),
+  tags: text("tags"),
+  priority: mysqlEnum("priority", ["low", "medium", "high"]).default("medium"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/**
+ * Application Notes
+ * Stores detailed notes for applications
+ */
+export const applicationNotes = mysqlTable("application_notes", {
+  id: int("id").autoincrement().primaryKey(),
+  applicationId: int("application_id").notNull(),
+  noteType: mysqlEnum("note_type", ["general", "interview", "followup", "research", "feedback"]).default("general"),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
+/**
+ * Interview Schedules
+ * Tracks scheduled interviews
+ */
+export const interviewSchedules = mysqlTable("interview_schedules", {
+  id: int("id").autoincrement().primaryKey(),
+  applicationId: int("application_id").notNull(),
+  interviewType: mysqlEnum("interview_type", ["phone", "video", "onsite", "technical", "behavioral", "panel"]).notNull(),
+  scheduledAt: timestamp("scheduled_at").notNull(),
+  duration: int("duration"),
+  location: varchar("location", { length: 500 }),
+  meetingLink: varchar("meeting_link", { length: 500 }),
+  interviewerName: varchar("interviewer_name", { length: 255 }),
+  interviewerTitle: varchar("interviewer_title", { length: 255 }),
+  notes: text("notes"),
+  status: mysqlEnum("status", ["scheduled", "completed", "cancelled", "rescheduled"]).default("scheduled"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
+/**
+ * Job Alerts
+ * Stores user-configured job alerts
+ */
+export const jobAlerts = mysqlTable("job_alerts", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  keywords: text("keywords"),
+  locations: text("locations"),
+  platforms: text("platforms"),
+  minSalary: int("min_salary"),
+  jobTypes: text("job_types"),
+  frequency: mysqlEnum("frequency", ["instant", "daily", "weekly"]).default("daily"),
+  isActive: int("is_active").default(1).notNull(),
+  lastTriggered: timestamp("last_triggered"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
 export type JobPlatform = typeof jobPlatforms.$inferSelect;
 export type Job = typeof jobs.$inferSelect;
 export type JobDuplicate = typeof jobDuplicates.$inferSelect;
@@ -227,3 +312,8 @@ export type DecisionMaker = typeof decisionMakers.$inferSelect;
 export type JobMatch = typeof jobMatches.$inferSelect;
 export type InterviewPreparation = typeof interviewPreparation.$inferSelect;
 export type FollowUp = typeof followUps.$inferSelect;
+export type UserResume = typeof userResumes.$inferSelect;
+export type SavedJob = typeof savedJobs.$inferSelect;
+export type ApplicationNote = typeof applicationNotes.$inferSelect;
+export type InterviewSchedule = typeof interviewSchedules.$inferSelect;
+export type JobAlertConfig = typeof jobAlerts.$inferSelect;
