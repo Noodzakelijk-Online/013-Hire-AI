@@ -127,3 +127,37 @@
 **Project Status**: In Development
 **Current Focus**: Database schema and core structure
 **Next Milestone**: Complete Phase 1 and move to UI development
+
+
+## Phase 6: Resume Upload & Parsing
+- [x] Add file upload component to Profile page
+- [ ] Implement S3 storage for resume files
+- [x] Create AI-powered resume parser using LLM
+- [x] Extract skills, experience, education from resume
+- [x] Auto-populate user profile from parsed resume data
+- [ ] Support PDF and DOCX formats (currently text only)
+- [x] Add resume preview functionality
+
+## Phase 7: Job Scraping Infrastructure
+- [x] Design scraper architecture (base scraper class)
+- [x] Implement rate limiting and retry logic
+- [x] Create job deduplication algorithm
+- [x] Build Tier 1 platform scrapers (1/6 platforms - RemoteOK implemented)
+- [ ] Build Tier 2 platform scrapers (0/9 platforms)
+- [ ] Build Tier 3 platform scrapers (0/10 platforms)
+- [ ] Build Tier 4 platform scrapers (0/25 platforms)
+- [ ] Implement scraping scheduler (daily/hourly)
+- [x] Add scraping status monitoring
+- [x] Create error logging and alerting
+
+## Phase 8: Automated Application Submission
+- [x] Detect ATS system type (Greenhouse, Lever, Workday, Taleo)
+- [ ] Build Greenhouse application automation (requires browser automation)
+- [ ] Build Lever application automation (requires browser automation)
+- [ ] Build Workday application automation (requires browser automation)
+- [ ] Build Taleo application automation (requires browser automation)
+- [ ] Implement form field detection and filling (requires Puppeteer/Playwright)
+- [ ] Add CAPTCHA handling strategy (requires CAPTCHA solving service)
+- [x] Create application confirmation tracking
+- [ ] Implement automated follow-up emails
+- [x] Add application rate limiting (avoid spam detection)

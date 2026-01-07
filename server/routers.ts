@@ -228,6 +228,172 @@ export const appRouter = router({
         return await generateInterviewPreparation(job);
       }),
   }),
+
+  // Resume Management
+  resume: router({
+    upload: protectedProcedure
+      .input(
+        z.object({
+          fileKey: z.string(),
+          fileUrl: z.string(),
+          fileName: z.string(),
+          fileType: z.string(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const { upsertUserProfile } = await import("./db");
+        
+        // Save resume file info to user profile
+        await upsertUserProfile({
+          userId: ctx.user.id,
+          resumeUrl: input.fileUrl,
+          resumeFileKey: input.fileKey,
+        });
+
+        return { success: true, fileUrl: input.fileUrl };
+      }),
+    parse: protectedProcedure
+      .input(z.object({ resumeText: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        const { parseResumeText, resumeToProfileData } = await import("./resumeParser");
+        const { upsertUserProfile } = await import("./db");
+
+        // Parse the resume text
+        const parsed = await parseResumeText(input.resumeText);
+
+        // Convert to profile format
+        const profileData = resumeToProfileData(parsed);
+
+        // Update user profile with parsed data
+        await upsertUserProfile({
+          userId: ctx.user.id,
+          ...profileData,
+        });
+
+        return { success: true, parsed, profileData };
+      }),
+  }),
+
+  // Job Scraping (Admin only)
+  scraping: router({
+    runScrape: protectedProcedure
+      .input(
+        z.object({
+          platform: z.string().optional(),
+          keywords: z.string().optional(),
+          limit: z.number().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { getScraperManager } = await import("./scrapers/scraperManager");
+        const manager = await getScraperManager();
+
+        if (input.platform) {
+          // Scrape specific platform
+          const result = await manager.scrapePlatform(input.platform, {
+            keywords: input.keywords,
+            limit: input.limit,
+          });
+
+          // Save jobs
+          const saveResult = await manager.saveJobs(result.jobs);
+
+          return {
+            platform: input.platform,
+            scraped: result.jobs.length,
+            saved: saveResult.saved,
+            duplicates: saveResult.duplicates,
+            errors: result.errors,
+          };
+        } else {
+          // Scrape all platforms
+          const result = await manager.runScrapingCycle({
+            keywords: input.keywords,
+            limit: input.limit,
+          });
+
+          return result;
+        }
+      }),
+    status: protectedProcedure.query(async () => {
+      const { getScraperManager } = await import("./scrapers/scraperManager");
+      const manager = await getScraperManager();
+
+      return {
+        initialized: true,
+        availableScrapers: 1, // Only RemoteOK for now
+        message: "Scraper system ready. Currently supporting RemoteOK platform.",
+      };
+    }),
+  }),
+
+  // Automated Application
+  automation: router({
+    detectATS: publicProcedure
+      .input(z.object({ url: z.string() }))
+      .query(async ({ input }) => {
+        const { isAutomationSupported } = await import("./applicationAutomation");
+        const support = isAutomationSupported(input.url);
+
+        return support;
+      }),
+    applyToJob: protectedProcedure
+      .input(
+        z.object({
+          jobId: z.number(),
+          coverLetter: z.string().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const { getJobById, getUserProfile, createApplication } = await import("./db");
+        const { applyToJob, prepareApplicationData, validateApplicationData } = await import(
+          "./applicationAutomation"
+        );
+
+        // Get job details
+        const job = await getJobById(input.jobId);
+        if (!job) {
+          throw new Error("Job not found");
+        }
+
+        if (!job.applicationUrl) {
+          throw new Error("Job does not have an application URL");
+        }
+
+        // Get user profile
+        const profile = await getUserProfile(ctx.user.id);
+        if (!profile) {
+          throw new Error("User profile not found. Please complete your profile first.");
+        }
+
+        // Prepare application data
+        const applicationData = prepareApplicationData(ctx.user, profile, input.coverLetter);
+        if (!applicationData) {
+          throw new Error("Unable to prepare application data. Please ensure your profile is complete.");
+        }
+
+        // Validate application data
+        const validation = validateApplicationData(applicationData);
+        if (!validation.valid) {
+          throw new Error(`Invalid application data: ${validation.errors.join(", ")}`);
+        }
+
+        // Attempt automated application
+        const result = await applyToJob(job.applicationUrl, applicationData);
+
+        // Create application record
+        await createApplication({
+          userId: ctx.user.id,
+          jobId: input.jobId,
+          status: result.success ? "applied" : "pending",
+          appliedDate: result.success ? new Date() : undefined,
+          coverLetter: input.coverLetter,
+          notes: result.message,
+        });
+
+        return result;
+      }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;
