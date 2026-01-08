@@ -159,7 +159,7 @@ export default function LandingPage() {
           <div className="space-y-6">
             <h1 className="text-4xl lg:text-5xl font-bold leading-tight">
               <span className="bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500 bg-clip-text text-transparent">
-                Apply to 100 Jobs While You Sleep.
+                Unemployment no more.
               </span>
             </h1>
             <p className="text-xl text-slate-300 leading-relaxed">

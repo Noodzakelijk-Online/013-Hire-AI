@@ -254,3 +254,7 @@
 
 ## Phase 15: Remove Social Mission Section
 - [x] Remove entire Social Mission section from landing page
+
+
+## Phase 16: Update Headline
+- [x] Change headline from "Apply to 100 Jobs While You Sleep." to "Unemployment no more"
