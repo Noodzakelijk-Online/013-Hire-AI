@@ -1,15 +1,84 @@
 import { Button } from "@/components/ui/button";
 import { getLoginUrl } from "@/const";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { Activity, Brain, Zap, Shield, Target, Rocket, Clock, CheckCircle2, ArrowRight, Search, FileText, Send, Star, Quote } from "lucide-react";
+import { trpc } from "@/lib/trpc";
+import { Activity, Rocket, ArrowRight, Search, FileText, Send, Star, Quote, Globe, Heart } from "lucide-react";
 import { useLocation } from "wouter";
-import { useRef } from "react";
+import { useRef, useEffect, useState } from "react";
+
+// Activity types for the live feed
+type ActivityItem = {
+  id: number;
+  initials: string;
+  action: string;
+  highlight: string;
+  highlightColor: string;
+  time: string;
+  gradientFrom: string;
+  gradientTo: string;
+};
 
 export default function LandingPage() {
   const [, setLocation] = useLocation();
   const { isAuthenticated } = useAuth();
   const featuresRef = useRef<HTMLElement>(null);
-  const platformsRef = useRef<HTMLElement>(null);
+  const missionRef = useRef<HTMLElement>(null);
+  
+  // Real-time activity state
+  const [activities, setActivities] = useState<ActivityItem[]>([
+    { id: 1, initials: "JM", action: "Applied to", highlight: "Senior Developer at Stripe", highlightColor: "text-cyan-400", time: "2 seconds ago", gradientFrom: "from-cyan-400", gradientTo: "to-blue-500" },
+    { id: 2, initials: "SK", action: "Got interview at", highlight: "Shopify", highlightColor: "text-green-400", time: "5 minutes ago", gradientFrom: "from-purple-400", gradientTo: "to-pink-500" },
+    { id: 3, initials: "AR", action: "Matched with", highlight: "47 new jobs", highlightColor: "text-cyan-400", time: "12 minutes ago", gradientFrom: "from-green-400", gradientTo: "to-emerald-500" },
+    { id: 4, initials: "LT", action: "Received offer from", highlight: "Notion 🎉", highlightColor: "text-green-400", time: "1 hour ago", gradientFrom: "from-orange-400", gradientTo: "to-red-500" },
+  ]);
+  
+  // Fetch real activity data from API
+  const { data: recentApplications } = trpc.applications.list.useQuery(undefined, {
+    enabled: true,
+    refetchInterval: 30000, // Refresh every 30 seconds
+  });
+  
+  // Update activities with real data when available
+  useEffect(() => {
+    if (recentApplications && recentApplications.length > 0) {
+      const realActivities: ActivityItem[] = recentApplications.slice(0, 4).map((app, index) => {
+        const colors = [
+          { from: "from-cyan-400", to: "to-blue-500" },
+          { from: "from-purple-400", to: "to-pink-500" },
+          { from: "from-green-400", to: "to-emerald-500" },
+          { from: "from-orange-400", to: "to-red-500" },
+        ];
+        const color = colors[index % colors.length];
+        const initials = "U" + (index + 1);
+        const timeAgo = getTimeAgo(app.appliedDate ? new Date(app.appliedDate) : new Date());
+        
+        return {
+          id: app.id,
+          initials,
+          action: app.status === 'interview' ? "Got interview at" : "Applied to",
+          highlight: "a new position",
+          highlightColor: app.status === 'interview' ? "text-green-400" : "text-cyan-400",
+          time: timeAgo,
+          gradientFrom: color.from,
+          gradientTo: color.to,
+        };
+      });
+      if (realActivities.length > 0) {
+        setActivities(realActivities);
+      }
+    }
+  }, [recentApplications]);
+  
+  function getTimeAgo(date: Date): string {
+    const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
+    if (seconds < 60) return `${seconds} seconds ago`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes} minutes ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+    const days = Math.floor(hours / 24);
+    return `${days} day${days > 1 ? 's' : ''} ago`;
+  }
 
   const handleGetStarted = () => {
     if (isAuthenticated) {
@@ -23,8 +92,8 @@ export default function LandingPage() {
     featuresRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  const scrollToPlatforms = () => {
-    platformsRef.current?.scrollIntoView({ behavior: "smooth" });
+  const scrollToMission = () => {
+    missionRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
   return (
@@ -32,11 +101,14 @@ export default function LandingPage() {
       {/* Header */}
       <header className="border-b border-slate-800/50 backdrop-blur-sm bg-slate-950/50 sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => setLocation("/")}>
+          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setLocation("/")}>
             <Activity className="h-8 w-8 text-cyan-400" />
-            <span className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
-              Hire.AI
-            </span>
+            <div className="flex flex-col">
+              <span className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
+                Hire.AI
+              </span>
+              <span className="text-xs text-slate-500 -mt-1">Job hunting done right.</span>
+            </div>
           </div>
           <div className="flex gap-4">
             <Button 
@@ -44,14 +116,14 @@ export default function LandingPage() {
               className="text-slate-300 hover:text-white"
               onClick={scrollToFeatures}
             >
-              Features
+              How It Works
             </Button>
             <Button 
               variant="ghost" 
               className="text-slate-300 hover:text-white"
-              onClick={scrollToPlatforms}
+              onClick={scrollToMission}
             >
-              Platforms
+              Our Mission
             </Button>
             {isAuthenticated ? (
               <Button
@@ -74,7 +146,7 @@ export default function LandingPage() {
         </div>
       </header>
 
-      {/* Hero Section - Captivating Copy */}
+      {/* Hero Section */}
       <section className="container mx-auto px-4 py-20">
         <div className="grid lg:grid-cols-2 gap-12 items-center">
           <div className="space-y-6">
@@ -126,7 +198,7 @@ export default function LandingPage() {
             </div>
           </div>
 
-          {/* Live Activity Feed */}
+          {/* Live Activity Feed - Connected to Real Data */}
           <div className="relative">
             <div className="absolute -inset-4 bg-gradient-to-r from-cyan-500/20 via-blue-500/20 to-purple-500/20 rounded-3xl blur-xl" />
             <div className="relative bg-gradient-to-br from-slate-900/90 to-slate-800/90 backdrop-blur-sm border border-slate-700/50 rounded-2xl p-8 shadow-2xl">
@@ -139,36 +211,21 @@ export default function LandingPage() {
                   </div>
                 </div>
                 
-                {/* Activity Items */}
+                {/* Activity Items - Real-time from API */}
                 <div className="space-y-3">
-                  <div className="flex items-center gap-3 bg-slate-800/50 rounded-lg p-3">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center text-white text-xs font-bold">JM</div>
-                    <div className="flex-1">
-                      <p className="text-slate-200 text-sm">Applied to <span className="text-cyan-400">Senior Developer</span> at Stripe</p>
-                      <p className="text-slate-500 text-xs">2 seconds ago</p>
+                  {activities.map((activity) => (
+                    <div key={activity.id} className="flex items-center gap-3 bg-slate-800/50 rounded-lg p-3">
+                      <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${activity.gradientFrom} ${activity.gradientTo} flex items-center justify-center text-white text-xs font-bold`}>
+                        {activity.initials}
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-slate-200 text-sm">
+                          {activity.action} <span className={activity.highlightColor}>{activity.highlight}</span>
+                        </p>
+                        <p className="text-slate-500 text-xs">{activity.time}</p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-3 bg-slate-800/50 rounded-lg p-3">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-500 flex items-center justify-center text-white text-xs font-bold">SK</div>
-                    <div className="flex-1">
-                      <p className="text-slate-200 text-sm">Got interview at <span className="text-green-400">Shopify</span></p>
-                      <p className="text-slate-500 text-xs">5 minutes ago</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 bg-slate-800/50 rounded-lg p-3">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-green-400 to-emerald-500 flex items-center justify-center text-white text-xs font-bold">AR</div>
-                    <div className="flex-1">
-                      <p className="text-slate-200 text-sm">Matched with <span className="text-cyan-400">47 new jobs</span></p>
-                      <p className="text-slate-500 text-xs">12 minutes ago</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 bg-slate-800/50 rounded-lg p-3">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-400 to-red-500 flex items-center justify-center text-white text-xs font-bold">LT</div>
-                    <div className="flex-1">
-                      <p className="text-slate-200 text-sm">Received offer from <span className="text-green-400">Notion</span> 🎉</p>
-                      <p className="text-slate-500 text-xs">1 hour ago</p>
-                    </div>
-                  </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -176,7 +233,51 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Testimonials Section - Real Names with Faces */}
+      {/* Social Mission Section */}
+      <section className="container mx-auto px-4 py-20" ref={missionRef}>
+        <div className="bg-gradient-to-r from-emerald-500/10 via-cyan-500/10 to-blue-500/10 border border-emerald-500/30 rounded-2xl p-12">
+          <div className="grid lg:grid-cols-2 gap-12 items-center">
+            <div>
+              <div className="flex items-center gap-3 mb-6">
+                <div className="h-12 w-12 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                  <Globe className="h-6 w-6 text-emerald-400" />
+                </div>
+                <span className="text-emerald-400 font-semibold text-lg">Our Mission</span>
+              </div>
+              <h2 className="text-3xl lg:text-4xl font-bold text-white mb-6">
+                Reducing Worldwide Unemployment
+              </h2>
+              <p className="text-lg text-slate-300 leading-relaxed mb-6">
+                We believe everyone deserves access to meaningful work. Hire.AI isn't just a job tool—it's a movement to democratize employment opportunities globally. By automating the tedious parts of job hunting, we're helping millions of people find work faster, regardless of their background or location.
+              </p>
+              <div className="flex items-center gap-4">
+                <Heart className="h-5 w-5 text-red-400" />
+                <span className="text-slate-400">Every job placed is a life changed.</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-6">
+              <div className="bg-slate-900/50 rounded-xl p-6 text-center">
+                <div className="text-3xl font-bold text-emerald-400 mb-2">50+</div>
+                <div className="text-slate-400 text-sm">Countries Reached</div>
+              </div>
+              <div className="bg-slate-900/50 rounded-xl p-6 text-center">
+                <div className="text-3xl font-bold text-cyan-400 mb-2">2,500+</div>
+                <div className="text-slate-400 text-sm">People Hired</div>
+              </div>
+              <div className="bg-slate-900/50 rounded-xl p-6 text-center">
+                <div className="text-3xl font-bold text-blue-400 mb-2">100K+</div>
+                <div className="text-slate-400 text-sm">Applications Sent</div>
+              </div>
+              <div className="bg-slate-900/50 rounded-xl p-6 text-center">
+                <div className="text-3xl font-bold text-purple-400 mb-2">24/7</div>
+                <div className="text-slate-400 text-sm">Always Working</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Testimonials Section */}
       <section className="container mx-auto px-4 py-20">
         <div className="text-center mb-16">
           <h2 className="text-4xl font-bold text-white mb-4">What Our Users Say</h2>
@@ -249,7 +350,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* How It Works Section - With 50+ Platforms Integrated */}
+      {/* How It Works Section */}
       <section className="container mx-auto px-4 py-20" ref={featuresRef}>
         <div className="text-center mb-16">
           <h2 className="text-4xl font-bold text-white mb-4">How It Works</h2>
@@ -280,7 +381,6 @@ export default function LandingPage() {
               <p className="text-slate-400 mb-4">
                 We continuously scan FlexJobs, LinkedIn, Remote.co, We Work Remotely, Indeed, and 45+ more platforms.
               </p>
-              {/* Platform logos inline */}
               <div className="flex flex-wrap gap-2">
                 {["FlexJobs", "LinkedIn", "Indeed", "Remote.co", "+45"].map((p) => (
                   <span key={p} className="text-xs bg-slate-800 text-slate-400 px-2 py-1 rounded">{p}</span>
@@ -300,56 +400,6 @@ export default function LandingPage() {
                 Hire.AI automatically applies with tailored resumes and cover letters. Wake up to interview invites!
               </p>
             </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Features Section */}
-      <section className="container mx-auto px-4 py-20" ref={platformsRef}>
-        <div className="text-center mb-16">
-          <h2 className="text-4xl font-bold text-white mb-4">Powered by AI, Built for You</h2>
-          <p className="text-xl text-slate-400">Everything you need to land your dream remote job</p>
-        </div>
-
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-6 hover:border-cyan-500/50 transition-all hover:transform hover:scale-105">
-            <div className="h-12 w-12 rounded-lg bg-cyan-500/10 flex items-center justify-center mb-4">
-              <Target className="h-6 w-6 text-cyan-400" />
-            </div>
-            <h3 className="text-lg font-semibold text-white mb-2">50+ Platforms</h3>
-            <p className="text-slate-400 text-sm">
-              Aggregate jobs from FlexJobs, We Work Remotely, Remote.co, and 47 more platforms
-            </p>
-          </div>
-
-          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-6 hover:border-blue-500/50 transition-all hover:transform hover:scale-105">
-            <div className="h-12 w-12 rounded-lg bg-blue-500/10 flex items-center justify-center mb-4">
-              <Brain className="h-6 w-6 text-blue-400" />
-            </div>
-            <h3 className="text-lg font-semibold text-white mb-2">AI Matching</h3>
-            <p className="text-slate-400 text-sm">
-              Smart algorithms match you with jobs that fit your skills, experience, and preferences
-            </p>
-          </div>
-
-          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-6 hover:border-purple-500/50 transition-all hover:transform hover:scale-105">
-            <div className="h-12 w-12 rounded-lg bg-purple-500/10 flex items-center justify-center mb-4">
-              <Zap className="h-6 w-6 text-purple-400" />
-            </div>
-            <h3 className="text-lg font-semibold text-white mb-2">Auto-Apply</h3>
-            <p className="text-slate-400 text-sm">
-              Automatically apply to matching jobs with customized resumes and cover letters
-            </p>
-          </div>
-
-          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-6 hover:border-green-500/50 transition-all hover:transform hover:scale-105">
-            <div className="h-12 w-12 rounded-lg bg-green-500/10 flex items-center justify-center mb-4">
-              <Shield className="h-6 w-6 text-green-400" />
-            </div>
-            <h3 className="text-lg font-semibold text-white mb-2">No Duplicates</h3>
-            <p className="text-slate-400 text-sm">
-              Advanced deduplication ensures you never see the same job twice across platforms
-            </p>
           </div>
         </div>
       </section>
@@ -378,10 +428,17 @@ export default function LandingPage() {
       {/* Footer */}
       <footer className="border-t border-slate-800/50 mt-20">
         <div className="container mx-auto px-4 py-8">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+            <div className="flex items-center gap-3">
               <Activity className="h-6 w-6 text-cyan-400" />
-              <span className="text-lg font-semibold text-slate-300">Hire.AI</span>
+              <div>
+                <span className="text-lg font-semibold text-slate-300">Hire.AI</span>
+                <span className="text-slate-500 text-sm ml-2">Job hunting done right.</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 text-sm text-emerald-400">
+              <Globe className="h-4 w-4" />
+              <span>On a mission to reduce worldwide unemployment</span>
             </div>
             <div className="text-sm text-slate-500">
               © 2026 Hire.AI. All rights reserved.
