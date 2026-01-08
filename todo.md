@@ -276,3 +276,14 @@
 - [x] Remove Offer Rate from Dashboard vital signs (user responsible for acing interviews)
 - [x] Remove "Received offer from..." entries from Live Activity feed on landing page
 - [x] Move Quick Actions to top of Dashboard (like a navigation menu)
+
+
+## Phase 20: Consolidate to AI-First UX (Jan 8, 2026)
+- [x] Create shared AppHeader component for consistent navigation
+- [x] Update database schema for work_experiences and education tables
+- [x] Add profile API endpoints for structured data (work experience, education, skills, projects)
+- [x] Redesign Profile page with connect buttons (LinkedIn, GitHub, Resume) and structured sections
+- [x] Redesign Job Alerts → AI Preferences (AI config + activity log + accountability metrics)
+- [x] Remove Jobs page entirely (consolidate into AI Preferences)
+- [x] Update all navigation to remove Jobs link
+- [x] Update remaining pages to use shared header (remove DashboardLayout)

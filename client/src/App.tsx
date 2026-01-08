@@ -6,11 +6,10 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import LandingPage from "./pages/LandingPage";
 import Dashboard from "./pages/Dashboard";
-import JobSearch from "./pages/JobSearch";
 import Applications from "./pages/Applications";
 import Profile from "./pages/Profile";
 import Settings from "./pages/Settings";
-import JobAlerts from "./pages/JobAlerts";
+import AIPreferences from "./pages/AIPreferences";
 import SavedJobs from "./pages/SavedJobs";
 
 function Router() {
@@ -18,11 +17,10 @@ function Router() {
     <Switch>
       <Route path={"/"} component={LandingPage} />
       <Route path={"/dashboard"} component={Dashboard} />
-      <Route path={"/jobs"} component={JobSearch} />
       <Route path={"/applications"} component={Applications} />
       <Route path={"/profile"} component={Profile} />
       <Route path={"/settings"} component={Settings} />
-      <Route path={"/alerts"} component={JobAlerts} />
+      <Route path={"/ai-preferences"} component={AIPreferences} />
       <Route path={"/saved"} component={SavedJobs} />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}

@@ -177,16 +177,16 @@ export default function Dashboard() {
             <Button
               variant="ghost"
               className="text-slate-300 hover:text-white"
-              onClick={() => setLocation("/jobs")}
+              onClick={() => setLocation("/applications")}
             >
-              Jobs
+              Applications
             </Button>
             <Button
               variant="ghost"
               className="text-slate-300 hover:text-white"
-              onClick={() => setLocation("/applications")}
+              onClick={() => setLocation("/ai-preferences")}
             >
-              Applications
+              AI Preferences
             </Button>
             <Button
               variant="ghost"
@@ -267,10 +267,10 @@ export default function Dashboard() {
         <div className="mb-8 flex flex-wrap gap-3">
           <Button
             className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white"
-            onClick={() => setLocation("/jobs")}
+            onClick={() => setLocation("/ai-preferences")}
           >
-            <Search className="mr-2 h-4 w-4" />
-            Browse Jobs
+            <Activity className="mr-2 h-4 w-4" />
+            AI Preferences
           </Button>
           <Button
             variant="outline"
@@ -296,14 +296,7 @@ export default function Dashboard() {
             <Settings className="mr-2 h-4 w-4" />
             Settings
           </Button>
-          <Button
-            variant="outline"
-            className="border-slate-700 text-slate-300 hover:bg-slate-800"
-            onClick={() => setLocation("/alerts")}
-          >
-            <Bell className="mr-2 h-4 w-4" />
-            Job Alerts
-          </Button>
+
         </div>
 
         {/* New User CTA */}

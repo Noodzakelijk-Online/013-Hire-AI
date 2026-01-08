@@ -283,6 +283,81 @@ export const interviewSchedules = mysqlTable("interview_schedules", {
 });
 
 /**
+ * Work Experiences
+ * Stores structured work history for resume-style profiles
+ */
+export const workExperiences = mysqlTable("work_experiences", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  jobTitle: varchar("job_title", { length: 255 }).notNull(),
+  company: varchar("company", { length: 255 }).notNull(),
+  location: varchar("location", { length: 255 }),
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date"),
+  isCurrent: int("is_current").default(0),
+  description: text("description"),
+  achievements: text("achievements"),
+  skills: text("skills"),
+  sortOrder: int("sort_order").default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
+/**
+ * Education
+ * Stores structured education history for resume-style profiles
+ */
+export const educationEntries = mysqlTable("education_entries", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  degree: varchar("degree", { length: 255 }).notNull(),
+  fieldOfStudy: varchar("field_of_study", { length: 255 }),
+  institution: varchar("institution", { length: 255 }).notNull(),
+  location: varchar("location", { length: 255 }),
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  isCurrent: int("is_current").default(0),
+  gpa: varchar("gpa", { length: 20 }),
+  achievements: text("achievements"),
+  sortOrder: int("sort_order").default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
+/**
+ * Skills
+ * Stores individual skills with proficiency levels
+ */
+export const userSkills = mysqlTable("user_skills", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  skillName: varchar("skill_name", { length: 100 }).notNull(),
+  category: varchar("category", { length: 100 }),
+  proficiency: mysqlEnum("proficiency", ["beginner", "intermediate", "advanced", "expert"]).default("intermediate"),
+  yearsOfExperience: int("years_of_experience"),
+  sortOrder: int("sort_order").default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/**
+ * Projects
+ * Stores portfolio projects
+ */
+export const userProjects = mysqlTable("user_projects", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  url: varchar("url", { length: 500 }),
+  technologies: text("technologies"),
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  sortOrder: int("sort_order").default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
+/**
  * Job Alerts
  * Stores user-configured job alerts
  */
@@ -317,3 +392,7 @@ export type SavedJob = typeof savedJobs.$inferSelect;
 export type ApplicationNote = typeof applicationNotes.$inferSelect;
 export type InterviewSchedule = typeof interviewSchedules.$inferSelect;
 export type JobAlertConfig = typeof jobAlerts.$inferSelect;
+export type WorkExperience = typeof workExperiences.$inferSelect;
+export type EducationEntry = typeof educationEntries.$inferSelect;
+export type UserSkill = typeof userSkills.$inferSelect;
+export type UserProject = typeof userProjects.$inferSelect;

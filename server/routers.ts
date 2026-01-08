@@ -177,6 +177,174 @@ export const appRouter = router({
         });
         return { success: true };
       }),
+
+    // Work Experience
+    getWorkExperiences: protectedProcedure.query(async ({ ctx }) => {
+      const { getWorkExperiences } = await import("./db");
+      return await getWorkExperiences(ctx.user.id);
+    }),
+    addWorkExperience: protectedProcedure
+      .input(z.object({
+        jobTitle: z.string(),
+        company: z.string(),
+        location: z.string().optional(),
+        startDate: z.string().transform((s) => new Date(s)),
+        endDate: z.string().transform((s) => new Date(s)).optional(),
+        isCurrent: z.number().optional(),
+        description: z.string().optional(),
+        achievements: z.string().optional(),
+        skills: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { createWorkExperience } = await import("./db");
+        return await createWorkExperience({ userId: ctx.user.id, ...input });
+      }),
+    updateWorkExperience: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        jobTitle: z.string().optional(),
+        company: z.string().optional(),
+        location: z.string().optional(),
+        startDate: z.string().transform((s) => new Date(s)).optional(),
+        endDate: z.string().transform((s) => new Date(s)).optional(),
+        isCurrent: z.number().optional(),
+        description: z.string().optional(),
+        achievements: z.string().optional(),
+        skills: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { id, ...data } = input;
+        const { updateWorkExperience } = await import("./db");
+        return await updateWorkExperience(id, ctx.user.id, data);
+      }),
+    deleteWorkExperience: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const { deleteWorkExperience } = await import("./db");
+        return await deleteWorkExperience(input.id, ctx.user.id);
+      }),
+
+    // Education
+    getEducation: protectedProcedure.query(async ({ ctx }) => {
+      const { getEducationEntries } = await import("./db");
+      return await getEducationEntries(ctx.user.id);
+    }),
+    addEducation: protectedProcedure
+      .input(z.object({
+        degree: z.string(),
+        fieldOfStudy: z.string().optional(),
+        institution: z.string(),
+        location: z.string().optional(),
+        startDate: z.string().transform((s) => new Date(s)).optional(),
+        endDate: z.string().transform((s) => new Date(s)).optional(),
+        isCurrent: z.number().optional(),
+        gpa: z.string().optional(),
+        achievements: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { createEducationEntry } = await import("./db");
+        return await createEducationEntry({ userId: ctx.user.id, ...input });
+      }),
+    updateEducation: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        degree: z.string().optional(),
+        fieldOfStudy: z.string().optional(),
+        institution: z.string().optional(),
+        location: z.string().optional(),
+        startDate: z.string().transform((s) => new Date(s)).optional(),
+        endDate: z.string().transform((s) => new Date(s)).optional(),
+        isCurrent: z.number().optional(),
+        gpa: z.string().optional(),
+        achievements: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { id, ...data } = input;
+        const { updateEducationEntry } = await import("./db");
+        return await updateEducationEntry(id, ctx.user.id, data);
+      }),
+    deleteEducation: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const { deleteEducationEntry } = await import("./db");
+        return await deleteEducationEntry(input.id, ctx.user.id);
+      }),
+
+    // Skills
+    getSkills: protectedProcedure.query(async ({ ctx }) => {
+      const { getUserSkills } = await import("./db");
+      return await getUserSkills(ctx.user.id);
+    }),
+    addSkill: protectedProcedure
+      .input(z.object({
+        skillName: z.string(),
+        category: z.string().optional(),
+        proficiency: z.enum(["beginner", "intermediate", "advanced", "expert"]).optional(),
+        yearsOfExperience: z.number().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { createUserSkill } = await import("./db");
+        return await createUserSkill({ userId: ctx.user.id, ...input });
+      }),
+    updateSkill: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        skillName: z.string().optional(),
+        category: z.string().optional(),
+        proficiency: z.enum(["beginner", "intermediate", "advanced", "expert"]).optional(),
+        yearsOfExperience: z.number().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { id, ...data } = input;
+        const { updateUserSkill } = await import("./db");
+        return await updateUserSkill(id, ctx.user.id, data);
+      }),
+    deleteSkill: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const { deleteUserSkill } = await import("./db");
+        return await deleteUserSkill(input.id, ctx.user.id);
+      }),
+
+    // Projects
+    getProjects: protectedProcedure.query(async ({ ctx }) => {
+      const { getUserProjects } = await import("./db");
+      return await getUserProjects(ctx.user.id);
+    }),
+    addProject: protectedProcedure
+      .input(z.object({
+        title: z.string(),
+        description: z.string().optional(),
+        url: z.string().optional(),
+        technologies: z.string().optional(),
+        startDate: z.string().transform((s) => new Date(s)).optional(),
+        endDate: z.string().transform((s) => new Date(s)).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { createUserProject } = await import("./db");
+        return await createUserProject({ userId: ctx.user.id, ...input });
+      }),
+    updateProject: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        title: z.string().optional(),
+        description: z.string().optional(),
+        url: z.string().optional(),
+        technologies: z.string().optional(),
+        startDate: z.string().transform((s) => new Date(s)).optional(),
+        endDate: z.string().transform((s) => new Date(s)).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { id, ...data } = input;
+        const { updateUserProject } = await import("./db");
+        return await updateUserProject(id, ctx.user.id, data);
+      }),
+    deleteProject: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const { deleteUserProject } = await import("./db");
+        return await deleteUserProject(input.id, ctx.user.id);
+      }),
   }),
 
   // Applications

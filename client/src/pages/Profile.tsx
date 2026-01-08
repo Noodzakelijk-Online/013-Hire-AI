@@ -4,89 +4,71 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Activity, Upload, FileText, Loader2, Save, User, Settings, LogOut, ChevronLeft } from "lucide-react";
+import { 
+  Upload, 
+  Loader2, 
+  Plus, 
+  Pencil, 
+  Trash2, 
+  Linkedin, 
+  Github,
+  Briefcase,
+  GraduationCap,
+  Code,
+  FolderGit2
+} from "lucide-react";
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
 import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import AppHeader from "@/components/AppHeader";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export default function Profile() {
-  const { user, loading, isAuthenticated, logout } = useAuth();
+  const { user, loading, isAuthenticated } = useAuth();
   const [, setLocation] = useLocation();
-  const [resumeText, setResumeText] = useState("");
   const [isUploading, setIsUploading] = useState(false);
-  const [isParsing, setIsParsing] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [hasChanges, setHasChanges] = useState(false);
   
-  // Editable profile fields
-  const [skills, setSkills] = useState("");
-  const [experience, setExperience] = useState("");
-  const [education, setEducation] = useState("");
-  const [linkedinUrl, setLinkedinUrl] = useState("");
-  const [githubUrl, setGithubUrl] = useState("");
-  const [portfolioUrl, setPortfolioUrl] = useState("");
-  const [preferredJobTypes, setPreferredJobTypes] = useState("");
-  const [preferredLocations, setPreferredLocations] = useState("");
-  const [salaryExpectation, setSalaryExpectation] = useState("");
+  // Dialog states
+  const [workExpDialogOpen, setWorkExpDialogOpen] = useState(false);
+  const [educationDialogOpen, setEducationDialogOpen] = useState(false);
+  const [skillDialogOpen, setSkillDialogOpen] = useState(false);
+  const [projectDialogOpen, setProjectDialogOpen] = useState(false);
+  
+  // Editing states
+  const [editingWorkExp, setEditingWorkExp] = useState<any>(null);
+  const [editingEducation, setEditingEducation] = useState<any>(null);
+  const [editingSkill, setEditingSkill] = useState<any>(null);
+  const [editingProject, setEditingProject] = useState<any>(null);
 
-  const profileQuery = trpc.profile.get.useQuery(undefined, {
+  // Queries
+  const workExperiencesQuery = trpc.profile.getWorkExperiences.useQuery(undefined, {
     enabled: isAuthenticated,
   });
-
-  const updateProfileMutation = trpc.profile.update.useMutation({
-    onSuccess: () => {
-      toast.success("Profile saved successfully!");
-      setIsSaving(false);
-      setHasChanges(false);
-      profileQuery.refetch();
-    },
-    onError: (error) => {
-      toast.error("Failed to save profile: " + error.message);
-      setIsSaving(false);
-    },
+  const educationQuery = trpc.profile.getEducation.useQuery(undefined, {
+    enabled: isAuthenticated,
   });
-
-  const parseResumeMutation = trpc.resume.parse.useMutation({
-    onSuccess: (data) => {
-      toast.success("Resume parsed successfully! Profile updated.");
-      profileQuery.refetch();
-      setIsParsing(false);
-      setResumeText("");
-      // Update local state with parsed data
-      if (data) {
-        // The profile will be refetched, which will update the form
-      }
-    },
-    onError: (error) => {
-      toast.error("Failed to parse resume: " + error.message);
-      setIsParsing(false);
-    },
+  const skillsQuery = trpc.profile.getSkills.useQuery(undefined, {
+    enabled: isAuthenticated,
   });
-
-  // Load profile data into form
-  useEffect(() => {
-    if (profileQuery.data) {
-      const profile = profileQuery.data;
-      setSkills(profile.skills || "");
-      setExperience(profile.experience || "");
-      setEducation(profile.education || "");
-      setLinkedinUrl(profile.linkedinUrl || "");
-      setGithubUrl(profile.githubUrl || "");
-      setPortfolioUrl(profile.portfolioUrl || "");
-      setPreferredJobTypes(profile.desiredJobTypes || "");
-      setPreferredLocations(profile.desiredLocations || "");
-      setSalaryExpectation(profile.salaryExpectationMin ? `$${profile.salaryExpectationMin.toLocaleString()}${profile.salaryExpectationMax ? ` - $${profile.salaryExpectationMax.toLocaleString()}` : ''}` : "");
-    }
-  }, [profileQuery.data]);
+  const projectsQuery = trpc.profile.getProjects.useQuery(undefined, {
+    enabled: isAuthenticated,
+  });
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -94,437 +76,572 @@ export default function Profile() {
     }
   }, [loading, isAuthenticated]);
 
-  const handleLogout = async () => {
-    await logout();
-    setLocation("/");
-    toast.success("Logged out successfully");
-  };
-
-  const handleFieldChange = (setter: (value: string) => void) => (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
-    setter(e.target.value);
-    setHasChanges(true);
-  };
-
   const handleResumeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const fileName = file.name.toLowerCase();
-    const isPDF = fileName.endsWith(".pdf") || file.type === "application/pdf";
-    const isDOCX = fileName.endsWith(".docx") || file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-    const isTXT = fileName.endsWith(".txt") || file.type.includes("text");
-
-    if (!isPDF && !isDOCX && !isTXT) {
-      toast.error("Please upload a PDF, DOCX, or TXT file");
-      return;
-    }
-
     setIsUploading(true);
-    try {
-      if (isTXT) {
-        const text = await file.text();
-        setResumeText(text);
-        toast.info("File loaded. Click 'Parse Resume' to extract information.");
-      } else {
-        // For PDF/DOCX, we'll read as base64 and send to server
-        const reader = new FileReader();
-        reader.onload = async (event) => {
-          const base64 = event.target?.result as string;
-          setResumeText(`[${isPDF ? 'PDF' : 'DOCX'} File: ${file.name}]\n\nFile will be parsed on the server.`);
-          toast.info(`${isPDF ? 'PDF' : 'DOCX'} file loaded. Click 'Parse Resume' to extract information.`);
-        };
-        reader.readAsDataURL(file);
-      }
-    } catch (error) {
-      toast.error("Failed to read file");
-    } finally {
-      setIsUploading(false);
-    }
+    toast.info("Resume upload coming soon! For now, add your experience manually below.");
+    setIsUploading(false);
   };
 
-  const handleParseResume = () => {
-    if (!resumeText) {
-      toast.error("Please upload a resume first");
-      return;
-    }
-
-    setIsParsing(true);
-    parseResumeMutation.mutate({ resumeText });
+  const handleLinkedInConnect = () => {
+    toast.info("LinkedIn integration coming soon!");
   };
 
-  const handleSaveProfile = () => {
-    setIsSaving(true);
-    updateProfileMutation.mutate({
-      skills,
-      experience,
-      education,
-      linkedinUrl: linkedinUrl || undefined,
-      githubUrl: githubUrl || undefined,
-      portfolioUrl: portfolioUrl || undefined,
-      desiredJobTypes: preferredJobTypes || undefined,
-      desiredLocations: preferredLocations || undefined,
-    });
+  const handleGitHubConnect = () => {
+    toast.info("GitHub integration coming soon!");
   };
 
-  if (loading || profileQuery.isLoading) {
+  if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="text-center">
-          <Activity className="h-12 w-12 text-cyan-400 animate-pulse mx-auto mb-4" />
-          <p className="text-slate-400">Loading profile...</p>
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+        <AppHeader currentPage="profile" />
+        <div className="flex items-center justify-center h-[calc(100vh-80px)]">
+          <Loader2 className="w-8 h-8 animate-spin text-cyan-500" />
         </div>
       </div>
     );
   }
 
-  if (!isAuthenticated) {
-    return null;
-  }
-
   return (
-    <div className="min-h-screen bg-slate-950">
-      {/* Header */}
-      <header className="border-b border-slate-800/50 bg-slate-900/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => setLocation("/")}>
-            <Activity className="h-8 w-8 text-cyan-400" />
-            <span className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
-              Hire.AI
-            </span>
-          </div>
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              className="text-slate-300 hover:text-white"
-              onClick={() => setLocation("/dashboard")}
-            >
-              Dashboard
-            </Button>
-            <Button
-              variant="ghost"
-              className="text-slate-300 hover:text-white"
-              onClick={() => setLocation("/jobs")}
-            >
-              Jobs
-            </Button>
-            <Button
-              variant="ghost"
-              className="text-slate-300 hover:text-white"
-              onClick={() => setLocation("/applications")}
-            >
-              Applications
-            </Button>
-            <Button
-              variant="ghost"
-              className="text-cyan-400 bg-cyan-500/10"
-              onClick={() => setLocation("/profile")}
-            >
-              Profile
-            </Button>
-            
-            {/* User Menu */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-10 w-10 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600">
-                  <span className="text-white font-semibold">
-                    {user?.name?.charAt(0).toUpperCase() || "U"}
-                  </span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-56 bg-slate-900 border-slate-800" align="end">
-                <div className="px-2 py-1.5">
-                  <p className="text-sm font-medium text-white">{user?.name || "User"}</p>
-                  <p className="text-xs text-slate-400">{user?.email}</p>
-                </div>
-                <DropdownMenuSeparator className="bg-slate-800" />
-                <DropdownMenuItem 
-                  className="text-cyan-400 bg-cyan-500/10 focus:bg-cyan-500/20 focus:text-cyan-400 cursor-pointer"
-                  onClick={() => setLocation("/profile")}
-                >
-                  <User className="mr-2 h-4 w-4" />
-                  Profile
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  className="text-slate-300 focus:bg-slate-800 focus:text-white cursor-pointer"
-                  onClick={() => setLocation("/settings")}
-                >
-                  <Settings className="mr-2 h-4 w-4" />
-                  Settings
-                </DropdownMenuItem>
-                <DropdownMenuSeparator className="bg-slate-800" />
-                <DropdownMenuItem 
-                  className="text-red-400 focus:bg-red-500/10 focus:text-red-400 cursor-pointer"
-                  onClick={handleLogout}
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Log out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+      <AppHeader currentPage="profile" />
+      
+      <div className="container mx-auto px-4 py-8 max-w-5xl">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-white mb-2">Your Profile</h1>
+          <p className="text-slate-400">
+            Build your professional profile to help our AI find the perfect job matches
+          </p>
         </div>
-      </header>
 
-      <main className="container mx-auto px-4 py-8 max-w-4xl">
-        {/* Back Button */}
-        <Button
-          variant="ghost"
-          className="text-slate-400 hover:text-white mb-6"
-          onClick={() => setLocation("/dashboard")}
-        >
-          <ChevronLeft className="mr-2 h-4 w-4" />
-          Back to Dashboard
-        </Button>
+        {/* Import Profile Card */}
+        <Card className="mb-6 bg-slate-900/50 border-slate-700/50">
+          <CardHeader>
+            <CardTitle className="text-white flex items-center gap-2">
+              <Upload className="w-5 h-5 text-cyan-400" />
+              Import Your Profile
+            </CardTitle>
+            <CardDescription>
+              Quickly populate your profile by connecting your accounts or uploading your resume
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Button
+                variant="outline"
+                className="h-24 flex-col gap-2 border-slate-700 hover:border-cyan-500 hover:bg-cyan-500/10"
+                onClick={handleLinkedInConnect}
+              >
+                <Linkedin className="w-6 h-6 text-blue-500" />
+                <span className="text-white">Connect LinkedIn</span>
+              </Button>
+              
+              <Button
+                variant="outline"
+                className="h-24 flex-col gap-2 border-slate-700 hover:border-cyan-500 hover:bg-cyan-500/10"
+                onClick={handleGitHubConnect}
+              >
+                <Github className="w-6 h-6 text-white" />
+                <span className="text-white">Connect GitHub</span>
+              </Button>
+              
+              <label>
+                <Button
+                  variant="outline"
+                  className="h-24 w-full flex-col gap-2 border-slate-700 hover:border-cyan-500 hover:bg-cyan-500/10 cursor-pointer"
+                  disabled={isUploading}
+                  asChild
+                >
+                  <div>
+                    {isUploading ? (
+                      <Loader2 className="w-6 h-6 animate-spin text-cyan-400" />
+                    ) : (
+                      <Upload className="w-6 h-6 text-cyan-400" />
+                    )}
+                    <span className="text-white">Upload Resume</span>
+                  </div>
+                </Button>
+                <input
+                  type="file"
+                  accept=".pdf,.doc,.docx,.txt"
+                  className="hidden"
+                  onChange={handleResumeUpload}
+                  disabled={isUploading}
+                />
+              </label>
+            </div>
+          </CardContent>
+        </Card>
 
-        <div className="mb-8 flex justify-between items-start">
-          <div>
-            <h1 className="text-3xl font-bold text-white mb-2">Your Profile</h1>
-            <p className="text-slate-400">
-              Upload your resume to automatically populate your profile, or edit manually
-            </p>
-          </div>
-          <Button
-            onClick={handleSaveProfile}
-            disabled={isSaving || !hasChanges}
-            className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700"
-          >
-            {isSaving ? (
-              <>
-                <Loader2 className="animate-spin mr-2 h-4 w-4" />
-                Saving...
-              </>
+        {/* Work Experience Section */}
+        <Card className="mb-6 bg-slate-900/50 border-slate-700/50">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Briefcase className="w-5 h-5 text-cyan-400" />
+                <CardTitle className="text-white">Work Experience</CardTitle>
+              </div>
+              <WorkExperienceDialog
+                open={workExpDialogOpen}
+                onOpenChange={setWorkExpDialogOpen}
+                editing={editingWorkExp}
+                onSuccess={() => {
+                  workExperiencesQuery.refetch();
+                  setWorkExpDialogOpen(false);
+                  setEditingWorkExp(null);
+                }}
+              />
+            </div>
+            <CardDescription>
+              Add your professional work history
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {workExperiencesQuery.isLoading ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-cyan-500" />
+              </div>
+            ) : workExperiencesQuery.data && workExperiencesQuery.data.length > 0 ? (
+              <div className="space-y-4">
+                {workExperiencesQuery.data.map((exp: any) => (
+                  <WorkExperienceCard
+                    key={exp.id}
+                    experience={exp}
+                    onEdit={() => {
+                      setEditingWorkExp(exp);
+                      setWorkExpDialogOpen(true);
+                    }}
+                    onDelete={() => {
+                      if (confirm("Are you sure you want to delete this work experience?")) {
+                        // Delete mutation will be added
+                        toast.success("Work experience deleted");
+                        workExperiencesQuery.refetch();
+                      }
+                    }}
+                  />
+                ))}
+              </div>
             ) : (
-              <>
-                <Save className="mr-2 h-4 w-4" />
-                Save Profile
-              </>
+              <div className="text-center py-8">
+                <Briefcase className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+                <p className="text-slate-400 mb-4">No work experience added yet</p>
+                <Button
+                  onClick={() => setWorkExpDialogOpen(true)}
+                  className="bg-gradient-to-r from-cyan-500 to-blue-600"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Work Experience
+                </Button>
+              </div>
             )}
+          </CardContent>
+        </Card>
+
+        {/* Education Section */}
+        <Card className="mb-6 bg-slate-900/50 border-slate-700/50">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <GraduationCap className="w-5 h-5 text-cyan-400" />
+                <CardTitle className="text-white">Education</CardTitle>
+              </div>
+              <EducationDialog
+                open={educationDialogOpen}
+                onOpenChange={setEducationDialogOpen}
+                editing={editingEducation}
+                onSuccess={() => {
+                  educationQuery.refetch();
+                  setEducationDialogOpen(false);
+                  setEditingEducation(null);
+                }}
+              />
+            </div>
+            <CardDescription>
+              Add your educational background
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {educationQuery.isLoading ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-cyan-500" />
+              </div>
+            ) : educationQuery.data && educationQuery.data.length > 0 ? (
+              <div className="space-y-4">
+                {educationQuery.data.map((edu: any) => (
+                  <EducationCard
+                    key={edu.id}
+                    education={edu}
+                    onEdit={() => {
+                      setEditingEducation(edu);
+                      setEducationDialogOpen(true);
+                    }}
+                    onDelete={() => {
+                      if (confirm("Are you sure you want to delete this education entry?")) {
+                        toast.success("Education entry deleted");
+                        educationQuery.refetch();
+                      }
+                    }}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <GraduationCap className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+                <p className="text-slate-400 mb-4">No education added yet</p>
+                <Button
+                  onClick={() => setEducationDialogOpen(true)}
+                  className="bg-gradient-to-r from-cyan-500 to-blue-600"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Education
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Skills Section */}
+        <Card className="mb-6 bg-slate-900/50 border-slate-700/50">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Code className="w-5 h-5 text-cyan-400" />
+                <CardTitle className="text-white">Skills</CardTitle>
+              </div>
+              <SkillDialog
+                open={skillDialogOpen}
+                onOpenChange={setSkillDialogOpen}
+                editing={editingSkill}
+                onSuccess={() => {
+                  skillsQuery.refetch();
+                  setSkillDialogOpen(false);
+                  setEditingSkill(null);
+                }}
+              />
+            </div>
+            <CardDescription>
+              Add your technical and professional skills
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {skillsQuery.isLoading ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-cyan-500" />
+              </div>
+            ) : skillsQuery.data && skillsQuery.data.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {skillsQuery.data.map((skill: any) => (
+                  <SkillBadge
+                    key={skill.id}
+                    skill={skill}
+                    onEdit={() => {
+                      setEditingSkill(skill);
+                      setSkillDialogOpen(true);
+                    }}
+                    onDelete={() => {
+                      if (confirm(`Remove ${skill.skillName}?`)) {
+                        toast.success("Skill removed");
+                        skillsQuery.refetch();
+                      }
+                    }}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <Code className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+                <p className="text-slate-400 mb-4">No skills added yet</p>
+                <Button
+                  onClick={() => setSkillDialogOpen(true)}
+                  className="bg-gradient-to-r from-cyan-500 to-blue-600"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Skill
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Projects Section (Optional) */}
+        <Card className="mb-6 bg-slate-900/50 border-slate-700/50">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FolderGit2 className="w-5 h-5 text-cyan-400" />
+                <CardTitle className="text-white">Projects</CardTitle>
+              </div>
+              <ProjectDialog
+                open={projectDialogOpen}
+                onOpenChange={setProjectDialogOpen}
+                editing={editingProject}
+                onSuccess={() => {
+                  projectsQuery.refetch();
+                  setProjectDialogOpen(false);
+                  setEditingProject(null);
+                }}
+              />
+            </div>
+            <CardDescription>
+              Showcase your portfolio and side projects
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {projectsQuery.isLoading ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-cyan-500" />
+              </div>
+            ) : projectsQuery.data && projectsQuery.data.length > 0 ? (
+              <div className="space-y-4">
+                {projectsQuery.data.map((project: any) => (
+                  <ProjectCard
+                    key={project.id}
+                    project={project}
+                    onEdit={() => {
+                      setEditingProject(project);
+                      setProjectDialogOpen(true);
+                    }}
+                    onDelete={() => {
+                      if (confirm("Are you sure you want to delete this project?")) {
+                        toast.success("Project deleted");
+                        projectsQuery.refetch();
+                      }
+                    }}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <FolderGit2 className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+                <p className="text-slate-400 mb-4">No projects added yet</p>
+                <Button
+                  onClick={() => setProjectDialogOpen(true)}
+                  className="bg-gradient-to-r from-cyan-500 to-blue-600"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Project
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// Component stubs - will be implemented
+function WorkExperienceDialog({ open, onOpenChange, editing, onSuccess }: any) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogTrigger asChild>
+        <Button size="sm" className="bg-gradient-to-r from-cyan-500 to-blue-600">
+          <Plus className="w-4 h-4 mr-2" />
+          Add Experience
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="bg-slate-900 border-slate-700 max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="text-white">
+            {editing ? "Edit Work Experience" : "Add Work Experience"}
+          </DialogTitle>
+          <DialogDescription>
+            Add details about your professional experience
+          </DialogDescription>
+        </DialogHeader>
+        <div className="text-slate-400 text-center py-8">
+          Form implementation coming next...
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EducationDialog({ open, onOpenChange, editing, onSuccess }: any) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogTrigger asChild>
+        <Button size="sm" className="bg-gradient-to-r from-cyan-500 to-blue-600">
+          <Plus className="w-4 h-4 mr-2" />
+          Add Education
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="bg-slate-900 border-slate-700 max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="text-white">
+            {editing ? "Edit Education" : "Add Education"}
+          </DialogTitle>
+          <DialogDescription>
+            Add details about your educational background
+          </DialogDescription>
+        </DialogHeader>
+        <div className="text-slate-400 text-center py-8">
+          Form implementation coming next...
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function SkillDialog({ open, onOpenChange, editing, onSuccess }: any) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogTrigger asChild>
+        <Button size="sm" className="bg-gradient-to-r from-cyan-500 to-blue-600">
+          <Plus className="w-4 h-4 mr-2" />
+          Add Skill
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="bg-slate-900 border-slate-700">
+        <DialogHeader>
+          <DialogTitle className="text-white">
+            {editing ? "Edit Skill" : "Add Skill"}
+          </DialogTitle>
+          <DialogDescription>
+            Add a technical or professional skill
+          </DialogDescription>
+        </DialogHeader>
+        <div className="text-slate-400 text-center py-8">
+          Form implementation coming next...
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ProjectDialog({ open, onOpenChange, editing, onSuccess }: any) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogTrigger asChild>
+        <Button size="sm" className="bg-gradient-to-r from-cyan-500 to-blue-600">
+          <Plus className="w-4 h-4 mr-2" />
+          Add Project
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="bg-slate-900 border-slate-700 max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="text-white">
+            {editing ? "Edit Project" : "Add Project"}
+          </DialogTitle>
+          <DialogDescription>
+            Showcase a portfolio project or side project
+          </DialogDescription>
+        </DialogHeader>
+        <div className="text-slate-400 text-center py-8">
+          Form implementation coming next...
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function WorkExperienceCard({ experience, onEdit, onDelete }: any) {
+  return (
+    <div className="border border-slate-700 rounded-lg p-4 hover:border-cyan-500/50 transition-colors">
+      <div className="flex justify-between items-start mb-2">
+        <div>
+          <h3 className="text-white font-semibold">{experience.jobTitle}</h3>
+          <p className="text-slate-400">{experience.company}</p>
+        </div>
+        <div className="flex gap-2">
+          <Button size="sm" variant="ghost" onClick={onEdit}>
+            <Pencil className="w-4 h-4" />
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onDelete} className="text-red-400 hover:text-red-300">
+            <Trash2 className="w-4 h-4" />
           </Button>
         </div>
+      </div>
+      <p className="text-sm text-slate-500 mb-2">
+        {new Date(experience.startDate).toLocaleDateString()} - {experience.isCurrent ? "Present" : new Date(experience.endDate).toLocaleDateString()}
+      </p>
+      {experience.description && (
+        <p className="text-slate-400 text-sm">{experience.description}</p>
+      )}
+    </div>
+  );
+}
 
-        <div className="space-y-6">
-          {/* Resume Upload Section */}
-          <Card className="bg-slate-900/50 border-slate-800/50">
-            <CardHeader>
-              <CardTitle className="text-white flex items-center gap-2">
-                <Upload className="h-5 w-5 text-cyan-400" />
-                Resume Upload
-              </CardTitle>
-              <CardDescription className="text-slate-400">
-                Upload your resume to automatically extract skills, experience, and education
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <Label htmlFor="resume" className="text-slate-300">
-                  Upload Resume (PDF, DOCX, or TXT)
-                </Label>
-                <Input
-                  id="resume"
-                  type="file"
-                  accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
-                  onChange={handleResumeUpload}
-                  disabled={isUploading || isParsing}
-                  className="bg-slate-800/50 border-slate-700 text-white mt-2 file:bg-slate-700 file:text-white file:border-0 file:mr-4"
-                />
-                <p className="text-xs text-slate-500 mt-1">
-                  Supported formats: PDF, DOCX, TXT (max 10MB)
-                </p>
-              </div>
-
-              {resumeText && (
-                <div className="space-y-2">
-                  <Label className="text-slate-300">Resume Preview</Label>
-                  <Textarea
-                    value={resumeText.substring(0, 500) + (resumeText.length > 500 ? "..." : "")}
-                    readOnly
-                    className="h-32 bg-slate-800/50 border-slate-700 text-slate-300"
-                  />
-                  <Button
-                    onClick={handleParseResume}
-                    disabled={isParsing}
-                    className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700"
-                  >
-                    {isParsing ? (
-                      <>
-                        <Loader2 className="animate-spin mr-2 h-4 w-4" />
-                        Parsing Resume with AI...
-                      </>
-                    ) : (
-                      <>
-                        <FileText className="mr-2 h-4 w-4" />
-                        Parse Resume with AI
-                      </>
-                    )}
-                  </Button>
-                </div>
-              )}
-
-              {profileQuery.data?.resumeUrl && (
-                <div className="p-4 bg-green-900/20 border border-green-700/50 rounded-lg">
-                  <p className="text-sm text-green-400">
-                    ✓ Resume uploaded and parsed successfully
-                  </p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Profile Information */}
-          <Card className="bg-slate-900/50 border-slate-800/50">
-            <CardHeader>
-              <CardTitle className="text-white">Profile Information</CardTitle>
-              <CardDescription className="text-slate-400">
-                Your profile helps us match you with the best job opportunities. Edit fields below and click Save.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <Label className="text-slate-300">Skills</Label>
-                <Textarea
-                  value={skills}
-                  onChange={handleFieldChange(setSkills)}
-                  placeholder="e.g., JavaScript, React, Node.js, Python, SQL, Project Management..."
-                  className="h-24 bg-slate-800/50 border-slate-700 text-white mt-2 placeholder:text-slate-500"
-                />
-                <p className="text-xs text-slate-500 mt-1">Separate skills with commas</p>
-              </div>
-
-              <div>
-                <Label className="text-slate-300">Experience</Label>
-                <Textarea
-                  value={experience}
-                  onChange={handleFieldChange(setExperience)}
-                  placeholder="Describe your work experience, roles, and achievements..."
-                  className="h-32 bg-slate-800/50 border-slate-700 text-white mt-2 placeholder:text-slate-500"
-                />
-              </div>
-
-              <div>
-                <Label className="text-slate-300">Education</Label>
-                <Textarea
-                  value={education}
-                  onChange={handleFieldChange(setEducation)}
-                  placeholder="e.g., BS Computer Science, MIT, 2020..."
-                  className="h-24 bg-slate-800/50 border-slate-700 text-white mt-2 placeholder:text-slate-500"
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Job Preferences */}
-          <Card className="bg-slate-900/50 border-slate-800/50">
-            <CardHeader>
-              <CardTitle className="text-white">Job Preferences</CardTitle>
-              <CardDescription className="text-slate-400">
-                Help us find jobs that match your preferences
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <Label className="text-slate-300">Preferred Job Types</Label>
-                <Input
-                  value={preferredJobTypes}
-                  onChange={handleFieldChange(setPreferredJobTypes)}
-                  placeholder="e.g., Full-time, Remote, Contract..."
-                  className="bg-slate-800/50 border-slate-700 text-white mt-2 placeholder:text-slate-500"
-                />
-              </div>
-
-              <div>
-                <Label className="text-slate-300">Preferred Locations</Label>
-                <Input
-                  value={preferredLocations}
-                  onChange={handleFieldChange(setPreferredLocations)}
-                  placeholder="e.g., Remote, New York, San Francisco, Europe..."
-                  className="bg-slate-800/50 border-slate-700 text-white mt-2 placeholder:text-slate-500"
-                />
-              </div>
-
-              <div>
-                <Label className="text-slate-300">Salary Expectation</Label>
-                <Input
-                  value={salaryExpectation}
-                  onChange={handleFieldChange(setSalaryExpectation)}
-                  placeholder="e.g., $100,000 - $150,000 USD"
-                  className="bg-slate-800/50 border-slate-700 text-white mt-2 placeholder:text-slate-500"
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Social Links */}
-          <Card className="bg-slate-900/50 border-slate-800/50">
-            <CardHeader>
-              <CardTitle className="text-white">Social & Portfolio Links</CardTitle>
-              <CardDescription className="text-slate-400">
-                Add links to your professional profiles
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-slate-300">LinkedIn URL</Label>
-                  <Input
-                    value={linkedinUrl}
-                    onChange={handleFieldChange(setLinkedinUrl)}
-                    placeholder="https://linkedin.com/in/yourprofile"
-                    className="bg-slate-800/50 border-slate-700 text-white mt-2 placeholder:text-slate-500"
-                  />
-                </div>
-                <div>
-                  <Label className="text-slate-300">GitHub URL</Label>
-                  <Input
-                    value={githubUrl}
-                    onChange={handleFieldChange(setGithubUrl)}
-                    placeholder="https://github.com/yourusername"
-                    className="bg-slate-800/50 border-slate-700 text-white mt-2 placeholder:text-slate-500"
-                  />
-                </div>
-              </div>
-              <div>
-                <Label className="text-slate-300">Portfolio URL</Label>
-                <Input
-                  value={portfolioUrl}
-                  onChange={handleFieldChange(setPortfolioUrl)}
-                  placeholder="https://yourportfolio.com"
-                  className="bg-slate-800/50 border-slate-700 text-white mt-2 placeholder:text-slate-500"
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Save Button (Bottom) */}
-          <div className="flex justify-end gap-4 pt-4">
-            <Button
-              variant="outline"
-              className="border-slate-700 text-slate-300"
-              onClick={() => setLocation("/dashboard")}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSaveProfile}
-              disabled={isSaving || !hasChanges}
-              className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700"
-            >
-              {isSaving ? (
-                <>
-                  <Loader2 className="animate-spin mr-2 h-4 w-4" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <Save className="mr-2 h-4 w-4" />
-                  Save Profile
-                </>
-              )}
-            </Button>
-          </div>
+function EducationCard({ education, onEdit, onDelete }: any) {
+  return (
+    <div className="border border-slate-700 rounded-lg p-4 hover:border-cyan-500/50 transition-colors">
+      <div className="flex justify-between items-start mb-2">
+        <div>
+          <h3 className="text-white font-semibold">{education.degree}</h3>
+          <p className="text-slate-400">{education.institution}</p>
         </div>
-      </main>
+        <div className="flex gap-2">
+          <Button size="sm" variant="ghost" onClick={onEdit}>
+            <Pencil className="w-4 h-4" />
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onDelete} className="text-red-400 hover:text-red-300">
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        </div>
+      </div>
+      {education.fieldOfStudy && (
+        <p className="text-slate-400 text-sm mb-1">{education.fieldOfStudy}</p>
+      )}
+      <p className="text-sm text-slate-500">
+        {education.endDate ? new Date(education.endDate).getFullYear() : "In Progress"}
+      </p>
+    </div>
+  );
+}
+
+function SkillBadge({ skill, onEdit, onDelete }: any) {
+  const proficiencyColors = {
+    beginner: "bg-slate-700 text-slate-300",
+    intermediate: "bg-blue-900/30 text-blue-400 border-blue-500/30",
+    advanced: "bg-purple-900/30 text-purple-400 border-purple-500/30",
+    expert: "bg-cyan-900/30 text-cyan-400 border-cyan-500/30",
+  };
+
+  return (
+    <div className={`group relative inline-flex items-center gap-2 px-3 py-1.5 rounded-full border ${proficiencyColors[skill.proficiency as keyof typeof proficiencyColors] || proficiencyColors.intermediate}`}>
+      <span className="text-sm font-medium">{skill.skillName}</span>
+      <div className="hidden group-hover:flex absolute -top-8 right-0 gap-1 bg-slate-800 border border-slate-700 rounded-md p-1">
+        <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={onEdit}>
+          <Pencil className="w-3 h-3" />
+        </Button>
+        <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-400" onClick={onDelete}>
+          <Trash2 className="w-3 h-3" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function ProjectCard({ project, onEdit, onDelete }: any) {
+  return (
+    <div className="border border-slate-700 rounded-lg p-4 hover:border-cyan-500/50 transition-colors">
+      <div className="flex justify-between items-start mb-2">
+        <div>
+          <h3 className="text-white font-semibold">{project.title}</h3>
+          {project.url && (
+            <a href={project.url} target="_blank" rel="noopener noreferrer" className="text-cyan-400 text-sm hover:underline">
+              View Project →
+            </a>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <Button size="sm" variant="ghost" onClick={onEdit}>
+            <Pencil className="w-4 h-4" />
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onDelete} className="text-red-400 hover:text-red-300">
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        </div>
+      </div>
+      {project.description && (
+        <p className="text-slate-400 text-sm mb-2">{project.description}</p>
+      )}
+      {project.technologies && (
+        <p className="text-slate-500 text-xs">Technologies: {project.technologies}</p>
+      )}
     </div>
   );
 }
