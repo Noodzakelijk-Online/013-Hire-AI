@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { getLoginUrl } from "@/const";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
-import { Activity, Rocket, ArrowRight, Search, FileText, Send, Star, Quote, Globe, Heart, Calendar, Trophy } from "lucide-react";
+import { Activity, Rocket, ArrowRight, Search, FileText, Send, Star, Quote, Globe, Heart, Calendar, Trophy, Menu, X, ChevronDown } from "lucide-react";
 import { useLocation } from "wouter";
 import { useRef, useEffect, useState } from "react";
 
@@ -23,6 +23,8 @@ export default function LandingPage() {
   const { isAuthenticated } = useAuth();
   const featuresRef = useRef<HTMLElement>(null);
   const missionRef = useRef<HTMLElement>(null);
+  const faqRef = useRef<HTMLElement>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   
   // Impact stats state
   const [impactStats] = useState({
@@ -142,10 +144,16 @@ export default function LandingPage() {
 
   const scrollToFeatures = () => {
     featuresRef.current?.scrollIntoView({ behavior: "smooth" });
+    setMobileMenuOpen(false);
   };
 
   const scrollToMission = () => {
     missionRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const scrollToFaq = () => {
+    faqRef.current?.scrollIntoView({ behavior: "smooth" });
+    setMobileMenuOpen(false);
   };
 
   return (
@@ -162,7 +170,9 @@ export default function LandingPage() {
               <span className="text-xs text-slate-500 -mt-1">Job hunting done right.</span>
             </div>
           </div>
-          <div className="flex gap-4">
+          
+          {/* Desktop Navigation */}
+          <div className="hidden md:flex gap-4 items-center">
             <Button 
               variant="ghost" 
               className="text-slate-300 hover:text-white"
@@ -170,7 +180,13 @@ export default function LandingPage() {
             >
               How It Works
             </Button>
-
+            <Button 
+              variant="ghost" 
+              className="text-slate-300 hover:text-white"
+              onClick={scrollToFaq}
+            >
+              FAQ
+            </Button>
             {isAuthenticated ? (
               <Button
                 variant="outline"
@@ -189,7 +205,58 @@ export default function LandingPage() {
               </Button>
             )}
           </div>
+          
+          {/* Mobile Menu Button */}
+          <button
+            className="md:hidden p-2 text-slate-300 hover:text-white"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            aria-label="Toggle menu"
+          >
+            {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+          </button>
         </div>
+        
+        {/* Mobile Navigation Menu */}
+        {mobileMenuOpen && (
+          <div className="md:hidden border-t border-slate-800/50 bg-slate-950/95 backdrop-blur-sm">
+            <div className="container mx-auto px-4 py-4 flex flex-col gap-2">
+              <Button 
+                variant="ghost" 
+                className="text-slate-300 hover:text-white justify-start w-full"
+                onClick={scrollToFeatures}
+              >
+                How It Works
+              </Button>
+              <Button 
+                variant="ghost" 
+                className="text-slate-300 hover:text-white justify-start w-full"
+                onClick={scrollToFaq}
+              >
+                FAQ
+              </Button>
+              {isAuthenticated ? (
+                <Button
+                  className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white w-full mt-2"
+                  onClick={() => {
+                    setLocation("/dashboard");
+                    setMobileMenuOpen(false);
+                  }}
+                >
+                  Dashboard
+                </Button>
+              ) : (
+                <Button
+                  className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white w-full mt-2"
+                  onClick={() => {
+                    window.location.href = getLoginUrl();
+                  }}
+                >
+                  Sign In
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
       </header>
 
       {/* Hero Section */}
@@ -202,8 +269,8 @@ export default function LandingPage() {
               </span>
             </h1>
             <p className="text-xl text-slate-300 leading-relaxed">
-              Stop scrolling through endless job boards. Hire.AI scans 50+ platforms, 
-              matches you with perfect opportunities, and applies automatically—while you sleep.
+              Every day without a job is a day too long. We're on a mission to end unemployment 
+              by connecting you with opportunities across 50+ platforms and applying on your behalf—automatically.
             </p>
             <div className="flex flex-col sm:flex-row gap-4">
               <Button
@@ -414,6 +481,58 @@ export default function LandingPage() {
               </p>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* FAQ Section */}
+      <section ref={faqRef} className="container mx-auto px-4 py-20">
+        <div className="text-center mb-16">
+          <h2 className="text-4xl font-bold text-white mb-4">Frequently Asked Questions</h2>
+          <p className="text-xl text-slate-400 max-w-2xl mx-auto">
+            Everything you need to know about how Hire.AI works
+          </p>
+        </div>
+        
+        <div className="max-w-3xl mx-auto space-y-4">
+          {[
+            {
+              question: "How does automated job application work?",
+              answer: "Hire.AI uses advanced browser automation to fill out job applications on your behalf. We detect the application system (Greenhouse, Lever, Workday, etc.), map your profile data to the form fields, and submit applications with your customized resume and cover letter. You maintain full control and can review applications before they're sent."
+            },
+            {
+              question: "Is my data safe and secure?",
+              answer: "Absolutely. Your resume and personal data are encrypted and stored securely. We never share your information with third parties. You can delete your account and all associated data at any time. We're committed to your privacy and comply with GDPR and other data protection regulations."
+            },
+            {
+              question: "Will employers know I'm using an automated service?",
+              answer: "No. Applications are submitted just like you would do manually—through the company's official application portal. Each application is personalized with your unique cover letter and tailored resume. There's no indication that automation was used."
+            },
+            {
+              question: "How many jobs can Hire.AI apply to per day?",
+              answer: "We apply at a human-like pace to avoid detection and ensure quality. Typically, this means 10-20 applications per day depending on your preferences. You can set limits and prioritize certain types of jobs or companies."
+            },
+            {
+              question: "What job platforms do you support?",
+              answer: "We scan and apply to jobs from 50+ platforms including LinkedIn, Indeed, FlexJobs, We Work Remotely, Remote.co, Greenhouse, Lever, and many more. Our list is constantly growing as we add new integrations."
+            },
+            {
+              question: "Can I review applications before they're sent?",
+              answer: "Yes! You can enable review mode where you approve each application before it's submitted. You can also set up auto-apply for jobs that match your criteria perfectly while reviewing others manually."
+            },
+          ].map((faq, index) => (
+            <details 
+              key={index} 
+              className="group bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl overflow-hidden"
+            >
+              <summary className="flex items-center justify-between p-6 cursor-pointer list-none">
+                <span className="text-lg font-medium text-white pr-4">{faq.question}</span>
+                <ChevronDown className="h-5 w-5 text-slate-400 transition-transform group-open:rotate-180 flex-shrink-0" />
+              </summary>
+              <div className="px-6 pb-6 text-slate-400 leading-relaxed">
+                {faq.answer}
+              </div>
+            </details>
+          ))}
         </div>
       </section>
 
