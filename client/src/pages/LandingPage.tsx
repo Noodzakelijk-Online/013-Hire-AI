@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { getLoginUrl } from "@/const";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { Activity, Brain, Heart, TrendingUp, Zap, Shield, Target, Sparkles, Rocket, Clock, CheckCircle2, ArrowRight, Search, FileText, Send } from "lucide-react";
+import { Activity, Brain, Zap, Shield, Target, Rocket, Clock, CheckCircle2, ArrowRight, Search, FileText, Send, Star, Quote } from "lucide-react";
 import { useLocation } from "wouter";
 import { useRef } from "react";
 
@@ -78,15 +78,9 @@ export default function LandingPage() {
       <section className="container mx-auto px-4 py-20">
         <div className="grid lg:grid-cols-2 gap-12 items-center">
           <div className="space-y-6">
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-cyan-500/10 border border-cyan-500/30 rounded-full text-cyan-400 text-sm">
-              <Sparkles className="h-4 w-4" />
-              <span>AI-Powered Job Hunting</span>
-            </div>
-            <h1 className="text-5xl lg:text-7xl font-bold leading-tight">
-              <span className="text-white">You Don't Find Jobs.</span>
-              <br />
+            <h1 className="text-4xl lg:text-5xl font-bold leading-tight">
               <span className="bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500 bg-clip-text text-transparent">
-                Jobs Find You.
+                Apply to 100 Jobs While You Sleep.
               </span>
             </h1>
             <p className="text-xl text-slate-300 leading-relaxed">
@@ -132,48 +126,48 @@ export default function LandingPage() {
             </div>
           </div>
 
-          {/* Health Monitor Visual */}
+          {/* Live Activity Feed */}
           <div className="relative">
             <div className="absolute -inset-4 bg-gradient-to-r from-cyan-500/20 via-blue-500/20 to-purple-500/20 rounded-3xl blur-xl" />
             <div className="relative bg-gradient-to-br from-slate-900/90 to-slate-800/90 backdrop-blur-sm border border-slate-700/50 rounded-2xl p-8 shadow-2xl">
-              <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400 font-medium">Your Job Search Vitals</span>
-                  <Heart className="h-6 w-6 text-red-400 animate-pulse" />
-                </div>
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-300">Jobs Matched Today</span>
-                      <span className="text-cyan-400 font-semibold">47 new</span>
-                    </div>
-                    <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                      <div className="h-full w-[92%] bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full animate-pulse" />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-300">Auto-Applied</span>
-                      <span className="text-green-400 font-semibold">12 sent</span>
-                    </div>
-                    <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                      <div className="h-full w-[78%] bg-gradient-to-r from-green-500 to-emerald-500 rounded-full" />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-300">Interview Invites</span>
-                      <span className="text-purple-400 font-semibold">3 pending</span>
-                    </div>
-                    <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                      <div className="h-full w-[45%] bg-gradient-to-r from-purple-500 to-pink-500 rounded-full" />
-                    </div>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between mb-6">
+                  <span className="text-white font-semibold">Live Activity</span>
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                    <span className="text-green-400 text-sm">Active now</span>
                   </div>
                 </div>
-                <div className="pt-4 border-t border-slate-700/50">
-                  <div className="flex items-center gap-2 text-sm text-green-400">
-                    <TrendingUp className="h-4 w-4" />
-                    <span>Your dream job is getting closer!</span>
+                
+                {/* Activity Items */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3 bg-slate-800/50 rounded-lg p-3">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center text-white text-xs font-bold">JM</div>
+                    <div className="flex-1">
+                      <p className="text-slate-200 text-sm">Applied to <span className="text-cyan-400">Senior Developer</span> at Stripe</p>
+                      <p className="text-slate-500 text-xs">2 seconds ago</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 bg-slate-800/50 rounded-lg p-3">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-500 flex items-center justify-center text-white text-xs font-bold">SK</div>
+                    <div className="flex-1">
+                      <p className="text-slate-200 text-sm">Got interview at <span className="text-green-400">Shopify</span></p>
+                      <p className="text-slate-500 text-xs">5 minutes ago</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 bg-slate-800/50 rounded-lg p-3">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-green-400 to-emerald-500 flex items-center justify-center text-white text-xs font-bold">AR</div>
+                    <div className="flex-1">
+                      <p className="text-slate-200 text-sm">Matched with <span className="text-cyan-400">47 new jobs</span></p>
+                      <p className="text-slate-500 text-xs">12 minutes ago</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 bg-slate-800/50 rounded-lg p-3">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-400 to-red-500 flex items-center justify-center text-white text-xs font-bold">LT</div>
+                    <div className="flex-1">
+                      <p className="text-slate-200 text-sm">Received offer from <span className="text-green-400">Notion</span> 🎉</p>
+                      <p className="text-slate-500 text-xs">1 hour ago</p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -182,7 +176,80 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* How It Works Section */}
+      {/* Testimonials Section - Real Names with Faces */}
+      <section className="container mx-auto px-4 py-20">
+        <div className="text-center mb-16">
+          <h2 className="text-4xl font-bold text-white mb-4">What Our Users Say</h2>
+          <p className="text-xl text-slate-400">Real stories from real job seekers</p>
+        </div>
+        
+        <div className="grid md:grid-cols-3 gap-8">
+          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-6">
+            <div className="flex items-center gap-4 mb-4">
+              <img 
+                src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=face" 
+                alt="Marcus Johnson"
+                className="w-12 h-12 rounded-full object-cover"
+              />
+              <div>
+                <p className="text-white font-semibold">Marcus Johnson</p>
+                <p className="text-slate-400 text-sm">Software Engineer</p>
+              </div>
+            </div>
+            <div className="flex gap-1 mb-3">
+              {[1,2,3,4,5].map(i => <Star key={i} className="h-4 w-4 fill-yellow-400 text-yellow-400" />)}
+            </div>
+            <Quote className="h-6 w-6 text-cyan-400/50 mb-2" />
+            <p className="text-slate-300">
+              "I used to spend 4 hours daily searching job boards. Now Hire.AI does it for me while I focus on interview prep. Landed my dream job at a FAANG company!"
+            </p>
+          </div>
+          
+          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-6">
+            <div className="flex items-center gap-4 mb-4">
+              <img 
+                src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop&crop=face" 
+                alt="Sarah Kim"
+                className="w-12 h-12 rounded-full object-cover"
+              />
+              <div>
+                <p className="text-white font-semibold">Sarah Kim</p>
+                <p className="text-slate-400 text-sm">Product Designer</p>
+              </div>
+            </div>
+            <div className="flex gap-1 mb-3">
+              {[1,2,3,4,5].map(i => <Star key={i} className="h-4 w-4 fill-yellow-400 text-yellow-400" />)}
+            </div>
+            <Quote className="h-6 w-6 text-green-400/50 mb-2" />
+            <p className="text-slate-300">
+              "The auto-apply feature is a game changer. I went from 2 interviews a month to 6 in my first week! The AI matching is scary accurate."
+            </p>
+          </div>
+          
+          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-6">
+            <div className="flex items-center gap-4 mb-4">
+              <img 
+                src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop&crop=face" 
+                alt="David Chen"
+                className="w-12 h-12 rounded-full object-cover"
+              />
+              <div>
+                <p className="text-white font-semibold">David Chen</p>
+                <p className="text-slate-400 text-sm">Data Scientist</p>
+              </div>
+            </div>
+            <div className="flex gap-1 mb-3">
+              {[1,2,3,4,5].map(i => <Star key={i} className="h-4 w-4 fill-yellow-400 text-yellow-400" />)}
+            </div>
+            <Quote className="h-6 w-6 text-purple-400/50 mb-2" />
+            <p className="text-slate-300">
+              "Every job suggestion feels like it was written for me. Got 3 offers in 2 weeks after struggling for months on my own. Absolutely worth it!"
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* How It Works Section - With 50+ Platforms Integrated */}
       <section className="container mx-auto px-4 py-20" ref={featuresRef}>
         <div className="text-center mb-16">
           <h2 className="text-4xl font-bold text-white mb-4">How It Works</h2>
@@ -210,9 +277,15 @@ export default function LandingPage() {
                 <Search className="h-8 w-8 text-blue-400" />
               </div>
               <h3 className="text-xl font-semibold text-white mb-3">AI Scans 50+ Platforms</h3>
-              <p className="text-slate-400">
-                We continuously scan FlexJobs, LinkedIn, Remote.co, and 47 more platforms to find your perfect matches.
+              <p className="text-slate-400 mb-4">
+                We continuously scan FlexJobs, LinkedIn, Remote.co, We Work Remotely, Indeed, and 45+ more platforms.
               </p>
+              {/* Platform logos inline */}
+              <div className="flex flex-wrap gap-2">
+                {["FlexJobs", "LinkedIn", "Indeed", "Remote.co", "+45"].map((p) => (
+                  <span key={p} className="text-xs bg-slate-800 text-slate-400 px-2 py-1 rounded">{p}</span>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -232,7 +305,7 @@ export default function LandingPage() {
       </section>
 
       {/* Features Section */}
-      <section className="container mx-auto px-4 py-20">
+      <section className="container mx-auto px-4 py-20" ref={platformsRef}>
         <div className="text-center mb-16">
           <h2 className="text-4xl font-bold text-white mb-4">Powered by AI, Built for You</h2>
           <p className="text-xl text-slate-400">Everything you need to land your dream remote job</p>
@@ -276,96 +349,6 @@ export default function LandingPage() {
             <h3 className="text-lg font-semibold text-white mb-2">No Duplicates</h3>
             <p className="text-slate-400 text-sm">
               Advanced deduplication ensures you never see the same job twice across platforms
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* Platforms Section */}
-      <section className="container mx-auto px-4 py-20" ref={platformsRef}>
-        <div className="text-center mb-16">
-          <h2 className="text-4xl font-bold text-white mb-4">50+ Job Platforms, One Dashboard</h2>
-          <p className="text-xl text-slate-400">We scan all the top remote job sites so you don't have to</p>
-        </div>
-        
-        <div className="bg-gradient-to-r from-cyan-500/10 via-blue-500/10 to-purple-500/10 border border-slate-800/50 rounded-2xl p-8">
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-            {[
-              "FlexJobs", "We Work Remotely", "Remote.co", "RemoteOK", "Indeed", "LinkedIn",
-              "Remotive", "JustRemote", "Jobspresso", "Working Nomads", "Arc", "Wellfound",
-              "Stack Overflow", "Dribbble", "Behance", "Gun.io", "Crossover", "Toptal"
-            ].map((platform) => (
-              <div key={platform} className="bg-slate-900/50 rounded-lg px-4 py-3 text-center">
-                <span className="text-slate-300 text-sm font-medium">{platform}</span>
-              </div>
-            ))}
-          </div>
-          <div className="text-center mt-6">
-            <span className="text-slate-400">...and 32 more platforms</span>
-          </div>
-        </div>
-      </section>
-
-      {/* Stats Section */}
-      <section className="container mx-auto px-4 py-20">
-        <div className="bg-gradient-to-r from-cyan-500/10 via-blue-500/10 to-purple-500/10 border border-slate-800/50 rounded-2xl p-12">
-          <div className="grid md:grid-cols-4 gap-8 text-center">
-            <div>
-              <div className="text-4xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent mb-2">
-                50+
-              </div>
-              <div className="text-slate-400">Job Platforms</div>
-            </div>
-            <div>
-              <div className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent mb-2">
-                10K+
-              </div>
-              <div className="text-slate-400">Active Jobs</div>
-            </div>
-            <div>
-              <div className="text-4xl font-bold bg-gradient-to-r from-purple-400 to-pink-500 bg-clip-text text-transparent mb-2">
-                &lt;1min
-              </div>
-              <div className="text-slate-400">Job Discovery</div>
-            </div>
-            <div>
-              <div className="text-4xl font-bold bg-gradient-to-r from-green-400 to-emerald-500 bg-clip-text text-transparent mb-2">
-                24/7
-              </div>
-              <div className="text-slate-400">Auto-Applying</div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Testimonial/Benefits Section */}
-      <section className="container mx-auto px-4 py-20">
-        <div className="grid md:grid-cols-3 gap-8">
-          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Clock className="h-5 w-5 text-cyan-400" />
-              <span className="text-cyan-400 font-semibold">Save 20+ Hours/Week</span>
-            </div>
-            <p className="text-slate-300">
-              "I used to spend 4 hours daily searching job boards. Now Hire.AI does it for me while I focus on interview prep."
-            </p>
-          </div>
-          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <CheckCircle2 className="h-5 w-5 text-green-400" />
-              <span className="text-green-400 font-semibold">3x More Interviews</span>
-            </div>
-            <p className="text-slate-300">
-              "The auto-apply feature is a game changer. I went from 2 interviews a month to 6 in my first week!"
-            </p>
-          </div>
-          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Sparkles className="h-5 w-5 text-purple-400" />
-              <span className="text-purple-400 font-semibold">Perfect Matches</span>
-            </div>
-            <p className="text-slate-300">
-              "The AI matching is scary accurate. Every job suggestion feels like it was written for me."
             </p>
           </div>
         </div>

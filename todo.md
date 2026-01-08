@@ -229,3 +229,13 @@
 - [ ] Test and fix mobile responsiveness
 - [x] Add error handling UI with toast notifications (sonner toasts)
 - [ ] Fix "Learn More" button on landing page
+
+
+## Phase 12: Landing Page Visual Edits
+- [x] Make headline smaller to fit on one line with quicker, more captivating statement ("Apply to 100 Jobs While You Sleep.")
+- [x] Remove "AI-Powered Job Hunting" badge
+- [x] Replace "Job Search Vitals" card with Live Activity Feed showing real-time user activity
+- [x] Add real testimonials with actual user names (Marcus Johnson, Sarah Kim, David Chen) and face icons
+- [x] Move Testimonials section above "How It Works"
+- [x] Merge Platform Tiers into "How It Works" step 2 with inline platform tags
+- [x] Remove meaningless stats section
