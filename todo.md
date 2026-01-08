@@ -250,3 +250,7 @@
 
 ## Phase 14: Live Impact Counter
 - [x] Add live impact counter showing total jobs applied, interviews scheduled, and offers received
+
+
+## Phase 15: Remove Social Mission Section
+- [x] Remove entire Social Mission section from landing page

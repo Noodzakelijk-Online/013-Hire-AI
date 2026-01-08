@@ -240,73 +240,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Social Mission Section */}
-      <section className="container mx-auto px-4 py-20" ref={missionRef}>
-        <div className="bg-gradient-to-r from-emerald-500/10 via-cyan-500/10 to-blue-500/10 border border-emerald-500/30 rounded-2xl p-12">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
-            <div>
-              <div className="flex items-center gap-3 mb-6">
-                <div className="h-12 w-12 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                  <Globe className="h-6 w-6 text-emerald-400" />
-                </div>
-                <span className="text-emerald-400 font-semibold text-lg">Our Mission</span>
-              </div>
-              <h2 className="text-3xl lg:text-4xl font-bold text-white mb-6">
-                Reducing unemployment worldwide
-              </h2>
-              <p className="text-lg text-slate-300 leading-relaxed mb-6">
-                We believe everyone deserves access to meaningful work. Hire.AI isn't just a job tool—it's a movement to democratize employment opportunities globally. By automating the tedious parts of job hunting, we're helping millions of people find work faster, regardless of their background or location.
-              </p>
-              <div className="flex items-center gap-4">
-                <Heart className="h-5 w-5 text-red-400" />
-                <span className="text-slate-400">Every job placed is a life changed.</span>
-              </div>
-            </div>
 
-            {/* Live Impact Counter */}
-            <div className="space-y-6">
-              <div className="text-center lg:text-left mb-4">
-                <span className="text-slate-400 text-sm uppercase tracking-wider">Our Global Impact</span>
-              </div>
-              <div className="grid grid-cols-1 gap-4">
-                <div className="bg-slate-900/50 rounded-xl p-6 border border-emerald-500/20">
-                  <div className="flex items-center gap-4">
-                    <div className="h-12 w-12 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                      <Send className="h-6 w-6 text-emerald-400" />
-                    </div>
-                    <div>
-                      <div className="text-3xl font-bold text-emerald-400">{impactStats.totalApplications.toLocaleString()}+</div>
-                      <div className="text-slate-400 text-sm">Applications Sent</div>
-                    </div>
-                  </div>
-                </div>
-                <div className="bg-slate-900/50 rounded-xl p-6 border border-cyan-500/20">
-                  <div className="flex items-center gap-4">
-                    <div className="h-12 w-12 rounded-full bg-cyan-500/20 flex items-center justify-center">
-                      <Calendar className="h-6 w-6 text-cyan-400" />
-                    </div>
-                    <div>
-                      <div className="text-3xl font-bold text-cyan-400">{impactStats.interviewsScheduled.toLocaleString()}+</div>
-                      <div className="text-slate-400 text-sm">Interviews Scheduled</div>
-                    </div>
-                  </div>
-                </div>
-                <div className="bg-slate-900/50 rounded-xl p-6 border border-purple-500/20">
-                  <div className="flex items-center gap-4">
-                    <div className="h-12 w-12 rounded-full bg-purple-500/20 flex items-center justify-center">
-                      <Trophy className="h-6 w-6 text-purple-400" />
-                    </div>
-                    <div>
-                      <div className="text-3xl font-bold text-purple-400">{impactStats.offersReceived.toLocaleString()}+</div>
-                      <div className="text-slate-400 text-sm">Offers Received</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
 
       {/* Testimonials Section */}
       <section className="container mx-auto px-4 py-20">
