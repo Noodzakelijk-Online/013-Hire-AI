@@ -29,10 +29,7 @@ import { Button } from "./ui/button";
 
 const menuItems = [
   { icon: Activity, label: "Dashboard", path: "/dashboard" },
-  { icon: Briefcase, label: "Browse Jobs", path: "/jobs" },
-  { icon: FileText, label: "Applications", path: "/applications" },
   { icon: Bookmark, label: "Saved Jobs", path: "/saved" },
-  { icon: Bell, label: "Job Alerts", path: "/alerts" },
   { icon: User, label: "Profile", path: "/profile" },
   { icon: Settings, label: "Settings", path: "/settings" },
 ];

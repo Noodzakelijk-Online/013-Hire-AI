@@ -318,3 +318,10 @@
 - [x] Investigate why Applications button still appears in Dashboard header despite AppHeader changes
 - [x] Remove Applications button from Dashboard page header completely
 - [x] Verify only Dashboard button remains in main navigation
+
+
+## Phase 26: Clean Up Broken Routes and Browse Jobs Button (Jan 8, 2026)
+- [x] Remove "Browse Jobs" button from Recent Activity empty state in Dashboard
+- [x] Search for all references to /jobs and /applications routes
+- [x] Fix all broken route references to point to /dashboard or /profile
+- [x] Update CTAs to direct users to complete profile instead of browsing jobs

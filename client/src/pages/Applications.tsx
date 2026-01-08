@@ -291,9 +291,9 @@ export default function Applications() {
                               </p>
                               <Button 
                                 className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700"
-                                onClick={() => window.location.href = '/jobs'}
+                                onClick={() => window.location.href = '/profile'}
                               >
-                                Browse Jobs
+                                Complete Profile
                               </Button>
                             </>
                           ) : tab === 'interviewing' ? (

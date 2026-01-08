@@ -104,10 +104,10 @@ export default function SavedJobs() {
           <Button
             variant="outline"
             className="border-cyan-500/50 text-cyan-400"
-            onClick={() => setLocation("/jobs")}
+            onClick={() => setLocation("/dashboard")}
           >
             <Briefcase className="w-4 h-4 mr-2" />
-            Browse More Jobs
+            View Dashboard
           </Button>
         </div>
 
@@ -232,10 +232,10 @@ export default function SavedJobs() {
               </p>
               <Button
                 className="bg-gradient-to-r from-cyan-500 to-blue-600"
-                onClick={() => setLocation("/jobs")}
+                onClick={() => setLocation("/profile")}
               >
                 <Briefcase className="w-4 h-4 mr-2" />
-                Browse Jobs
+                Complete Profile
               </Button>
             </CardContent>
           </Card>

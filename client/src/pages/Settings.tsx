@@ -84,20 +84,6 @@ export default function Settings() {
             <Button
               variant="ghost"
               className="text-slate-300 hover:text-white"
-              onClick={() => setLocation("/jobs")}
-            >
-              Jobs
-            </Button>
-            <Button
-              variant="ghost"
-              className="text-slate-300 hover:text-white"
-              onClick={() => setLocation("/applications")}
-            >
-              Applications
-            </Button>
-            <Button
-              variant="ghost"
-              className="text-slate-300 hover:text-white"
               onClick={() => setLocation("/profile")}
             >
               Profile

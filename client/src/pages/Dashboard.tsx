@@ -459,9 +459,9 @@ export default function Dashboard() {
                   <Button
                     variant="outline"
                     className="mt-4 border-slate-700 text-slate-300"
-                    onClick={() => setLocation("/jobs")}
+                    onClick={() => setLocation("/profile")}
                   >
-                    Browse Jobs
+                    Complete Profile
                   </Button>
                 </div>
               )}
