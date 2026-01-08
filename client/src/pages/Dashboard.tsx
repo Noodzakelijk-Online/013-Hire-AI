@@ -263,44 +263,6 @@ export default function Dashboard() {
           </Button>
         </div>
 
-        {/* Quick Actions - Primary Action Bar */}
-        <div className="mb-8 bg-slate-900/50 border border-slate-800/50 rounded-xl p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-white">Quick Actions</h2>
-            <span className="text-xs text-slate-500">Navigate & take action</span>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Button
-              className="h-auto py-4 flex flex-col items-center gap-2 bg-gradient-to-br from-cyan-500/20 to-blue-600/20 border border-cyan-500/30 hover:from-cyan-500/30 hover:to-blue-600/30 text-cyan-400 hover:text-cyan-300"
-              onClick={() => setLocation("/ai-preferences")}
-            >
-              <Activity className="h-6 w-6" />
-              <span className="text-sm font-medium">AI Preferences</span>
-            </Button>
-            <Button
-              className="h-auto py-4 flex flex-col items-center gap-2 bg-slate-800/50 border border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white"
-              onClick={() => setLocation("/applications")}
-            >
-              <Briefcase className="h-6 w-6" />
-              <span className="text-sm font-medium">My Applications</span>
-            </Button>
-            <Button
-              className="h-auto py-4 flex flex-col items-center gap-2 bg-slate-800/50 border border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white"
-              onClick={() => setLocation("/profile")}
-            >
-              <User className="h-6 w-6" />
-              <span className="text-sm font-medium">Update Profile</span>
-            </Button>
-            <Button
-              className="h-auto py-4 flex flex-col items-center gap-2 bg-slate-800/50 border border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white"
-              onClick={() => setLocation("/settings")}
-            >
-              <Settings className="h-6 w-6" />
-              <span className="text-sm font-medium">Settings</span>
-            </Button>
-          </div>
-        </div>
-
         {/* New User CTA */}
         {isNewUser && (
           <Card className="bg-gradient-to-r from-cyan-500/10 via-blue-500/10 to-purple-500/10 border-cyan-500/30 mb-8">

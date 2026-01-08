@@ -7,7 +7,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Activity, User, Settings, LogOut } from "lucide-react";
+import { Activity, User, Settings, LogOut, Zap } from "lucide-react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 
@@ -56,20 +56,6 @@ export default function AppHeader({ currentPage }: AppHeaderProps) {
           >
             Applications
           </Button>
-          <Button
-            variant="ghost"
-            className={getButtonClass("ai-preferences")}
-            onClick={() => setLocation("/ai-preferences")}
-          >
-            AI Preferences
-          </Button>
-          <Button
-            variant="ghost"
-            className={getButtonClass("profile")}
-            onClick={() => setLocation("/profile")}
-          >
-            Profile
-          </Button>
           
           {/* User Menu */}
           <DropdownMenu>
@@ -92,6 +78,13 @@ export default function AppHeader({ currentPage }: AppHeaderProps) {
               >
                 <User className="mr-2 h-4 w-4" />
                 Profile
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                className="text-slate-300 focus:bg-slate-800 focus:text-white cursor-pointer"
+                onClick={() => setLocation("/ai-preferences")}
+              >
+                <Zap className="mr-2 h-4 w-4" />
+                AI Preferences
               </DropdownMenuItem>
               <DropdownMenuItem 
                 className="text-slate-300 focus:bg-slate-800 focus:text-white cursor-pointer"

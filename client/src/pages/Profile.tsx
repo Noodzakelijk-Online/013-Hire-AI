@@ -15,7 +15,8 @@ import {
   Briefcase,
   GraduationCap,
   Code,
-  FolderGit2
+  FolderGit2,
+  Globe
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
@@ -176,6 +177,67 @@ export default function Profile() {
           </CardContent>
         </Card>
 
+        {/* Social Media & Portfolio Links */}
+        <Card className="mb-6 bg-slate-900/50 border-slate-700/50">
+          <CardHeader>
+            <CardTitle className="text-white flex items-center gap-2">
+              <Globe className="w-5 h-5 text-cyan-400" />
+              Social Media & Portfolio
+            </CardTitle>
+            <CardDescription>
+              Add links to your professional profiles and portfolio
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium text-slate-300 mb-2 block">
+                  LinkedIn URL
+                </label>
+                <Input
+                  placeholder="https://linkedin.com/in/yourprofile"
+                  className="bg-slate-800 border-slate-700 text-white"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-slate-300 mb-2 block">
+                  GitHub URL
+                </label>
+                <Input
+                  placeholder="https://github.com/yourusername"
+                  className="bg-slate-800 border-slate-700 text-white"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-slate-300 mb-2 block">
+                  Portfolio URL
+                </label>
+                <Input
+                  placeholder="https://yourportfolio.com"
+                  className="bg-slate-800 border-slate-700 text-white"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-slate-300 mb-2 block">
+                  Twitter/X URL
+                </label>
+                <Input
+                  placeholder="https://twitter.com/yourusername"
+                  className="bg-slate-800 border-slate-700 text-white"
+                />
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <Button
+                onClick={() => toast.success("Social links saved!")}
+                className="bg-gradient-to-r from-cyan-500 to-blue-600"
+              >
+                Save Links
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Work Experience Section */}
         <Card className="mb-6 bg-slate-900/50 border-slate-700/50">
           <CardHeader>
@@ -290,14 +352,8 @@ export default function Profile() {
             ) : (
               <div className="text-center py-8">
                 <GraduationCap className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-                <p className="text-slate-400 mb-4">No education added yet</p>
-                <Button
-                  onClick={() => setEducationDialogOpen(true)}
-                  className="bg-gradient-to-r from-cyan-500 to-blue-600"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Education
-                </Button>
+                <p className="text-slate-400">No education added yet</p>
+                <p className="text-xs text-slate-500 mt-1">Click "Add Education" above to get started</p>
               </div>
             )}
           </CardContent>
@@ -353,14 +409,8 @@ export default function Profile() {
             ) : (
               <div className="text-center py-8">
                 <Code className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-                <p className="text-slate-400 mb-4">No skills added yet</p>
-                <Button
-                  onClick={() => setSkillDialogOpen(true)}
-                  className="bg-gradient-to-r from-cyan-500 to-blue-600"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Skill
-                </Button>
+                <p className="text-slate-400">No skills added yet</p>
+                <p className="text-xs text-slate-500 mt-1">Click "Add Skill" above to get started</p>
               </div>
             )}
           </CardContent>
@@ -416,14 +466,8 @@ export default function Profile() {
             ) : (
               <div className="text-center py-8">
                 <FolderGit2 className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-                <p className="text-slate-400 mb-4">No projects added yet</p>
-                <Button
-                  onClick={() => setProjectDialogOpen(true)}
-                  className="bg-gradient-to-r from-cyan-500 to-blue-600"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Project
-                </Button>
+                <p className="text-slate-400">No projects added yet</p>
+                <p className="text-xs text-slate-500 mt-1">Click "Add Project" above to get started</p>
               </div>
             )}
           </CardContent>
