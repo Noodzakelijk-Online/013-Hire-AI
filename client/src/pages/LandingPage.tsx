@@ -31,13 +31,64 @@ export default function LandingPage() {
     offersReceived: 2547,
   });
   
-  // Real-time activity state
-  const [activities, setActivities] = useState<ActivityItem[]>([
-    { id: 1, initials: "JM", action: "Applied to", highlight: "Senior Developer at Stripe", highlightColor: "text-cyan-400", time: "2 seconds ago", gradientFrom: "from-cyan-400", gradientTo: "to-blue-500" },
-    { id: 2, initials: "SK", action: "Got interview at", highlight: "Shopify", highlightColor: "text-green-400", time: "5 minutes ago", gradientFrom: "from-purple-400", gradientTo: "to-pink-500" },
-    { id: 3, initials: "AR", action: "Matched with", highlight: "47 new jobs", highlightColor: "text-cyan-400", time: "12 minutes ago", gradientFrom: "from-green-400", gradientTo: "to-emerald-500" },
-    { id: 4, initials: "LT", action: "Received offer from", highlight: "Notion 🎉", highlightColor: "text-green-400", time: "1 hour ago", gradientFrom: "from-orange-400", gradientTo: "to-red-500" },
-  ]);
+  // Sample activity pool for animation
+  const activityPool: ActivityItem[] = [
+    { id: 1, initials: "JM", action: "Applied to", highlight: "Senior Developer at Stripe", highlightColor: "text-cyan-400", time: "just now", gradientFrom: "from-cyan-400", gradientTo: "to-blue-500" },
+    { id: 2, initials: "SK", action: "Got interview at", highlight: "Shopify", highlightColor: "text-green-400", time: "just now", gradientFrom: "from-purple-400", gradientTo: "to-pink-500" },
+    { id: 3, initials: "AR", action: "Matched with", highlight: "47 new jobs", highlightColor: "text-cyan-400", time: "just now", gradientFrom: "from-green-400", gradientTo: "to-emerald-500" },
+    { id: 4, initials: "LT", action: "Received offer from", highlight: "Notion 🎉", highlightColor: "text-green-400", time: "just now", gradientFrom: "from-orange-400", gradientTo: "to-red-500" },
+    { id: 5, initials: "MK", action: "Applied to", highlight: "Product Manager at Google", highlightColor: "text-cyan-400", time: "just now", gradientFrom: "from-blue-400", gradientTo: "to-indigo-500" },
+    { id: 6, initials: "RP", action: "Got interview at", highlight: "Meta", highlightColor: "text-green-400", time: "just now", gradientFrom: "from-pink-400", gradientTo: "to-rose-500" },
+    { id: 7, initials: "TC", action: "Applied to", highlight: "Data Scientist at Netflix", highlightColor: "text-cyan-400", time: "just now", gradientFrom: "from-red-400", gradientTo: "to-orange-500" },
+    { id: 8, initials: "AW", action: "Matched with", highlight: "23 new jobs", highlightColor: "text-cyan-400", time: "just now", gradientFrom: "from-teal-400", gradientTo: "to-cyan-500" },
+    { id: 9, initials: "BL", action: "Received offer from", highlight: "Airbnb 🎉", highlightColor: "text-green-400", time: "just now", gradientFrom: "from-amber-400", gradientTo: "to-yellow-500" },
+    { id: 10, initials: "CD", action: "Applied to", highlight: "UX Designer at Figma", highlightColor: "text-cyan-400", time: "just now", gradientFrom: "from-violet-400", gradientTo: "to-purple-500" },
+    { id: 11, initials: "EF", action: "Got interview at", highlight: "Spotify", highlightColor: "text-green-400", time: "just now", gradientFrom: "from-lime-400", gradientTo: "to-green-500" },
+    { id: 12, initials: "GH", action: "Applied to", highlight: "Engineer at Tesla", highlightColor: "text-cyan-400", time: "just now", gradientFrom: "from-sky-400", gradientTo: "to-blue-500" },
+  ];
+  
+  // Real-time activity state with animation
+  const [activities, setActivities] = useState<ActivityItem[]>(activityPool.slice(0, 4));
+  const [activityIndex, setActivityIndex] = useState(4);
+  const [isAnimating, setIsAnimating] = useState(false);
+  
+  // Animate new activities appearing
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setIsAnimating(true);
+      
+      setTimeout(() => {
+        setActivities(prev => {
+          const newActivity = {
+            ...activityPool[activityIndex % activityPool.length],
+            id: Date.now(),
+            time: "just now"
+          };
+          // Add new item at top, remove last item
+          return [newActivity, ...prev.slice(0, 3)];
+        });
+        setActivityIndex(prev => prev + 1);
+        setIsAnimating(false);
+      }, 300);
+    }, 3000); // New activity every 3 seconds
+    
+    return () => clearInterval(interval);
+  }, [activityIndex]);
+  
+  // Update time stamps periodically
+  useEffect(() => {
+    const timeInterval = setInterval(() => {
+      setActivities(prev => prev.map((activity, index) => ({
+        ...activity,
+        time: index === 0 ? "just now" : 
+              index === 1 ? "3 seconds ago" : 
+              index === 2 ? "6 seconds ago" : 
+              "9 seconds ago"
+      })));
+    }, 3000);
+    
+    return () => clearInterval(timeInterval);
+  }, []);
   
   // Fetch real activity data from API
   const { data: recentApplications } = trpc.applications.list.useQuery(undefined, {
@@ -218,15 +269,23 @@ export default function LandingPage() {
                   </div>
                 </div>
                 
-                {/* Activity Items - Real-time from API */}
-                <div className="space-y-3">
-                  {activities.map((activity) => (
-                    <div key={activity.id} className="flex items-center gap-3 bg-slate-800/50 rounded-lg p-3">
-                      <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${activity.gradientFrom} ${activity.gradientTo} flex items-center justify-center text-white text-xs font-bold`}>
+                {/* Activity Items - Animated scrolling feed */}
+                <div className="space-y-3 overflow-hidden">
+                  {activities.map((activity, index) => (
+                    <div 
+                      key={activity.id} 
+                      className={`flex items-center gap-3 bg-slate-800/50 rounded-lg p-3 transition-all duration-300 ${
+                        isAnimating && index === 0 ? 'animate-slide-in opacity-0' : 'opacity-100'
+                      } ${isAnimating && index > 0 ? 'transform translate-y-0' : ''}`}
+                      style={{
+                        animation: isAnimating && index === 0 ? 'slideIn 0.3s ease-out forwards' : 'none'
+                      }}
+                    >
+                      <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${activity.gradientFrom} ${activity.gradientTo} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
                         {activity.initials}
                       </div>
-                      <div className="flex-1">
-                        <p className="text-slate-200 text-sm">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-slate-200 text-sm truncate">
                           {activity.action} <span className={activity.highlightColor}>{activity.highlight}</span>
                         </p>
                         <p className="text-slate-500 text-xs">{activity.time}</p>
@@ -234,6 +293,19 @@ export default function LandingPage() {
                     </div>
                   ))}
                 </div>
+                
+                <style>{`
+                  @keyframes slideIn {
+                    from {
+                      opacity: 0;
+                      transform: translateY(-20px);
+                    }
+                    to {
+                      opacity: 1;
+                      transform: translateY(0);
+                    }
+                  }
+                `}</style>
               </div>
             </div>
           </div>

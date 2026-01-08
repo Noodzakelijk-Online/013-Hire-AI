@@ -258,3 +258,9 @@
 
 ## Phase 16: Update Headline
 - [x] Change headline from "Apply to 100 Jobs While You Sleep." to "Unemployment no more"
+
+
+## Phase 17: Animated Live Activity Feed
+- [x] Make Live Activity feed animated with scrolling items that move up
+- [x] Add new activity items appearing at the top and pushing others down
+- [x] Show real-time system activity for users (12 different activities cycling)
