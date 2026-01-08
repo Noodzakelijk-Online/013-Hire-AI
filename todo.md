@@ -305,3 +305,10 @@
 ## Phase 23: Fix Navigation & Remove Useless Metrics (Jan 8, 2026)
 - [x] Fix AppHeader - AI Preferences and Profile still showing in main nav (should only be in dropdown)
 - [x] Remove Job Search Health metric from Dashboard (useless for automated workflow)
+
+
+## Phase 24: Consolidate Applications into Dashboard (Jan 8, 2026)
+- [x] Integrate Applications list into Dashboard page (Dashboard should show metrics + application data in one view)
+- [x] Remove Applications from main navigation (only Dashboard should remain)
+- [x] Update AppHeader to remove Applications link
+- [x] Clean up routes - remove separate Applications page

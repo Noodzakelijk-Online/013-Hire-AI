@@ -2,12 +2,17 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Activity, Heart, TrendingUp, Briefcase, Send, Eye, Calendar, Target, Settings, LogOut, Search, FileText, Rocket, User, Bell, RefreshCw } from "lucide-react";
+import { Activity, Heart, TrendingUp, Briefcase, Send, Eye, Calendar, Target, Settings, LogOut, Search, FileText, Rocket, User, Bell, RefreshCw, Clock, CheckCircle, XCircle, MessageSquare, Building2, MapPin, DollarSign, ExternalLink, Loader2 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
 import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Progress } from "@/components/ui/progress";
+import { Separator } from "@/components/ui/separator";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +25,8 @@ export default function Dashboard() {
   const { user, loading, isAuthenticated, logout } = useAuth();
   const [, setLocation] = useLocation();
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [selectedApplication, setSelectedApplication] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState("all");
 
   // Fetch real data from API
   const { data: applications, isLoading: appsLoading } = trpc.applications.list.useQuery();
@@ -469,6 +476,175 @@ export default function Dashboard() {
           </Card>
         </div>
 
+        {/* Applications List */}
+        <Card className="bg-slate-900/50 border-slate-800/50">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-white flex items-center gap-2">
+                  <Briefcase className="h-5 w-5 text-cyan-400" />
+                  Your Applications
+                </CardTitle>
+                <CardDescription className="text-slate-400">
+                  Track and manage all your job applications
+                </CardDescription>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Refresh
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
+              <TabsList className="bg-slate-800/50 border border-slate-700 mb-4">
+                <TabsTrigger value="all" className="data-[state=active]:bg-slate-700">
+                  All ({applications?.length || 0})
+                </TabsTrigger>
+                <TabsTrigger value="active" className="data-[state=active]:bg-blue-900/50">
+                  Active ({applications?.filter(a => ["pending", "applied", "viewed", "interview"].includes(a.status)).length || 0})
+                </TabsTrigger>
+                <TabsTrigger value="interviewing" className="data-[state=active]:bg-amber-900/50">
+                  Interviewing ({applications?.filter(a => a.status === "interview").length || 0})
+                </TabsTrigger>
+              </TabsList>
+
+              <div className="space-y-3">
+                {appsLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="w-8 h-8 animate-spin text-cyan-500" />
+                  </div>
+                ) : applications && applications.length > 0 ? (
+                  <div className="space-y-3">
+                    {applications
+                      .filter(app => {
+                        if (activeTab === "all") return true;
+                        if (activeTab === "active") return ["pending", "applied", "viewed", "interview"].includes(app.status);
+                        if (activeTab === "interviewing") return app.status === "interview";
+                        return true;
+                      })
+                      .slice(0, 10)
+                      .map((app: any) => (
+                        <Card
+                          key={app.id}
+                          className="group hover:border-cyan-500/50 transition-all duration-300 cursor-pointer bg-slate-800/30 border-slate-700/50"
+                          onClick={() => setSelectedApplication(app)}
+                        >
+                          <CardContent className="p-4">
+                            <div className="flex justify-between items-start gap-4">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <h3 className="font-semibold text-white truncate">
+                                    {app.job?.title || "Job Title"}
+                                  </h3>
+                                  <Badge variant="outline" className="text-xs">
+                                    <span className="capitalize">{app.status}</span>
+                                  </Badge>
+                                </div>
+                                <div className="flex items-center gap-3 text-sm text-slate-400 mb-2">
+                                  <span className="flex items-center gap-1">
+                                    <Building2 className="w-3 h-3" />
+                                    {app.job?.company || "Company"}
+                                  </span>
+                                  <span className="flex items-center gap-1">
+                                    <MapPin className="w-3 h-3" />
+                                    {app.job?.location || "Remote"}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 text-xs text-slate-500">
+                                  <Calendar className="w-3 h-3" />
+                                  Applied {new Date(app.appliedAt).toLocaleDateString()}
+                                </div>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-16 px-4">
+                    <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-cyan-500/20 to-blue-500/20 flex items-center justify-center">
+                      <FileText className="w-10 h-10 text-cyan-400" />
+                    </div>
+                    <h3 className="text-xl font-semibold text-white mb-2">No applications yet</h3>
+                    <p className="text-slate-400 mb-6 max-w-md mx-auto">
+                      Start your job search journey! Complete your profile and let our AI find the perfect matches for you.
+                    </p>
+                    <Button 
+                      className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700"
+                      onClick={() => setLocation("/profile")}
+                    >
+                      Complete Profile
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </Tabs>
+          </CardContent>
+        </Card>
+
+        {/* Application Detail Dialog */}
+        <Dialog open={!!selectedApplication} onOpenChange={() => setSelectedApplication(null)}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden bg-slate-900 border-slate-700">
+            {selectedApplication && (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="text-xl text-white">
+                    {selectedApplication.job?.title || "Application Details"}
+                  </DialogTitle>
+                  <DialogDescription className="flex items-center gap-4 text-slate-400">
+                    <span className="flex items-center gap-1">
+                      <Building2 className="w-4 h-4" />
+                      {selectedApplication.job?.company || "Company"}
+                    </span>
+                    <Badge variant="outline" className="capitalize">
+                      {selectedApplication.status}
+                    </Badge>
+                  </DialogDescription>
+                </DialogHeader>
+
+                <ScrollArea className="max-h-[60vh] pr-4">
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant="secondary" className="bg-slate-800">
+                        <Calendar className="w-3 h-3 mr-1" />
+                        Applied {new Date(selectedApplication.appliedAt).toLocaleDateString()}
+                      </Badge>
+                      {selectedApplication.job?.salaryMin && (
+                        <Badge variant="secondary" className="bg-slate-800">
+                          <DollarSign className="w-3 h-3 mr-1" />
+                          ${(selectedApplication.job.salaryMin / 1000).toFixed(0)}k - ${(selectedApplication.job.salaryMax / 1000).toFixed(0)}k
+                        </Badge>
+                      )}
+                    </div>
+
+                    {selectedApplication.coverLetter && (
+                      <>
+                        <Separator className="bg-slate-700" />
+                        <div>
+                          <h4 className="text-sm font-medium text-slate-300 mb-2">Cover Letter</h4>
+                          <p className="text-sm text-slate-400 whitespace-pre-wrap bg-slate-800/50 p-3 rounded-md">
+                            {selectedApplication.coverLetter}
+                          </p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </ScrollArea>
+
+                <div className="flex justify-end items-center pt-4 border-t border-slate-700">
+                  <Button
+                    className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700"
+                    size="sm"
+                    onClick={() => setSelectedApplication(null)}
+                  >
+                    Close
+                  </Button>
+                </div>
+              </>
+            )}
+          </DialogContent>
+        </Dialog>
 
       </main>
     </div>

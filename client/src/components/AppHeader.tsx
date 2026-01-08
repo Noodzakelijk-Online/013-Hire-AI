@@ -12,7 +12,7 @@ import { useLocation } from "wouter";
 import { toast } from "sonner";
 
 interface AppHeaderProps {
-  currentPage?: "dashboard" | "applications" | "profile" | "settings" | "ai-preferences";
+  currentPage?: "dashboard" | "profile" | "settings" | "ai-preferences";
 }
 
 export default function AppHeader({ currentPage }: AppHeaderProps) {
@@ -48,13 +48,6 @@ export default function AppHeader({ currentPage }: AppHeaderProps) {
             onClick={() => setLocation("/dashboard")}
           >
             Dashboard
-          </Button>
-          <Button
-            variant="ghost"
-            className={getButtonClass("applications")}
-            onClick={() => setLocation("/applications")}
-          >
-            Applications
           </Button>
           
           {/* User Menu */}

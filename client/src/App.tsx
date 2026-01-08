@@ -6,7 +6,6 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import LandingPage from "./pages/LandingPage";
 import Dashboard from "./pages/Dashboard";
-import Applications from "./pages/Applications";
 import Profile from "./pages/Profile";
 import Settings from "./pages/Settings";
 import AIPreferences from "./pages/AIPreferences";
@@ -17,7 +16,6 @@ function Router() {
     <Switch>
       <Route path={"/"} component={LandingPage} />
       <Route path={"/dashboard"} component={Dashboard} />
-      <Route path={"/applications"} component={Applications} />
       <Route path={"/profile"} component={Profile} />
       <Route path={"/settings"} component={Settings} />
       <Route path={"/ai-preferences"} component={AIPreferences} />
