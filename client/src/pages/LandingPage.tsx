@@ -50,26 +50,20 @@ export default function LandingPage() {
   // Real-time activity state with animation
   const [activities, setActivities] = useState<ActivityItem[]>(activityPool.slice(0, 4));
   const [activityIndex, setActivityIndex] = useState(4);
-  const [isAnimating, setIsAnimating] = useState(false);
   
-  // Animate new activities appearing
+  // Animate new activities appearing - smooth update without shaking
   useEffect(() => {
     const interval = setInterval(() => {
-      setIsAnimating(true);
-      
-      setTimeout(() => {
-        setActivities(prev => {
-          const newActivity = {
-            ...activityPool[activityIndex % activityPool.length],
-            id: Date.now(),
-            time: "just now"
-          };
-          // Add new item at top, remove last item
-          return [newActivity, ...prev.slice(0, 3)];
-        });
-        setActivityIndex(prev => prev + 1);
-        setIsAnimating(false);
-      }, 300);
+      setActivities(prev => {
+        const newActivity = {
+          ...activityPool[activityIndex % activityPool.length],
+          id: Date.now(),
+          time: "just now"
+        };
+        // Add new item at top, remove last item
+        return [newActivity, ...prev.slice(0, 3)];
+      });
+      setActivityIndex(prev => prev + 1);
     }, 3000); // New activity every 3 seconds
     
     return () => clearInterval(interval);
@@ -176,13 +170,7 @@ export default function LandingPage() {
             >
               How It Works
             </Button>
-            <Button 
-              variant="ghost" 
-              className="text-slate-300 hover:text-white"
-              onClick={scrollToMission}
-            >
-              Our Mission
-            </Button>
+
             {isAuthenticated ? (
               <Button
                 variant="outline"
@@ -269,43 +257,31 @@ export default function LandingPage() {
                   </div>
                 </div>
                 
-                {/* Activity Items - Animated scrolling feed */}
-                <div className="space-y-3 overflow-hidden">
-                  {activities.map((activity, index) => (
-                    <div 
-                      key={activity.id} 
-                      className={`flex items-center gap-3 bg-slate-800/50 rounded-lg p-3 transition-all duration-300 ${
-                        isAnimating && index === 0 ? 'animate-slide-in opacity-0' : 'opacity-100'
-                      } ${isAnimating && index > 0 ? 'transform translate-y-0' : ''}`}
-                      style={{
-                        animation: isAnimating && index === 0 ? 'slideIn 0.3s ease-out forwards' : 'none'
-                      }}
-                    >
-                      <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${activity.gradientFrom} ${activity.gradientTo} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
-                        {activity.initials}
+                {/* Activity Items - Smooth animated feed with fixed height */}
+                <div className="relative h-[280px] overflow-hidden">
+                  <div className="space-y-3">
+                    {activities.map((activity, index) => (
+                      <div 
+                        key={activity.id} 
+                        className="flex items-center gap-3 bg-slate-800/50 rounded-lg p-3 transition-all duration-500 ease-out"
+                        style={{
+                          opacity: 1,
+                          transform: 'translateY(0)',
+                        }}
+                      >
+                        <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${activity.gradientFrom} ${activity.gradientTo} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
+                          {activity.initials}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-slate-200 text-sm truncate">
+                            {activity.action} <span className={activity.highlightColor}>{activity.highlight}</span>
+                          </p>
+                          <p className="text-slate-500 text-xs">{activity.time}</p>
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-slate-200 text-sm truncate">
-                          {activity.action} <span className={activity.highlightColor}>{activity.highlight}</span>
-                        </p>
-                        <p className="text-slate-500 text-xs">{activity.time}</p>
-                      </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-                
-                <style>{`
-                  @keyframes slideIn {
-                    from {
-                      opacity: 0;
-                      transform: translateY(-20px);
-                    }
-                    to {
-                      opacity: 1;
-                      transform: translateY(0);
-                    }
-                  }
-                `}</style>
               </div>
             </div>
           </div>
