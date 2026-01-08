@@ -245,7 +245,7 @@ export default function LandingPage() {
                 <span className="text-emerald-400 font-semibold text-lg">Our Mission</span>
               </div>
               <h2 className="text-3xl lg:text-4xl font-bold text-white mb-6">
-                Reducing Worldwide Unemployment
+                Reducing unemployment worldwide
               </h2>
               <p className="text-lg text-slate-300 leading-relaxed mb-6">
                 We believe everyone deserves access to meaningful work. Hire.AI isn't just a job tool—it's a movement to democratize employment opportunities globally. By automating the tedious parts of job hunting, we're helping millions of people find work faster, regardless of their background or location.
@@ -255,24 +255,7 @@ export default function LandingPage() {
                 <span className="text-slate-400">Every job placed is a life changed.</span>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-6">
-              <div className="bg-slate-900/50 rounded-xl p-6 text-center">
-                <div className="text-3xl font-bold text-emerald-400 mb-2">50+</div>
-                <div className="text-slate-400 text-sm">Countries Reached</div>
-              </div>
-              <div className="bg-slate-900/50 rounded-xl p-6 text-center">
-                <div className="text-3xl font-bold text-cyan-400 mb-2">2,500+</div>
-                <div className="text-slate-400 text-sm">People Hired</div>
-              </div>
-              <div className="bg-slate-900/50 rounded-xl p-6 text-center">
-                <div className="text-3xl font-bold text-blue-400 mb-2">100K+</div>
-                <div className="text-slate-400 text-sm">Applications Sent</div>
-              </div>
-              <div className="bg-slate-900/50 rounded-xl p-6 text-center">
-                <div className="text-3xl font-bold text-purple-400 mb-2">24/7</div>
-                <div className="text-slate-400 text-sm">Always Working</div>
-              </div>
-            </div>
+
           </div>
         </div>
       </section>
