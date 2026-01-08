@@ -263,6 +263,49 @@ export default function Dashboard() {
           </Button>
         </div>
 
+        {/* Quick Actions - Navigation Menu */}
+        <div className="mb-8 flex flex-wrap gap-3">
+          <Button
+            className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white"
+            onClick={() => setLocation("/jobs")}
+          >
+            <Search className="mr-2 h-4 w-4" />
+            Browse Jobs
+          </Button>
+          <Button
+            variant="outline"
+            className="border-slate-700 text-slate-300 hover:bg-slate-800"
+            onClick={() => setLocation("/applications")}
+          >
+            <Briefcase className="mr-2 h-4 w-4" />
+            My Applications
+          </Button>
+          <Button
+            variant="outline"
+            className="border-slate-700 text-slate-300 hover:bg-slate-800"
+            onClick={() => setLocation("/profile")}
+          >
+            <User className="mr-2 h-4 w-4" />
+            Update Profile
+          </Button>
+          <Button
+            variant="outline"
+            className="border-slate-700 text-slate-300 hover:bg-slate-800"
+            onClick={() => setLocation("/settings")}
+          >
+            <Settings className="mr-2 h-4 w-4" />
+            Settings
+          </Button>
+          <Button
+            variant="outline"
+            className="border-slate-700 text-slate-300 hover:bg-slate-800"
+            onClick={() => setLocation("/alerts")}
+          >
+            <Bell className="mr-2 h-4 w-4" />
+            Job Alerts
+          </Button>
+        </div>
+
         {/* New User CTA */}
         {isNewUser && (
           <Card className="bg-gradient-to-r from-cyan-500/10 via-blue-500/10 to-purple-500/10 border-cyan-500/30 mb-8">
@@ -444,21 +487,7 @@ export default function Dashboard() {
                 </p>
               </div>
 
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-300">Offer Rate</span>
-                  <span className="text-yellow-400 font-semibold">{offerRate}%</span>
-                </div>
-                <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-gradient-to-r from-yellow-500 to-orange-500 rounded-full transition-all duration-500" 
-                    style={{ width: `${offerRate}%` }}
-                  />
-                </div>
-                <p className="text-xs text-slate-500">
-                  {offerRate > 20 ? "Good job offer conversion" : "Keep interviewing to get offers"}
-                </p>
-              </div>
+
             </CardContent>
           </Card>
 
@@ -516,58 +545,7 @@ export default function Dashboard() {
           </Card>
         </div>
 
-        {/* Quick Actions */}
-        <Card className="bg-slate-900/50 border-slate-800/50">
-          <CardHeader>
-            <CardTitle className="text-white">Quick Actions</CardTitle>
-            <CardDescription className="text-slate-400">
-              Manage your job search efficiently
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid md:grid-cols-5 gap-4">
-              <Button
-                className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white"
-                onClick={() => setLocation("/jobs")}
-              >
-                <Search className="mr-2 h-4 w-4" />
-                Browse Jobs
-              </Button>
-              <Button
-                variant="outline"
-                className="border-slate-700 text-slate-300 hover:bg-slate-800"
-                onClick={() => setLocation("/applications")}
-              >
-                <Briefcase className="mr-2 h-4 w-4" />
-                My Applications
-              </Button>
-              <Button
-                variant="outline"
-                className="border-slate-700 text-slate-300 hover:bg-slate-800"
-                onClick={() => setLocation("/profile")}
-              >
-                <User className="mr-2 h-4 w-4" />
-                Update Profile
-              </Button>
-              <Button
-                variant="outline"
-                className="border-slate-700 text-slate-300 hover:bg-slate-800"
-                onClick={() => setLocation("/settings")}
-              >
-                <Settings className="mr-2 h-4 w-4" />
-                Settings
-              </Button>
-              <Button
-                variant="outline"
-                className="border-slate-700 text-slate-300 hover:bg-slate-800"
-                onClick={() => setLocation("/alerts")}
-              >
-                <Bell className="mr-2 h-4 w-4" />
-                Job Alerts
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+
       </main>
     </div>
   );

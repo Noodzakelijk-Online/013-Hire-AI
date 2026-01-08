@@ -270,3 +270,9 @@
 - [x] Add mobile hamburger menu to header navigation
 - [x] Update hero subtext to focus on impact (align with "Unemployment no more")
 - [x] Add FAQ section with trust-building questions about automated applications
+
+
+## Phase 19: Remove Offer Tracking (Jan 8, 2026)
+- [x] Remove Offer Rate from Dashboard vital signs (user responsible for acing interviews)
+- [x] Remove "Received offer from..." entries from Live Activity feed on landing page
+- [x] Move Quick Actions to top of Dashboard (like a navigation menu)

@@ -33,17 +33,17 @@ export default function LandingPage() {
     offersReceived: 2547,
   });
   
-  // Sample activity pool for animation
+  // Sample activity pool for animation (applications, interviews, and job matches only - no offers since that's user's responsibility)
   const activityPool: ActivityItem[] = [
     { id: 1, initials: "JM", action: "Applied to", highlight: "Senior Developer at Stripe", highlightColor: "text-cyan-400", time: "just now", gradientFrom: "from-cyan-400", gradientTo: "to-blue-500" },
     { id: 2, initials: "SK", action: "Got interview at", highlight: "Shopify", highlightColor: "text-green-400", time: "just now", gradientFrom: "from-purple-400", gradientTo: "to-pink-500" },
     { id: 3, initials: "AR", action: "Matched with", highlight: "47 new jobs", highlightColor: "text-cyan-400", time: "just now", gradientFrom: "from-green-400", gradientTo: "to-emerald-500" },
-    { id: 4, initials: "LT", action: "Received offer from", highlight: "Notion 🎉", highlightColor: "text-green-400", time: "just now", gradientFrom: "from-orange-400", gradientTo: "to-red-500" },
+    { id: 4, initials: "LT", action: "Applied to", highlight: "Backend Engineer at Notion", highlightColor: "text-cyan-400", time: "just now", gradientFrom: "from-orange-400", gradientTo: "to-red-500" },
     { id: 5, initials: "MK", action: "Applied to", highlight: "Product Manager at Google", highlightColor: "text-cyan-400", time: "just now", gradientFrom: "from-blue-400", gradientTo: "to-indigo-500" },
     { id: 6, initials: "RP", action: "Got interview at", highlight: "Meta", highlightColor: "text-green-400", time: "just now", gradientFrom: "from-pink-400", gradientTo: "to-rose-500" },
     { id: 7, initials: "TC", action: "Applied to", highlight: "Data Scientist at Netflix", highlightColor: "text-cyan-400", time: "just now", gradientFrom: "from-red-400", gradientTo: "to-orange-500" },
     { id: 8, initials: "AW", action: "Matched with", highlight: "23 new jobs", highlightColor: "text-cyan-400", time: "just now", gradientFrom: "from-teal-400", gradientTo: "to-cyan-500" },
-    { id: 9, initials: "BL", action: "Received offer from", highlight: "Airbnb 🎉", highlightColor: "text-green-400", time: "just now", gradientFrom: "from-amber-400", gradientTo: "to-yellow-500" },
+    { id: 9, initials: "BL", action: "Got interview at", highlight: "Airbnb", highlightColor: "text-green-400", time: "just now", gradientFrom: "from-amber-400", gradientTo: "to-yellow-500" },
     { id: 10, initials: "CD", action: "Applied to", highlight: "UX Designer at Figma", highlightColor: "text-cyan-400", time: "just now", gradientFrom: "from-violet-400", gradientTo: "to-purple-500" },
     { id: 11, initials: "EF", action: "Got interview at", highlight: "Spotify", highlightColor: "text-green-400", time: "just now", gradientFrom: "from-lime-400", gradientTo: "to-green-500" },
     { id: 12, initials: "GH", action: "Applied to", highlight: "Engineer at Tesla", highlightColor: "text-cyan-400", time: "just now", gradientFrom: "from-sky-400", gradientTo: "to-blue-500" },
