@@ -181,20 +181,6 @@ export default function Dashboard() {
             >
               Applications
             </Button>
-            <Button
-              variant="ghost"
-              className="text-slate-300 hover:text-white"
-              onClick={() => setLocation("/ai-preferences")}
-            >
-              AI Preferences
-            </Button>
-            <Button
-              variant="ghost"
-              className="text-slate-300 hover:text-white"
-              onClick={() => setLocation("/profile")}
-            >
-              Profile
-            </Button>
             
             {/* User Menu */}
             <DropdownMenu>
@@ -217,6 +203,13 @@ export default function Dashboard() {
                 >
                   <User className="mr-2 h-4 w-4" />
                   Profile
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  className="text-slate-300 focus:bg-slate-800 focus:text-white cursor-pointer"
+                  onClick={() => setLocation("/ai-preferences")}
+                >
+                  <Activity className="mr-2 h-4 w-4" />
+                  AI Preferences
                 </DropdownMenuItem>
                 <DropdownMenuItem 
                   className="text-slate-300 focus:bg-slate-800 focus:text-white cursor-pointer"
@@ -290,33 +283,7 @@ export default function Dashboard() {
         )}
 
         {/* Health Metrics */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <Card className="bg-slate-900/50 border-slate-800/50">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium text-slate-400">
-                  Job Search Health
-                </CardTitle>
-                <Heart className="h-5 w-5 text-red-400 animate-pulse" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-white mb-1">
-                {appsLoading ? "..." : `${healthScore || 0}%`}
-              </div>
-              <p className="text-xs text-slate-400">
-                {healthScore > 50 ? (
-                  <span className="text-green-400 flex items-center gap-1">
-                    <TrendingUp className="h-3 w-3" />
-                    Looking healthy!
-                  </span>
-                ) : (
-                  <span className="text-yellow-400">Complete your profile to improve</span>
-                )}
-              </p>
-            </CardContent>
-          </Card>
-
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           <Card className="bg-slate-900/50 border-slate-800/50">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">

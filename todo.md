@@ -300,3 +300,8 @@
 - [x] Convert blue N icon to settings dropdown menu (Profile, AI Preferences, Settings, Logout)
 - [x] Remove Profile and AI Preferences from main navigation (keep only Dashboard, Applications)
 - [x] Remove Quick Actions section from Dashboard (redundant with dropdown menu)
+
+
+## Phase 23: Fix Navigation & Remove Useless Metrics (Jan 8, 2026)
+- [x] Fix AppHeader - AI Preferences and Profile still showing in main nav (should only be in dropdown)
+- [x] Remove Job Search Health metric from Dashboard (useless for automated workflow)
