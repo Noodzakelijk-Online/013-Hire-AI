@@ -181,13 +181,6 @@ export default function Dashboard() {
             >
               Dashboard
             </Button>
-            <Button
-              variant="ghost"
-              className="text-slate-300 hover:text-white"
-              onClick={() => setLocation("/applications")}
-            >
-              Applications
-            </Button>
             
             {/* User Menu */}
             <DropdownMenu>
