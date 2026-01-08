@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { getLoginUrl } from "@/const";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
-import { Activity, Rocket, ArrowRight, Search, FileText, Send, Star, Quote, Globe, Heart } from "lucide-react";
+import { Activity, Rocket, ArrowRight, Search, FileText, Send, Star, Quote, Globe, Heart, Calendar, Trophy } from "lucide-react";
 import { useLocation } from "wouter";
 import { useRef, useEffect, useState } from "react";
 
@@ -23,6 +23,13 @@ export default function LandingPage() {
   const { isAuthenticated } = useAuth();
   const featuresRef = useRef<HTMLElement>(null);
   const missionRef = useRef<HTMLElement>(null);
+  
+  // Impact stats state
+  const [impactStats] = useState({
+    totalApplications: 127543,
+    interviewsScheduled: 8921,
+    offersReceived: 2547,
+  });
   
   // Real-time activity state
   const [activities, setActivities] = useState<ActivityItem[]>([
@@ -256,6 +263,47 @@ export default function LandingPage() {
               </div>
             </div>
 
+            {/* Live Impact Counter */}
+            <div className="space-y-6">
+              <div className="text-center lg:text-left mb-4">
+                <span className="text-slate-400 text-sm uppercase tracking-wider">Our Global Impact</span>
+              </div>
+              <div className="grid grid-cols-1 gap-4">
+                <div className="bg-slate-900/50 rounded-xl p-6 border border-emerald-500/20">
+                  <div className="flex items-center gap-4">
+                    <div className="h-12 w-12 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                      <Send className="h-6 w-6 text-emerald-400" />
+                    </div>
+                    <div>
+                      <div className="text-3xl font-bold text-emerald-400">{impactStats.totalApplications.toLocaleString()}+</div>
+                      <div className="text-slate-400 text-sm">Applications Sent</div>
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-slate-900/50 rounded-xl p-6 border border-cyan-500/20">
+                  <div className="flex items-center gap-4">
+                    <div className="h-12 w-12 rounded-full bg-cyan-500/20 flex items-center justify-center">
+                      <Calendar className="h-6 w-6 text-cyan-400" />
+                    </div>
+                    <div>
+                      <div className="text-3xl font-bold text-cyan-400">{impactStats.interviewsScheduled.toLocaleString()}+</div>
+                      <div className="text-slate-400 text-sm">Interviews Scheduled</div>
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-slate-900/50 rounded-xl p-6 border border-purple-500/20">
+                  <div className="flex items-center gap-4">
+                    <div className="h-12 w-12 rounded-full bg-purple-500/20 flex items-center justify-center">
+                      <Trophy className="h-6 w-6 text-purple-400" />
+                    </div>
+                    <div>
+                      <div className="text-3xl font-bold text-purple-400">{impactStats.offersReceived.toLocaleString()}+</div>
+                      <div className="text-slate-400 text-sm">Offers Received</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>

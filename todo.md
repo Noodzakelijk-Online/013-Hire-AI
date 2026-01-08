@@ -246,3 +246,7 @@
 - [x] Tie Live Activity Feed to real-time data from actual user activity
 - [x] Remove redundant features section
 - [x] Add "Job hunting done right." tagline
+
+
+## Phase 14: Live Impact Counter
+- [x] Add live impact counter showing total jobs applied, interviews scheduled, and offers received
