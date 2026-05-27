@@ -168,7 +168,7 @@ export default function Applications() {
   if (authLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-        <AppHeader currentPage="applications" />
+        <AppHeader currentPage="dashboard" />
         <div className="flex items-center justify-center h-[calc(100vh-80px)]">
           <Loader2 className="w-8 h-8 animate-spin text-cyan-500" />
         </div>
@@ -178,7 +178,7 @@ export default function Applications() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-      <AppHeader currentPage="applications" />
+      <AppHeader currentPage="dashboard" />
       <div className="container mx-auto px-4 py-8 space-y-6">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">

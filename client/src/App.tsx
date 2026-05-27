@@ -10,6 +10,7 @@ import Profile from "./pages/Profile";
 import Settings from "./pages/Settings";
 import AIPreferences from "./pages/AIPreferences";
 import SavedJobs from "./pages/SavedJobs";
+import Billing from "./pages/Billing";
 
 function Router() {
   return (
@@ -20,6 +21,7 @@ function Router() {
       <Route path={"/settings"} component={Settings} />
       <Route path={"/ai-preferences"} component={AIPreferences} />
       <Route path={"/saved"} component={SavedJobs} />
+      <Route path={"/billing"} component={Billing} />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}
       <Route component={NotFound} />

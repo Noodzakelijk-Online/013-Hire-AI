@@ -173,20 +173,6 @@ export default function LandingPage() {
           
           {/* Desktop Navigation */}
           <div className="hidden md:flex gap-4 items-center">
-            <Button 
-              variant="ghost" 
-              className="text-slate-300 hover:text-white"
-              onClick={scrollToFeatures}
-            >
-              How It Works
-            </Button>
-            <Button 
-              variant="ghost" 
-              className="text-slate-300 hover:text-white"
-              onClick={scrollToFaq}
-            >
-              FAQ
-            </Button>
             {isAuthenticated ? (
               <Button
                 variant="outline"
@@ -220,20 +206,6 @@ export default function LandingPage() {
         {mobileMenuOpen && (
           <div className="md:hidden border-t border-slate-800/50 bg-slate-950/95 backdrop-blur-sm">
             <div className="container mx-auto px-4 py-4 flex flex-col gap-2">
-              <Button 
-                variant="ghost" 
-                className="text-slate-300 hover:text-white justify-start w-full"
-                onClick={scrollToFeatures}
-              >
-                How It Works
-              </Button>
-              <Button 
-                variant="ghost" 
-                className="text-slate-300 hover:text-white justify-start w-full"
-                onClick={scrollToFaq}
-              >
-                FAQ
-              </Button>
               {isAuthenticated ? (
                 <Button
                   className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white w-full mt-2"

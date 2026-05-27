@@ -325,3 +325,54 @@
 - [x] Search for all references to /jobs and /applications routes
 - [x] Fix all broken route references to point to /dashboard or /profile
 - [x] Update CTAs to direct users to complete profile instead of browsing jobs
+
+
+## Phase 27: Remove How It Works and FAQ from Landing Page
+- [x] Remove "How It Works" link from landing page header navigation
+- [x] Remove "FAQ" link from landing page header navigationation
+- [ ] Dashboard button should trigger login for unauthenticated users
+
+## Phase 29: Hybrid Success Fee System
+
+### Business Model
+- Free to use the platform
+- 5% of monthly salary, ongoing while employed at job landed via Hire.AI
+- Minimum salary threshold: $300/month
+- Enforcement: legal action for non-compliance
+
+### Bug Fixes (pre-existing)
+- [x] Fix TypeScript error in Applications.tsx (currentPage type mismatch)
+- [x] Fix JSX syntax error in SavedJobs.tsx (missing closing tag line 244)
+
+### Database Schema
+- [x] Add success_fees table (userId, applicationId, employerName, jobTitle, monthlySalary, currency, feePercent, stripeSubscriptionId, status, startDate, endDate)
+- [x] Add employment_verifications table (id, successFeeId, userId, type [initial|quarterly], documentUrl, verifiedAt, status, notes)
+- [x] Add stripe_customer_id to users table
+
+### Server Procedures
+- [x] Create successFees tRPC router
+- [x] reportHire procedure: create success fee record, upload offer letter, create Stripe subscription
+- [x] getMyFees procedure: list user's active/past success fees
+- [x] submitVerification procedure: upload quarterly verification document
+- [x] Stripe webhook: handle subscription payment success/failure
+- [x] Admin: listAllFees, updateFeeStatus, flagNonCompliant
+
+### Report Hire UI
+- [x] "I Got Hired!" button/flow accessible from Dashboard
+- [x] Form: employer name, job title, monthly salary, start date
+- [x] Offer letter upload (required - PDF/image)
+- [x] Terms acceptance checkbox
+- [x] Stripe subscription setup (5% of salary as monthly charge)
+- [x] Confirmation page with fee breakdown
+
+### Billing Dashboard
+- [x] /billing page showing active fees, payment history, verification status
+- [x] Next verification due date with countdown
+- [x] Upload quarterly verification documents
+- [x] Payment history with amounts and dates
+- [x] Account suspension warning if verification overdue
+
+### Verification & Compliance
+- [x] Quarterly verification reminders (notification)
+- [x] Grace period: 14 days to submit verification after due date
+- [x] Account suspension after grace period expires

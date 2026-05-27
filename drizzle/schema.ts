@@ -17,6 +17,8 @@ export const users = mysqlTable("users", {
   email: varchar("email", { length: 320 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
+  accountStatus: mysqlEnum("account_status", ["active", "suspended", "pending"]).default("active").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -396,3 +398,75 @@ export type WorkExperience = typeof workExperiences.$inferSelect;
 export type EducationEntry = typeof educationEntries.$inferSelect;
 export type UserSkill = typeof userSkills.$inferSelect;
 export type UserProject = typeof userProjects.$inferSelect;
+
+/**
+ * Success Fees
+ * Tracks 5% monthly salary fees for users who land jobs via the platform
+ */
+export const successFees = mysqlTable("success_fees", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  applicationId: int("application_id"),
+  employerName: varchar("employer_name", { length: 255 }).notNull(),
+  jobTitle: varchar("job_title", { length: 255 }).notNull(),
+  monthlySalary: int("monthly_salary").notNull(),
+  currency: varchar("currency", { length: 10 }).default("USD").notNull(),
+  feePercent: int("fee_percent").default(5).notNull(),
+  monthlyFeeAmount: int("monthly_fee_amount").notNull(),
+  stripeSubscriptionId: varchar("stripe_subscription_id", { length: 255 }),
+  stripePriceId: varchar("stripe_price_id", { length: 255 }),
+  status: mysqlEnum("status", ["pending_verification", "active", "paused", "ended", "suspended", "disputed"]).default("pending_verification").notNull(),
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date"),
+  nextVerificationDue: timestamp("next_verification_due"),
+  verificationGraceExpiry: timestamp("verification_grace_expiry"),
+  offerLetterUrl: varchar("offer_letter_url", { length: 1000 }),
+  offerLetterKey: varchar("offer_letter_key", { length: 500 }),
+  termsAcceptedAt: timestamp("terms_accepted_at"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
+/**
+ * Employment Verifications
+ * Tracks quarterly re-verification submissions
+ */
+export const employmentVerifications = mysqlTable("employment_verifications", {
+  id: int("id").autoincrement().primaryKey(),
+  successFeeId: int("success_fee_id").notNull(),
+  userId: int("user_id").notNull(),
+  verificationType: mysqlEnum("verification_type", ["initial", "quarterly"]).default("initial").notNull(),
+  documentUrl: varchar("document_url", { length: 1000 }),
+  documentKey: varchar("document_key", { length: 500 }),
+  documentType: mysqlEnum("document_type", ["offer_letter", "paystub", "employment_letter", "bank_statement", "other"]).default("offer_letter"),
+  status: mysqlEnum("status", ["pending", "approved", "rejected"]).default("pending").notNull(),
+  reviewedAt: timestamp("reviewed_at"),
+  reviewNotes: text("review_notes"),
+  submittedAt: timestamp("submitted_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/**
+ * Fee Payments
+ * Tracks monthly fee payment records
+ */
+export const feePayments = mysqlTable("fee_payments", {
+  id: int("id").autoincrement().primaryKey(),
+  successFeeId: int("success_fee_id").notNull(),
+  userId: int("user_id").notNull(),
+  amount: int("amount").notNull(),
+  currency: varchar("currency", { length: 10 }).default("USD").notNull(),
+  stripePaymentIntentId: varchar("stripe_payment_intent_id", { length: 255 }),
+  stripeInvoiceId: varchar("stripe_invoice_id", { length: 255 }),
+  status: mysqlEnum("status", ["pending", "paid", "failed", "refunded"]).default("pending").notNull(),
+  paidAt: timestamp("paid_at"),
+  periodStart: timestamp("period_start"),
+  periodEnd: timestamp("period_end"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type SuccessFee = typeof successFees.$inferSelect;
+export type InsertSuccessFee = typeof successFees.$inferInsert;
+export type EmploymentVerification = typeof employmentVerifications.$inferSelect;
+export type FeePayment = typeof feePayments.$inferSelect;

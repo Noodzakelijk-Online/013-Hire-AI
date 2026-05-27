@@ -29,6 +29,13 @@
       "when": 1767885384465,
       "tag": "0003_careless_thor",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1779891322436,
+      "tag": "0004_blue_moon_knight",
+      "breakpoints": true
     }
   ]
 }

@@ -5,6 +5,7 @@ import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { normalizeSalary, normalizeLocation, normalizeJobType, normalizeExperienceLevel, extractSkills, extractBenefits, getDeduplicator } from "./jobNormalization";
 import { getRecentJobs, searchJobs, getDiscoveryStats, getSubscriptionManager } from "./realTimeDiscovery";
+import { successFeesRouter } from "./routers/successFees";
 import { uploadResume, getActiveResume, getResumeVersions, setActiveVersion, deleteResumeVersion, getResumeStats, getResumeDownloadUrl } from "./resumeStorage";
 import {
   saveJob,
@@ -1301,6 +1302,7 @@ export const appRouter = router({
         return await getVideoInterviewTips(input.jobTitle);
       }),
   }),
+  successFees: successFeesRouter,
 });
 
 export type AppRouter = typeof appRouter;
