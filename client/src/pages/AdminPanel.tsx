@@ -1,0 +1,682 @@
+import { useState } from "react";
+import { useLocation } from "wouter";
+import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
+import {
+  Activity,
+  AlertTriangle,
+  Ban,
+  CheckCircle,
+  DollarSign,
+  FileText,
+  Gavel,
+  RefreshCw,
+  Shield,
+  Users,
+  XCircle,
+} from "lucide-react";
+
+function formatCurrency(cents: number, currency = "USD") {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: 2,
+  }).format(cents / 100);
+}
+
+function formatDate(date: Date | string | null | undefined) {
+  if (!date) return "—";
+  return new Date(date).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const variants: Record<string, string> = {
+    active: "bg-green-500/20 text-green-400 border-green-500/30",
+    pending_verification: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+    suspended: "bg-red-500/20 text-red-400 border-red-500/30",
+    disputed: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+    ended: "bg-slate-500/20 text-slate-400 border-slate-500/30",
+    paused: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    pending: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+    approved: "bg-green-500/20 text-green-400 border-green-500/30",
+    rejected: "bg-red-500/20 text-red-400 border-red-500/30",
+    paid: "bg-green-500/20 text-green-400 border-green-500/30",
+    failed: "bg-red-500/20 text-red-400 border-red-500/30",
+  };
+  const cls = variants[status] ?? "bg-slate-500/20 text-slate-400 border-slate-500/30";
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${cls}`}>
+      {status.replace(/_/g, " ")}
+    </span>
+  );
+}
+
+export default function AdminPanel() {
+  const { user, loading } = useAuth();
+  const [, setLocation] = useLocation();
+  const [activeTab, setActiveTab] = useState("overview");
+
+  // Dialogs
+  const [noteDialog, setNoteDialog] = useState<{ open: boolean; feeId: number | null }>({ open: false, feeId: null });
+  const [noteText, setNoteText] = useState("");
+  const [escalateDialog, setEscalateDialog] = useState<{ open: boolean; feeId: number | null; userName: string }>({ open: false, feeId: null, userName: "" });
+  const [escalateReason, setEscalateReason] = useState("");
+  const [statusDialog, setStatusDialog] = useState<{ open: boolean; feeId: number | null; currentStatus: string }>({ open: false, feeId: null, currentStatus: "" });
+  const [newStatus, setNewStatus] = useState("");
+  const [statusNote, setStatusNote] = useState("");
+
+  // Data queries
+  const { data: stats, refetch: refetchStats } = trpc.admin.getStats.useQuery();
+  const { data: fees, refetch: refetchFees } = trpc.admin.listFees.useQuery({ status: "all", limit: 100, offset: 0 });
+  const { data: overdue, refetch: refetchOverdue } = trpc.admin.listOverdueVerifications.useQuery();
+  const { data: pendingVerifications, refetch: refetchVerifications } = trpc.admin.listPendingVerifications.useQuery();
+  const { data: payments } = trpc.admin.listPayments.useQuery({ limit: 50, offset: 0 });
+
+  // Mutations
+  const updateStatus = trpc.admin.updateFeeStatus.useMutation({
+    onSuccess: () => {
+      toast.success("Fee status updated");
+      refetchFees();
+      refetchStats();
+      setStatusDialog({ open: false, feeId: null, currentStatus: "" });
+      setNewStatus("");
+      setStatusNote("");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const reviewVerification = trpc.admin.reviewVerification.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.approved ? "Verification approved" : "Verification rejected");
+      refetchVerifications();
+      refetchOverdue();
+      refetchStats();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const flagEscalation = trpc.admin.flagLegalEscalation.useMutation({
+    onSuccess: () => {
+      toast.success("Account flagged for legal escalation");
+      refetchFees();
+      refetchStats();
+      setEscalateDialog({ open: false, feeId: null, userName: "" });
+      setEscalateReason("");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const addNote = trpc.admin.addNote.useMutation({
+    onSuccess: () => {
+      toast.success("Note added");
+      refetchFees();
+      setNoteDialog({ open: false, feeId: null });
+      setNoteText("");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const reinstateUser = trpc.admin.reinstateUser.useMutation({
+    onSuccess: () => {
+      toast.success("User reinstated");
+      refetchFees();
+      refetchStats();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  // Auth guard
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="text-slate-400">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!user || user.role !== "admin") {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <Card className="bg-slate-900 border-slate-800 p-8 text-center max-w-md">
+          <Shield className="h-12 w-12 text-red-400 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-white mb-2">Access Denied</h2>
+          <p className="text-slate-400 mb-4">You do not have permission to access the admin panel.</p>
+          <Button onClick={() => setLocation("/dashboard")} variant="outline">
+            Back to Dashboard
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  const statCards = [
+    { label: "Active Fees", value: stats?.activeFees ?? 0, icon: Activity, color: "text-green-400" },
+    { label: "Pending Verification", value: stats?.pendingFees ?? 0, icon: FileText, color: "text-yellow-400" },
+    { label: "Overdue Verifications", value: stats?.overdueVerifications ?? 0, icon: AlertTriangle, color: "text-orange-400" },
+    { label: "Suspended", value: stats?.suspendedFees ?? 0, icon: Ban, color: "text-red-400" },
+    { label: "Monthly Revenue", value: `$${(stats?.monthlyRevenueUsd ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}`, icon: DollarSign, color: "text-cyan-400" },
+    { label: "Total Revenue", value: `$${(stats?.totalRevenueUsd ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}`, icon: DollarSign, color: "text-blue-400" },
+    { label: "Total Users", value: stats?.totalUsers ?? 0, icon: Users, color: "text-purple-400" },
+  ];
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-white">
+      {/* Header */}
+      <header className="border-b border-slate-800/50 bg-slate-950/80 sticky top-0 z-50 backdrop-blur-sm">
+        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Shield className="h-6 w-6 text-cyan-400" />
+            <div>
+              <h1 className="text-lg font-bold text-white">Admin Panel</h1>
+              <p className="text-xs text-slate-500">Hire.AI Operations</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                refetchStats();
+                refetchFees();
+                refetchOverdue();
+                refetchVerifications();
+              }}
+              className="text-slate-400 hover:text-white"
+            >
+              <RefreshCw className="h-4 w-4 mr-1" />
+              Refresh
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setLocation("/dashboard")}
+              className="border-slate-700 text-slate-300"
+            >
+              Dashboard
+            </Button>
+          </div>
+        </div>
+      </header>
+
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        {/* Stats Row */}
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-8">
+          {statCards.map((s) => (
+            <Card key={s.label} className="bg-slate-900/60 border-slate-800/50">
+              <CardContent className="p-4">
+                <s.icon className={`h-5 w-5 ${s.color} mb-2`} />
+                <div className="text-xl font-bold text-white">{s.value}</div>
+                <div className="text-xs text-slate-500 mt-0.5">{s.label}</div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {/* Tabs */}
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="bg-slate-900 border border-slate-800 mb-6">
+            <TabsTrigger value="overview" className="data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-400">
+              All Fees
+            </TabsTrigger>
+            <TabsTrigger value="overdue" className="data-[state=active]:bg-orange-500/20 data-[state=active]:text-orange-400">
+              Overdue {overdue && overdue.length > 0 && <Badge className="ml-1 bg-orange-500 text-white text-xs px-1.5">{overdue.length}</Badge>}
+            </TabsTrigger>
+            <TabsTrigger value="verifications" className="data-[state=active]:bg-yellow-500/20 data-[state=active]:text-yellow-400">
+              Verifications {pendingVerifications && pendingVerifications.length > 0 && <Badge className="ml-1 bg-yellow-500 text-white text-xs px-1.5">{pendingVerifications.length}</Badge>}
+            </TabsTrigger>
+            <TabsTrigger value="payments" className="data-[state=active]:bg-green-500/20 data-[state=active]:text-green-400">
+              Payments
+            </TabsTrigger>
+          </TabsList>
+
+          {/* All Fees Tab */}
+          <TabsContent value="overview">
+            <Card className="bg-slate-900/60 border-slate-800/50">
+              <CardHeader>
+                <CardTitle className="text-white text-base">All Success Fees</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-slate-400">
+                        <th className="text-left py-2 pr-4">User</th>
+                        <th className="text-left py-2 pr-4">Employer / Role</th>
+                        <th className="text-left py-2 pr-4">Salary</th>
+                        <th className="text-left py-2 pr-4">Monthly Fee</th>
+                        <th className="text-left py-2 pr-4">Status</th>
+                        <th className="text-left py-2 pr-4">Next Verification</th>
+                        <th className="text-left py-2">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {fees?.map((fee) => (
+                        <tr key={fee.id} className="border-b border-slate-800/50 hover:bg-slate-800/30">
+                          <td className="py-3 pr-4">
+                            <div className="font-medium text-white">{fee.userName ?? "Unknown"}</div>
+                            <div className="text-xs text-slate-500">{fee.userEmail ?? "—"}</div>
+                          </td>
+                          <td className="py-3 pr-4">
+                            <div className="text-white">{fee.employerName}</div>
+                            <div className="text-xs text-slate-500">{fee.jobTitle}</div>
+                          </td>
+                          <td className="py-3 pr-4 text-slate-300">
+                            ${fee.monthlySalary.toLocaleString()}/mo
+                          </td>
+                          <td className="py-3 pr-4 text-cyan-400 font-medium">
+                            {formatCurrency(fee.monthlyFeeAmount, fee.currency)}/mo
+                          </td>
+                          <td className="py-3 pr-4">
+                            <StatusBadge status={fee.status} />
+                          </td>
+                          <td className="py-3 pr-4 text-slate-400 text-xs">
+                            {formatDate(fee.nextVerificationDue)}
+                          </td>
+                          <td className="py-3">
+                            <div className="flex gap-1 flex-wrap">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 text-xs text-slate-400 hover:text-white px-2"
+                                onClick={() => {
+                                  setStatusDialog({ open: true, feeId: fee.id, currentStatus: fee.status });
+                                  setNewStatus(fee.status);
+                                }}
+                              >
+                                Status
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 text-xs text-orange-400 hover:text-orange-300 px-2"
+                                onClick={() => {
+                                  setEscalateDialog({ open: true, feeId: fee.id, userName: fee.userName ?? "Unknown" });
+                                }}
+                              >
+                                <Gavel className="h-3 w-3 mr-1" />
+                                Escalate
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 text-xs text-slate-400 hover:text-white px-2"
+                                onClick={() => setNoteDialog({ open: true, feeId: fee.id })}
+                              >
+                                Note
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {(!fees || fees.length === 0) && (
+                        <tr>
+                          <td colSpan={7} className="py-8 text-center text-slate-500">
+                            No success fees found.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Overdue Tab */}
+          <TabsContent value="overdue">
+            <Card className="bg-slate-900/60 border-slate-800/50">
+              <CardHeader>
+                <CardTitle className="text-white text-base flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5 text-orange-400" />
+                  Overdue Verifications
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-slate-400">
+                        <th className="text-left py-2 pr-4">User</th>
+                        <th className="text-left py-2 pr-4">Employer / Role</th>
+                        <th className="text-left py-2 pr-4">Monthly Fee</th>
+                        <th className="text-left py-2 pr-4">Days Overdue</th>
+                        <th className="text-left py-2 pr-4">Grace Expired</th>
+                        <th className="text-left py-2">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {overdue?.map((fee) => (
+                        <tr key={fee.id} className="border-b border-slate-800/50 hover:bg-slate-800/30">
+                          <td className="py-3 pr-4">
+                            <div className="font-medium text-white">{fee.userName ?? "Unknown"}</div>
+                            <div className="text-xs text-slate-500">{fee.userEmail ?? "—"}</div>
+                          </td>
+                          <td className="py-3 pr-4">
+                            <div className="text-white">{fee.employerName}</div>
+                            <div className="text-xs text-slate-500">{fee.jobTitle}</div>
+                          </td>
+                          <td className="py-3 pr-4 text-cyan-400">
+                            {formatCurrency(fee.monthlyFeeAmount)}/mo
+                          </td>
+                          <td className="py-3 pr-4">
+                            <span className={`font-bold ${fee.daysOverdue > 14 ? "text-red-400" : "text-orange-400"}`}>
+                              {fee.daysOverdue} days
+                            </span>
+                          </td>
+                          <td className="py-3 pr-4">
+                            {fee.graceExpired ? (
+                              <span className="text-red-400 font-medium">Yes — Suspend</span>
+                            ) : (
+                              <span className="text-yellow-400">No — In Grace</span>
+                            )}
+                          </td>
+                          <td className="py-3">
+                            <div className="flex gap-1">
+                              {fee.graceExpired && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 text-xs text-red-400 hover:text-red-300 px-2"
+                                  onClick={() => updateStatus.mutate({ feeId: fee.id, status: "suspended", notes: `Auto-suspended: verification overdue by ${fee.daysOverdue} days` })}
+                                >
+                                  <Ban className="h-3 w-3 mr-1" />
+                                  Suspend
+                                </Button>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 text-xs text-orange-400 hover:text-orange-300 px-2"
+                                onClick={() => setEscalateDialog({ open: true, feeId: fee.id, userName: fee.userName ?? "Unknown" })}
+                              >
+                                <Gavel className="h-3 w-3 mr-1" />
+                                Escalate
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {(!overdue || overdue.length === 0) && (
+                        <tr>
+                          <td colSpan={6} className="py-8 text-center text-slate-500">
+                            No overdue verifications.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Verifications Tab */}
+          <TabsContent value="verifications">
+            <Card className="bg-slate-900/60 border-slate-800/50">
+              <CardHeader>
+                <CardTitle className="text-white text-base flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-yellow-400" />
+                  Pending Verification Reviews
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {pendingVerifications?.map((v) => (
+                    <div key={v.id} className="border border-slate-800 rounded-lg p-4 bg-slate-900/40">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-medium text-white">{v.userName ?? "Unknown"}</span>
+                            <StatusBadge status={v.verificationType ?? "initial"} />
+                            <StatusBadge status={v.documentType ?? "other"} />
+                          </div>
+                          <div className="text-sm text-slate-400">
+                            {v.employerName} — {v.jobTitle}
+                          </div>
+                          <div className="text-xs text-slate-500 mt-1">
+                            Submitted: {formatDate(v.submittedAt)} · Salary: ${v.monthlySalary?.toLocaleString()}/mo
+                          </div>
+                          {v.documentUrl && (
+                            <a
+                              href={v.documentUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-cyan-400 hover:text-cyan-300 mt-1 inline-flex items-center gap-1"
+                            >
+                              <FileText className="h-3 w-3" />
+                              View Document
+                            </a>
+                          )}
+                        </div>
+                        <div className="flex gap-2 shrink-0">
+                          <Button
+                            size="sm"
+                            className="bg-green-600 hover:bg-green-700 text-white h-8"
+                            onClick={() => reviewVerification.mutate({ verificationId: v.id, approved: true })}
+                          >
+                            <CheckCircle className="h-3.5 w-3.5 mr-1" />
+                            Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="border-red-500/50 text-red-400 hover:bg-red-500/10 h-8"
+                            onClick={() => reviewVerification.mutate({ verificationId: v.id, approved: false, notes: "Document insufficient or invalid" })}
+                          >
+                            <XCircle className="h-3.5 w-3.5 mr-1" />
+                            Reject
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {(!pendingVerifications || pendingVerifications.length === 0) && (
+                    <div className="py-8 text-center text-slate-500">
+                      No pending verifications.
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Payments Tab */}
+          <TabsContent value="payments">
+            <Card className="bg-slate-900/60 border-slate-800/50">
+              <CardHeader>
+                <CardTitle className="text-white text-base flex items-center gap-2">
+                  <DollarSign className="h-5 w-5 text-green-400" />
+                  Payment History
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-slate-400">
+                        <th className="text-left py-2 pr-4">User</th>
+                        <th className="text-left py-2 pr-4">Employer</th>
+                        <th className="text-left py-2 pr-4">Amount</th>
+                        <th className="text-left py-2 pr-4">Status</th>
+                        <th className="text-left py-2 pr-4">Period</th>
+                        <th className="text-left py-2">Paid At</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {payments?.map((p) => (
+                        <tr key={p.id} className="border-b border-slate-800/50 hover:bg-slate-800/30">
+                          <td className="py-3 pr-4">
+                            <div className="font-medium text-white">{p.userName ?? "Unknown"}</div>
+                            <div className="text-xs text-slate-500">{p.userEmail ?? "—"}</div>
+                          </td>
+                          <td className="py-3 pr-4 text-slate-300">{p.employerName ?? "—"}</td>
+                          <td className="py-3 pr-4 text-green-400 font-medium">
+                            {formatCurrency(p.amount, p.currency)}
+                          </td>
+                          <td className="py-3 pr-4">
+                            <StatusBadge status={p.status} />
+                          </td>
+                          <td className="py-3 pr-4 text-slate-400 text-xs">
+                            {formatDate(p.periodStart)} – {formatDate(p.periodEnd)}
+                          </td>
+                          <td className="py-3 text-slate-400 text-xs">{formatDate(p.paidAt)}</td>
+                        </tr>
+                      ))}
+                      {(!payments || payments.length === 0) && (
+                        <tr>
+                          <td colSpan={6} className="py-8 text-center text-slate-500">
+                            No payments recorded yet.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </div>
+
+      {/* Status Change Dialog */}
+      <Dialog open={statusDialog.open} onOpenChange={(o) => !o && setStatusDialog({ open: false, feeId: null, currentStatus: "" })}>
+        <DialogContent className="bg-slate-900 border-slate-800 text-white">
+          <DialogHeader>
+            <DialogTitle>Update Fee Status</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-slate-300">New Status</Label>
+              <select
+                value={newStatus}
+                onChange={(e) => setNewStatus(e.target.value)}
+                className="w-full mt-1 bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-white text-sm"
+              >
+                {["pending_verification", "active", "paused", "ended", "suspended", "disputed"].map((s) => (
+                  <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label className="text-slate-300">Note (optional)</Label>
+              <Textarea
+                value={statusNote}
+                onChange={(e) => setStatusNote(e.target.value)}
+                placeholder="Reason for status change..."
+                className="bg-slate-800 border-slate-700 text-white mt-1"
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setStatusDialog({ open: false, feeId: null, currentStatus: "" })}>Cancel</Button>
+            <Button
+              className="bg-cyan-600 hover:bg-cyan-700"
+              disabled={updateStatus.isPending}
+              onClick={() => {
+                if (statusDialog.feeId) {
+                  updateStatus.mutate({ feeId: statusDialog.feeId, status: newStatus as any, notes: statusNote || undefined });
+                }
+              }}
+            >
+              Update Status
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Legal Escalation Dialog */}
+      <Dialog open={escalateDialog.open} onOpenChange={(o) => !o && setEscalateDialog({ open: false, feeId: null, userName: "" })}>
+        <DialogContent className="bg-slate-900 border-slate-800 text-white">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Gavel className="h-5 w-5 text-orange-400" />
+              Flag for Legal Escalation
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-slate-400">
+              This will mark <span className="text-white font-medium">{escalateDialog.userName}</span>'s account as disputed and suspend it. This action is logged and cannot be undone without manual review.
+            </p>
+            <div>
+              <Label className="text-slate-300">Reason for Escalation</Label>
+              <Textarea
+                value={escalateReason}
+                onChange={(e) => setEscalateReason(e.target.value)}
+                placeholder="Describe the non-compliance or reason for legal escalation..."
+                className="bg-slate-800 border-slate-700 text-white mt-1"
+                rows={4}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setEscalateDialog({ open: false, feeId: null, userName: "" })}>Cancel</Button>
+            <Button
+              className="bg-orange-600 hover:bg-orange-700"
+              disabled={!escalateReason.trim() || flagEscalation.isPending}
+              onClick={() => {
+                if (escalateDialog.feeId) {
+                  flagEscalation.mutate({ feeId: escalateDialog.feeId, reason: escalateReason });
+                }
+              }}
+            >
+              <Gavel className="h-4 w-4 mr-2" />
+              Confirm Escalation
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Note Dialog */}
+      <Dialog open={noteDialog.open} onOpenChange={(o) => !o && setNoteDialog({ open: false, feeId: null })}>
+        <DialogContent className="bg-slate-900 border-slate-800 text-white">
+          <DialogHeader>
+            <DialogTitle>Add Admin Note</DialogTitle>
+          </DialogHeader>
+          <div>
+            <Label className="text-slate-300">Note</Label>
+            <Textarea
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              placeholder="Add an internal note..."
+              className="bg-slate-800 border-slate-700 text-white mt-1"
+              rows={4}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setNoteDialog({ open: false, feeId: null })}>Cancel</Button>
+            <Button
+              className="bg-cyan-600 hover:bg-cyan-700"
+              disabled={!noteText.trim() || addNote.isPending}
+              onClick={() => {
+                if (noteDialog.feeId) {
+                  addNote.mutate({ feeId: noteDialog.feeId, note: noteText });
+                }
+              }}
+            >
+              Save Note
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

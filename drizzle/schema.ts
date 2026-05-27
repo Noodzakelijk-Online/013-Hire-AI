@@ -19,6 +19,7 @@ export const users = mysqlTable("users", {
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
   stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
   accountStatus: mysqlEnum("account_status", ["active", "suspended", "pending"]).default("active").notNull(),
+  tosAcceptedAt: timestamp("tos_accepted_at"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),

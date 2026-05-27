@@ -20,6 +20,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import TosAcceptanceDialog from "@/components/TosAcceptanceDialog";
+import { Shield } from "lucide-react";
 
 export default function Dashboard() {
   const { user, loading, isAuthenticated, logout } = useAuth();
@@ -27,6 +29,7 @@ export default function Dashboard() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [selectedApplication, setSelectedApplication] = useState<any>(null);
   const [activeTab, setActiveTab] = useState("all");
+  const [showTos, setShowTos] = useState(false);
 
   // Fetch real data from API
   const { data: applications, isLoading: appsLoading } = trpc.applications.list.useQuery();
@@ -55,15 +58,24 @@ export default function Dashboard() {
   // Calculate health score
   const healthScore = Math.round((responseRate * 0.3 + interviewRate * 0.4 + offerRate * 0.3));
 
+  // Check if user needs ToS acceptance
+  useEffect(() => {
+    if (!loading && isAuthenticated && user) {
+      if (!(user as any).tosAcceptedAt) {
+        setShowTos(true);
+      }
+    }
+  }, [loading, isAuthenticated, user]);
+
   // Check if user needs onboarding (no profile or resume)
   useEffect(() => {
-    if (!loading && isAuthenticated && profile) {
+    if (!loading && isAuthenticated && profile && (user as any)?.tosAcceptedAt) {
       const hasProfile = profile.skills || profile.experience || profile.education;
       if (!hasProfile) {
         setShowOnboarding(true);
       }
     }
-  }, [loading, isAuthenticated, profile]);
+  }, [loading, isAuthenticated, profile, user]);
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -101,6 +113,12 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-slate-950">
+      {/* ToS Acceptance Dialog - shown on first login */}
+      <TosAcceptanceDialog
+        open={showTos}
+        onAccepted={() => setShowTos(false)}
+      />
+
       {/* Onboarding Modal */}
       <Dialog open={showOnboarding} onOpenChange={setShowOnboarding}>
         <DialogContent className="bg-slate-900 border-slate-800 text-white max-w-lg">
@@ -225,6 +243,18 @@ export default function Dashboard() {
                   <DollarSign className="mr-2 h-4 w-4" />
                   Billing & Fees
                 </DropdownMenuItem>
+                {(user as any)?.role === 'admin' && (
+                  <>
+                    <DropdownMenuSeparator className="bg-slate-800" />
+                    <DropdownMenuItem 
+                      className="text-amber-400 focus:bg-amber-500/10 focus:text-amber-400 cursor-pointer"
+                      onClick={() => setLocation("/admin")}
+                    >
+                      <Shield className="mr-2 h-4 w-4" />
+                      Admin Panel
+                    </DropdownMenuItem>
+                  </>
+                )}
                 <DropdownMenuSeparator className="bg-slate-800" />
                 <DropdownMenuItem 
                   className="text-red-400 focus:bg-red-500/10 focus:text-red-400 cursor-pointer"

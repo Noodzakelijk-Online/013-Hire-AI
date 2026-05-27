@@ -1,0 +1,481 @@
+import { TRPCError } from "@trpc/server";
+import { z } from "zod";
+import { router, adminProcedure } from "../_core/trpc";
+import { getDb } from "../db";
+import {
+  successFees,
+  employmentVerifications,
+  feePayments,
+  users,
+} from "../../drizzle/schema";
+import { eq, desc, and, lt, sql, isNotNull, or } from "drizzle-orm";
+import Stripe from "stripe";
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+
+export const adminRouter = router({
+  // ─── Overview Stats ─────────────────────────────────────────────────────────
+  getStats: adminProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+    const [activeFees] = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(successFees)
+      .where(eq(successFees.status, "active"));
+
+    const [pendingFees] = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(successFees)
+      .where(eq(successFees.status, "pending_verification"));
+
+    const [suspendedFees] = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(successFees)
+      .where(eq(successFees.status, "suspended"));
+
+    const [totalRevenue] = await db
+      .select({ total: sql<number>`COALESCE(SUM(amount), 0)` })
+      .from(feePayments)
+      .where(eq(feePayments.status, "paid"));
+
+    const [monthlyRevenue] = await db
+      .select({ total: sql<number>`COALESCE(SUM(amount), 0)` })
+      .from(feePayments)
+      .where(
+        and(
+          eq(feePayments.status, "paid"),
+          sql`paid_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)`
+        )
+      );
+
+    const [overdueVerifications] = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(successFees)
+      .where(
+        and(
+          eq(successFees.status, "active"),
+          isNotNull(successFees.nextVerificationDue),
+          lt(successFees.nextVerificationDue, new Date())
+        )
+      );
+
+    const [totalUsers] = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(users);
+
+    return {
+      activeFees: Number(activeFees.count),
+      pendingFees: Number(pendingFees.count),
+      suspendedFees: Number(suspendedFees.count),
+      totalRevenueUsd: Number(totalRevenue.total) / 100,
+      monthlyRevenueUsd: Number(monthlyRevenue.total) / 100,
+      overdueVerifications: Number(overdueVerifications.count),
+      totalUsers: Number(totalUsers.count),
+    };
+  }),
+
+  // ─── List All Success Fees ───────────────────────────────────────────────────
+  listFees: adminProcedure
+    .input(
+      z.object({
+        status: z
+          .enum(["all", "pending_verification", "active", "paused", "ended", "suspended", "disputed"])
+          .default("all"),
+        limit: z.number().min(1).max(100).default(50),
+        offset: z.number().min(0).default(0),
+      })
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      const conditions =
+        input.status !== "all" ? [eq(successFees.status, input.status as any)] : [];
+
+      const fees = await db
+        .select({
+          id: successFees.id,
+          userId: successFees.userId,
+          employerName: successFees.employerName,
+          jobTitle: successFees.jobTitle,
+          monthlySalary: successFees.monthlySalary,
+          currency: successFees.currency,
+          monthlyFeeAmount: successFees.monthlyFeeAmount,
+          status: successFees.status,
+          startDate: successFees.startDate,
+          endDate: successFees.endDate,
+          nextVerificationDue: successFees.nextVerificationDue,
+          verificationGraceExpiry: successFees.verificationGraceExpiry,
+          stripeSubscriptionId: successFees.stripeSubscriptionId,
+          notes: successFees.notes,
+          createdAt: successFees.createdAt,
+          userName: users.name,
+          userEmail: users.email,
+          userAccountStatus: users.accountStatus,
+        })
+        .from(successFees)
+        .leftJoin(users, eq(successFees.userId, users.id))
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(successFees.createdAt))
+        .limit(input.limit)
+        .offset(input.offset);
+
+      return fees;
+    }),
+
+  // ─── Overdue Verifications ───────────────────────────────────────────────────
+  listOverdueVerifications: adminProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+    const now = new Date();
+    const fees = await db
+      .select({
+        id: successFees.id,
+        userId: successFees.userId,
+        employerName: successFees.employerName,
+        jobTitle: successFees.jobTitle,
+        monthlySalary: successFees.monthlySalary,
+        monthlyFeeAmount: successFees.monthlyFeeAmount,
+        status: successFees.status,
+        nextVerificationDue: successFees.nextVerificationDue,
+        verificationGraceExpiry: successFees.verificationGraceExpiry,
+        notes: successFees.notes,
+        userName: users.name,
+        userEmail: users.email,
+      })
+      .from(successFees)
+      .leftJoin(users, eq(successFees.userId, users.id))
+      .where(
+        and(
+          or(eq(successFees.status, "active"), eq(successFees.status, "suspended")),
+          isNotNull(successFees.nextVerificationDue),
+          lt(successFees.nextVerificationDue, now)
+        )
+      )
+      .orderBy(successFees.nextVerificationDue);
+
+    return fees.map((fee) => ({
+      ...fee,
+      daysOverdue: fee.nextVerificationDue
+        ? Math.floor((now.getTime() - fee.nextVerificationDue.getTime()) / (1000 * 60 * 60 * 24))
+        : 0,
+      graceExpired: fee.verificationGraceExpiry
+        ? fee.verificationGraceExpiry < now
+        : false,
+    }));
+  }),
+
+  // ─── Update Fee Status ───────────────────────────────────────────────────────
+  updateFeeStatus: adminProcedure
+    .input(
+      z.object({
+        feeId: z.number(),
+        status: z.enum(["pending_verification", "active", "paused", "ended", "suspended", "disputed"]),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      const [fee] = await db
+        .select()
+        .from(successFees)
+        .where(eq(successFees.id, input.feeId))
+        .limit(1);
+
+      if (!fee) throw new TRPCError({ code: "NOT_FOUND", message: "Success fee not found" });
+
+      // If suspending and has active Stripe subscription, pause it
+      if (input.status === "suspended" && fee.stripeSubscriptionId) {
+        try {
+          await stripe.subscriptions.update(fee.stripeSubscriptionId, {
+            pause_collection: { behavior: "void" },
+          });
+        } catch (err) {
+          console.error("[Admin] Failed to pause Stripe subscription:", err);
+        }
+      }
+
+      // If reactivating from suspended, resume Stripe subscription
+      if (input.status === "active" && fee.status === "suspended" && fee.stripeSubscriptionId) {
+        try {
+          await stripe.subscriptions.update(fee.stripeSubscriptionId, {
+            pause_collection: "",
+          } as any);
+        } catch (err) {
+          console.error("[Admin] Failed to resume Stripe subscription:", err);
+        }
+      }
+
+      // If ending, cancel Stripe subscription
+      if (input.status === "ended" && fee.stripeSubscriptionId) {
+        try {
+          await stripe.subscriptions.cancel(fee.stripeSubscriptionId);
+        } catch (err) {
+          console.error("[Admin] Failed to cancel Stripe subscription:", err);
+        }
+      }
+
+      await db
+        .update(successFees)
+        .set({
+          status: input.status,
+          notes: input.notes ?? fee.notes,
+          endDate: input.status === "ended" ? new Date() : fee.endDate,
+        })
+        .where(eq(successFees.id, input.feeId));
+
+      return { success: true };
+    }),
+
+  // ─── Approve / Reject Verification ──────────────────────────────────────────
+  reviewVerification: adminProcedure
+    .input(
+      z.object({
+        verificationId: z.number(),
+        approved: z.boolean(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      const [verification] = await db
+        .select()
+        .from(employmentVerifications)
+        .where(eq(employmentVerifications.id, input.verificationId))
+        .limit(1);
+
+      if (!verification)
+        throw new TRPCError({ code: "NOT_FOUND", message: "Verification not found" });
+
+      await db
+        .update(employmentVerifications)
+        .set({
+          status: input.approved ? "approved" : "rejected",
+          reviewedAt: new Date(),
+          reviewNotes: input.notes ?? null,
+        })
+        .where(eq(employmentVerifications.id, input.verificationId));
+
+      // If approved, update next verification due date on the fee
+      if (input.approved) {
+        const nextDue = new Date();
+        nextDue.setDate(nextDue.getDate() + 90);
+        const graceExpiry = new Date(nextDue);
+        graceExpiry.setDate(graceExpiry.getDate() + 14);
+
+        await db
+          .update(successFees)
+          .set({
+            status: "active",
+            nextVerificationDue: nextDue,
+            verificationGraceExpiry: graceExpiry,
+          })
+          .where(eq(successFees.id, verification.successFeeId));
+      }
+
+      return { success: true, approved: input.approved };
+    }),
+
+  // ─── Suspend User Account ────────────────────────────────────────────────────
+  suspendUser: adminProcedure
+    .input(
+      z.object({
+        userId: z.number(),
+        reason: z.string().min(1),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      await db
+        .update(users)
+        .set({ accountStatus: "suspended" })
+        .where(eq(users.id, input.userId));
+
+      // Suspend all active fees for this user
+      const userFees = await db
+        .select()
+        .from(successFees)
+        .where(and(eq(successFees.userId, input.userId), eq(successFees.status, "active")));
+
+      for (const fee of userFees) {
+        if (fee.stripeSubscriptionId) {
+          try {
+            await stripe.subscriptions.update(fee.stripeSubscriptionId, {
+              pause_collection: { behavior: "void" },
+            });
+          } catch (err) {
+            console.error("[Admin] Failed to pause subscription during user suspension:", err);
+          }
+        }
+        await db
+          .update(successFees)
+          .set({ status: "suspended", notes: `Suspended: ${input.reason}` })
+          .where(eq(successFees.id, fee.id));
+      }
+
+      return { success: true };
+    }),
+
+  // ─── Reinstate User Account ──────────────────────────────────────────────────
+  reinstateUser: adminProcedure
+    .input(z.object({ userId: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      await db
+        .update(users)
+        .set({ accountStatus: "active" })
+        .where(eq(users.id, input.userId));
+
+      return { success: true };
+    }),
+
+  // ─── Flag for Legal Escalation ───────────────────────────────────────────────
+  flagLegalEscalation: adminProcedure
+    .input(
+      z.object({
+        feeId: z.number(),
+        reason: z.string().min(1),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      const [fee] = await db
+        .select()
+        .from(successFees)
+        .where(eq(successFees.id, input.feeId))
+        .limit(1);
+
+      if (!fee) throw new TRPCError({ code: "NOT_FOUND", message: "Success fee not found" });
+
+      const escalationNote = `[LEGAL ESCALATION ${new Date().toISOString()}] ${input.reason}`;
+      const updatedNotes = fee.notes ? `${fee.notes}\n${escalationNote}` : escalationNote;
+
+      await db
+        .update(successFees)
+        .set({
+          status: "disputed",
+          notes: updatedNotes,
+        })
+        .where(eq(successFees.id, input.feeId));
+
+      // Suspend user account
+      await db
+        .update(users)
+        .set({ accountStatus: "suspended" })
+        .where(eq(users.id, fee.userId));
+
+      return { success: true, escalationNote };
+    }),
+
+  // ─── List Pending Verifications ──────────────────────────────────────────────
+  listPendingVerifications: adminProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+    const verifications = await db
+      .select({
+        id: employmentVerifications.id,
+        successFeeId: employmentVerifications.successFeeId,
+        userId: employmentVerifications.userId,
+        verificationType: employmentVerifications.verificationType,
+        documentUrl: employmentVerifications.documentUrl,
+        documentType: employmentVerifications.documentType,
+        status: employmentVerifications.status,
+        submittedAt: employmentVerifications.submittedAt,
+        userName: users.name,
+        userEmail: users.email,
+        employerName: successFees.employerName,
+        jobTitle: successFees.jobTitle,
+        monthlySalary: successFees.monthlySalary,
+      })
+      .from(employmentVerifications)
+      .leftJoin(users, eq(employmentVerifications.userId, users.id))
+      .leftJoin(successFees, eq(employmentVerifications.successFeeId, successFees.id))
+      .where(eq(employmentVerifications.status, "pending"))
+      .orderBy(desc(employmentVerifications.submittedAt));
+
+    return verifications;
+  }),
+
+  // ─── Payment History ─────────────────────────────────────────────────────────
+  listPayments: adminProcedure
+    .input(
+      z.object({
+        limit: z.number().min(1).max(100).default(50),
+        offset: z.number().min(0).default(0),
+      })
+    )
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      const payments = await db
+        .select({
+          id: feePayments.id,
+          successFeeId: feePayments.successFeeId,
+          userId: feePayments.userId,
+          amount: feePayments.amount,
+          currency: feePayments.currency,
+          status: feePayments.status,
+          paidAt: feePayments.paidAt,
+          periodStart: feePayments.periodStart,
+          periodEnd: feePayments.periodEnd,
+          stripeInvoiceId: feePayments.stripeInvoiceId,
+          userName: users.name,
+          userEmail: users.email,
+          employerName: successFees.employerName,
+        })
+        .from(feePayments)
+        .leftJoin(users, eq(feePayments.userId, users.id))
+        .leftJoin(successFees, eq(feePayments.successFeeId, successFees.id))
+        .orderBy(desc(feePayments.createdAt))
+        .limit(input.limit)
+        .offset(input.offset);
+
+      return payments;
+    }),
+
+  // ─── Add Admin Note ──────────────────────────────────────────────────────────
+  addNote: adminProcedure
+    .input(
+      z.object({
+        feeId: z.number(),
+        note: z.string().min(1),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      const [fee] = await db
+        .select({ notes: successFees.notes })
+        .from(successFees)
+        .where(eq(successFees.id, input.feeId))
+        .limit(1);
+
+      if (!fee) throw new TRPCError({ code: "NOT_FOUND", message: "Success fee not found" });
+
+      const timestamp = new Date().toISOString();
+      const newNote = `[${timestamp}] ${input.note}`;
+      const updatedNotes = fee.notes ? `${fee.notes}\n${newNote}` : newNote;
+
+      await db
+        .update(successFees)
+        .set({ notes: updatedNotes })
+        .where(eq(successFees.id, input.feeId));
+
+      return { success: true };
+    }),
+});

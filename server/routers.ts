@@ -3,9 +3,14 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
+import { getDb } from "./db";
+import { users } from "../drizzle/schema";
+import { eq } from "drizzle-orm";
 import { normalizeSalary, normalizeLocation, normalizeJobType, normalizeExperienceLevel, extractSkills, extractBenefits, getDeduplicator } from "./jobNormalization";
 import { getRecentJobs, searchJobs, getDiscoveryStats, getSubscriptionManager } from "./realTimeDiscovery";
 import { successFeesRouter } from "./routers/successFees";
+import { adminRouter } from "./routers/admin";
 import { uploadResume, getActiveResume, getResumeVersions, setActiveVersion, deleteResumeVersion, getResumeStats, getResumeDownloadUrl } from "./resumeStorage";
 import {
   saveJob,
@@ -47,6 +52,12 @@ export const appRouter = router({
       return {
         success: true,
       } as const;
+    }),
+    acceptTos: protectedProcedure.mutation(async ({ ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      await db.update(users).set({ tosAcceptedAt: new Date() }).where(eq(users.id, ctx.user.id));
+      return { success: true };
     }),
   }),
 
@@ -1303,6 +1314,7 @@ export const appRouter = router({
       }),
   }),
   successFees: successFeesRouter,
+  admin: adminRouter,
 });
 
 export type AppRouter = typeof appRouter;

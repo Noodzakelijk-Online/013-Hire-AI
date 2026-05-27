@@ -376,3 +376,30 @@
 - [x] Quarterly verification reminders (notification)
 - [x] Grace period: 14 days to submit verification after due date
 - [x] Account suspension after grace period expires
+
+
+## Phase 30: CTA Fix, Admin Panel & Terms of Service
+
+### Fix See How It Works CTA
+- [x] Update "See How It Works" button on landing page hero to scroll to testimonials or sign-in flow
+- [x] Remove or repurpose scrollToFeatures/scrollToFaq references that no longer exist
+
+### Admin Panel
+- [x] Create /admin route protected by admin role check
+- [x] Admin dashboard showing all active success fees (user, employer, salary, fee amount, status)
+- [x] Overdue verifications list with days overdue and user contact info
+- [x] Non-compliant accounts queue (missed payments, failed verifications)
+- [x] Legal escalation action (mark account as escalated, add notes)
+- [x] Account suspension/reinstatement controls
+- [x] Revenue overview (total monthly fees collected, outstanding)
+- [x] Add admin role check to server procedures (adminProcedure)
+- [x] Add admin tRPC router with all admin procedures
+
+### Terms of Service Page
+- [x] Create /terms route with full ToS content covering 5% fee obligation
+- [x] ToS must explicitly cover: fee calculation, payment schedule, quarterly verification, legal enforcement
+- [x] Add ToS acceptance checkbox to Report Hire dialog (already partially done)
+- [x] Add ToS acceptance to onboarding flow (first Dashboard visit for new users)
+- [x] Store ToS acceptance timestamp in database (users table: tosAcceptedAt)
+- [x] Gate Dashboard access behind ToS acceptance for new users
+- [x] Add ToS link in footer of all pages

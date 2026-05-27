@@ -544,8 +544,14 @@ export default function LandingPage() {
               <Globe className="h-4 w-4" />
               <span>On a mission to reduce worldwide unemployment</span>
             </div>
-            <div className="text-sm text-slate-500">
-              © 2026 Hire.AI. All rights reserved.
+            <div className="flex items-center gap-4 text-sm text-slate-500">
+              <span>© 2026 Hire.AI. All rights reserved.</span>
+              <a
+                href="/terms"
+                className="text-slate-400 hover:text-cyan-400 transition-colors hover:underline underline-offset-4"
+              >
+                Terms of Service
+              </a>
             </div>
           </div>
         </div>
