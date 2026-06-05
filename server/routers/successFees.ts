@@ -237,7 +237,8 @@ export const successFeesRouter = router({
       const fileKey = `verifications/${userId}-${Date.now()}-${input.documentFileName}`;
       const { url: documentUrl } = await storagePut(fileKey, fileBuffer, input.documentMimeType);
 
-      // Create verification record
+      // Create verification record. Do not extend the next verification due date here.
+      // The deadline is only moved after an admin approves the submitted document.
       await db.insert(employmentVerifications).values({
         successFeeId: input.successFeeId,
         userId,
@@ -249,17 +250,7 @@ export const successFeesRouter = router({
         submittedAt: new Date(),
       });
 
-      // Update next verification due date (90 days from now)
-      const nextDue = new Date();
-      nextDue.setDate(nextDue.getDate() + 90);
-      const graceExpiry = new Date(nextDue);
-      graceExpiry.setDate(graceExpiry.getDate() + 14);
-
-      await db.update(successFees)
-        .set({ nextVerificationDue: nextDue, verificationGraceExpiry: graceExpiry })
-        .where(eq(successFees.id, input.successFeeId));
-
-      return { success: true };
+      return { success: true, status: "pending_review" as const };
     }),
 
   // Report employment ended (user left job)

@@ -1,15 +1,6 @@
-/**
- * Comprehensive Test Suite for Hire.AI V2
- * Tests all major features including scrapers, AI matching, D&I, career intelligence, and more
- */
-
-import { describe, expect, it, beforeAll, afterAll } from "vitest";
+import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
-
-// ============================================================================
-// TEST HELPERS
-// ============================================================================
 
 function createMockContext(userId: number = 1): TrpcContext {
   return {
@@ -18,19 +9,22 @@ function createMockContext(userId: number = 1): TrpcContext {
       openId: `test-user-${userId}`,
       email: `test${userId}@example.com`,
       name: `Test User ${userId}`,
-      loginMethod: "manus",
+      loginMethod: "test",
       role: "user",
+      accountStatus: "active",
+      stripeCustomerId: null,
+      tosAcceptedAt: null,
       createdAt: new Date(),
       updatedAt: new Date(),
       lastSignedIn: new Date(),
-    },
+    } as TrpcContext["user"],
     req: {
       protocol: "https",
       headers: {},
     } as TrpcContext["req"],
     res: {
       clearCookie: () => {},
-    } as TrpcContext["res"],
+    } as unknown as TrpcContext["res"],
   };
 }
 
@@ -43,502 +37,213 @@ function createPublicContext(): TrpcContext {
     } as TrpcContext["req"],
     res: {
       clearCookie: () => {},
-    } as TrpcContext["res"],
+    } as unknown as TrpcContext["res"],
   };
 }
 
-// ============================================================================
-// PLATFORM TESTS
-// ============================================================================
-
 describe("Job Platforms", () => {
-  it("should list all available platforms", async () => {
-    const ctx = createPublicContext();
-    const caller = appRouter.createCaller(ctx);
-    const platforms = await caller.platforms.list();
-    
-    expect(Array.isArray(platforms)).toBe(true);
-  });
+  it("lists all and active platforms", async () => {
+    const caller = appRouter.createCaller(createPublicContext());
 
-  it("should list active platforms only", async () => {
-    const ctx = createPublicContext();
-    const caller = appRouter.createCaller(ctx);
-    const platforms = await caller.platforms.active();
-    
-    expect(Array.isArray(platforms)).toBe(true);
+    await expect(caller.platforms.list()).resolves.toEqual(expect.any(Array));
+    await expect(caller.platforms.active()).resolves.toEqual(expect.any(Array));
   });
 });
-
-// ============================================================================
-// SCRAPING TESTS
-// ============================================================================
 
 describe("Scraping Infrastructure", () => {
-  it("should have listScrapers method", async () => {
-    const ctx = createPublicContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    expect(caller.scraping).toBeDefined();
-    expect(caller.scraping.listScrapers).toBeDefined();
-  });
+  it("exposes the current scraping controls", () => {
+    const caller = appRouter.createCaller(createMockContext());
 
-  it("should have scraping methods available", async () => {
-    const ctx = createPublicContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    expect(caller.scraping.scrapeAll).toBeDefined();
-    expect(caller.scraping.scrapePlatform).toBeDefined();
-  });
-
-  it("should have scraping status method", async () => {
-    const ctx = createMockContext();
-    const caller = appRouter.createCaller(ctx);
-    
     expect(caller.scraping).toBeDefined();
     expect(caller.scraping.status).toBeDefined();
+    expect(caller.scraping.runScrape).toBeDefined();
+    expect(caller.scraping.startScheduler).toBeDefined();
+    expect(caller.scraping.stopScheduler).toBeDefined();
+    expect(caller.scraping.runNow).toBeDefined();
   });
 });
 
-// ============================================================================
-// JOB NORMALIZATION TESTS
-// ============================================================================
-
 describe("Job Normalization", () => {
-  it("should have normalization router available", async () => {
-    const ctx = createPublicContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    expect(caller.normalization).toBeDefined();
-  });
+  it("exposes normalization helpers", () => {
+    const caller = appRouter.createCaller(createPublicContext());
 
-  it("should have salary normalization method", async () => {
-    const ctx = createPublicContext();
-    const caller = appRouter.createCaller(ctx);
-    
     expect(caller.normalization.normalizeSalary).toBeDefined();
-  });
-
-  it("should have location normalization method", async () => {
-    const ctx = createPublicContext();
-    const caller = appRouter.createCaller(ctx);
-    
     expect(caller.normalization.normalizeLocation).toBeDefined();
-  });
-
-  it("should have job type normalization method", async () => {
-    const ctx = createPublicContext();
-    const caller = appRouter.createCaller(ctx);
-    
     expect(caller.normalization.normalizeJobType).toBeDefined();
-  });
-
-  it("should have extractSkills method", async () => {
-    const ctx = createPublicContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    expect(caller.normalization).toBeDefined();
+    expect(caller.normalization.normalizeExperienceLevel).toBeDefined();
     expect(caller.normalization.extractSkills).toBeDefined();
-  });
-
-  it("should have extractBenefits method", async () => {
-    const ctx = createPublicContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    expect(caller.normalization).toBeDefined();
     expect(caller.normalization.extractBenefits).toBeDefined();
   });
 });
 
-// ============================================================================
-// REAL-TIME DISCOVERY TESTS
-// ============================================================================
-
 describe("Real-Time Job Discovery", () => {
-  it("should have discovery router available", async () => {
-    const ctx = createPublicContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    expect(caller.discovery).toBeDefined();
-  });
+  it("exposes discovery methods", () => {
+    const caller = appRouter.createCaller(createMockContext());
 
-  it("should have discovery methods", async () => {
-    const ctx = createPublicContext();
-    const caller = appRouter.createCaller(ctx);
-    
+    expect(caller.discovery.getRecentJobs).toBeDefined();
+    expect(caller.discovery.searchJobs).toBeDefined();
     expect(caller.discovery.getStats).toBeDefined();
     expect(caller.discovery.subscribe).toBeDefined();
+    expect(caller.discovery.unsubscribe).toBeDefined();
+    expect(caller.discovery.triggerCheck).toBeDefined();
   });
 });
-
-// ============================================================================
-// RESUME TESTS
-// ============================================================================
 
 describe("Resume Management", () => {
-  it("should have resume parse method", async () => {
-    const ctx = createMockContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    expect(caller.resume).toBeDefined();
-    expect(caller.resume.parse).toBeDefined();
-  });
+  it("exposes resume methods", () => {
+    const caller = appRouter.createCaller(createMockContext());
 
-  it("should have resume router methods available", async () => {
-    const ctx = createMockContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    expect(caller.resume).toBeDefined();
-    expect(caller.resume.parse).toBeDefined();
     expect(caller.resume.upload).toBeDefined();
+    expect(caller.resume.parse).toBeDefined();
+    expect(caller.resume.parseFile).toBeDefined();
+    expect(caller.resume.uploadWithHistory).toBeDefined();
+    expect(caller.resume.getActive).toBeDefined();
+    expect(caller.resume.getVersions).toBeDefined();
   });
 });
-
-// ============================================================================
-// JOB ALERTS TESTS
-// ============================================================================
 
 describe("Job Alerts", () => {
-  it("should list user alerts", async () => {
-    const ctx = createMockContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    const alerts = await caller.alerts.list();
-    
-    expect(Array.isArray(alerts)).toBe(true);
+  it("lists user alerts", async () => {
+    const caller = appRouter.createCaller(createMockContext());
+
+    await expect(caller.alerts.list()).resolves.toEqual(expect.any(Array));
   });
 });
 
-// ============================================================================
-// INTERVIEW PREPARATION TESTS
-// ============================================================================
-
 describe("Interview Preparation", () => {
-  it("should have interview prep router available", async () => {
-    const ctx = createMockContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    expect(caller.interviewPrep).toBeDefined();
+  it("exposes interview-prep methods", () => {
+    const caller = appRouter.createCaller(createMockContext());
+
     expect(caller.interviewPrep.generateQuestions).toBeDefined();
     expect(caller.interviewPrep.mockInterview).toBeDefined();
     expect(caller.interviewPrep.videoTips).toBeDefined();
   });
 });
 
-// ============================================================================
-// CAREER INTELLIGENCE TESTS
-// ============================================================================
-
-describe("Career Intelligence", () => {
-  it("should have career router available", async () => {
-    const ctx = createMockContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    // Check that the career router exists
-    expect(caller.career).toBeDefined();
-    expect(caller.career.analyzeSalary).toBeDefined();
-    expect(caller.career.analyzeCompanyCulture).toBeDefined();
-    expect(caller.career.generateNetworkingStrategy).toBeDefined();
-    expect(caller.career.generateCareerPlan).toBeDefined();
-  });
-});
-
-// ============================================================================
-// D&I SUPPORT TESTS
-// ============================================================================
-
 describe("Diversity & Inclusion Support", () => {
-  it("should have D&I router available", async () => {
-    const ctx = createMockContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    expect(caller.diversity).toBeDefined();
-    expect(caller.diversity.analyzeCompanyDI).toBeDefined();
-    expect(caller.diversity.analyzeVisaSponsorship).toBeDefined();
-    expect(caller.diversity.getDIPlatforms).toBeDefined();
-  });
+  it("gets D&I platforms by category", async () => {
+    const caller = appRouter.createCaller(createPublicContext());
 
-  it("should get D&I platforms by category", async () => {
-    const ctx = createMockContext();
-    const caller = appRouter.createCaller(ctx);
-    
     const platforms = await caller.diversity.getDIPlatforms({
       categories: ["women_in_tech", "veterans"],
     });
-    
-    expect(platforms).toBeDefined();
-    expect(Array.isArray(platforms)).toBe(true);
+
+    expect(platforms).toEqual(expect.any(Array));
   });
 });
-
-// ============================================================================
-// AUTOMATION TESTS
-// ============================================================================
 
 describe("Application Automation", () => {
-  it("should have automation router available", async () => {
-    const ctx = createMockContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    expect(caller.automation).toBeDefined();
-    expect(caller.automation.detectATS).toBeDefined();
-    expect(caller.automation.getATSSupport).toBeDefined();
-  });
+  it("detects supported ATS types", async () => {
+    const caller = appRouter.createCaller(createPublicContext());
 
-  it("should detect ATS type from URL", async () => {
-    const ctx = createMockContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    const result = await caller.automation.detectATS({
+    const greenhouse = await caller.automation.detectATS({
       url: "https://boards.greenhouse.io/company/jobs/12345",
     });
-    
-    expect(result).toBeDefined();
-    expect(result.atsType).toBe("greenhouse");
-  });
-
-  it("should detect Workday ATS", async () => {
-    const ctx = createMockContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    const result = await caller.automation.detectATS({
+    const workday = await caller.automation.detectATS({
       url: "https://company.myworkday.com/careers/job/12345",
     });
-    
-    expect(result).toBeDefined();
-    expect(result.atsType).toBe("workday");
-  });
-
-  it("should detect Lever ATS", async () => {
-    const ctx = createMockContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    const result = await caller.automation.detectATS({
+    const lever = await caller.automation.detectATS({
       url: "https://jobs.lever.co/company/12345",
     });
-    
-    expect(result).toBeDefined();
-    expect(result.atsType).toBe("lever");
+
+    expect(greenhouse.atsType).toBe("greenhouse");
+    expect(workday.atsType).toBe("workday");
+    expect(lever.atsType).toBe("lever");
   });
 
-  it("should have automation methods available", async () => {
-    const ctx = createMockContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    expect(caller.automation).toBeDefined();
-    expect(caller.automation.detectATS).toBeDefined();
+  it("exposes applyToJob", () => {
+    const caller = appRouter.createCaller(createMockContext());
+    expect(caller.automation.applyToJob).toBeDefined();
   });
 });
 
-// ============================================================================
-// APPLICATION FEATURES TESTS
-// ============================================================================
-
 describe("Application Features", () => {
-  it("should have applications router available", async () => {
-    const ctx = createMockContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    expect(caller.applications).toBeDefined();
-    expect(caller.applications.list).toBeDefined();
+  it("lists user applications and exposes application tools", async () => {
+    const caller = appRouter.createCaller(createMockContext());
+
+    await expect(caller.applications.list()).resolves.toEqual(expect.any(Array));
     expect(caller.applications.addNote).toBeDefined();
     expect(caller.applications.scheduleInterview).toBeDefined();
     expect(caller.applications.createFollowUp).toBeDefined();
-  });
-
-  it("should list user applications", async () => {
-    const ctx = createMockContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    const applications = await caller.applications.list();
-    
-    expect(Array.isArray(applications)).toBe(true);
-  });
-
-  it("should get upcoming interviews", async () => {
-    const ctx = createMockContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    const interviews = await caller.applications.getUpcomingInterviews();
-    
-    expect(Array.isArray(interviews)).toBe(true);
+    await expect(caller.applications.getUpcomingInterviews()).resolves.toEqual(expect.any(Array));
   });
 });
-
-// ============================================================================
-// JOBS ROUTER TESTS
-// ============================================================================
 
 describe("Jobs Router", () => {
-  it("should list jobs", async () => {
-    const ctx = createPublicContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    const jobs = await caller.jobs.list({ limit: 10, offset: 0 });
-    
-    expect(Array.isArray(jobs)).toBe(true);
-  });
+  it("lists, searches, and exposes saved jobs", async () => {
+    const publicCaller = appRouter.createCaller(createPublicContext());
+    const authedCaller = appRouter.createCaller(createMockContext());
 
-  it("should search jobs", async () => {
-    const ctx = createPublicContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    const jobs = await caller.jobs.search({
-      title: "engineer",
-      limit: 10,
-      offset: 0,
-    });
-    
-    expect(Array.isArray(jobs)).toBe(true);
-  });
-
-  it("should get saved jobs for authenticated user", async () => {
-    const ctx = createMockContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    const savedJobs = await caller.jobs.getSavedJobs();
-    
-    expect(Array.isArray(savedJobs)).toBe(true);
+    await expect(publicCaller.jobs.list({ limit: 10, offset: 0 })).resolves.toEqual(expect.any(Array));
+    await expect(publicCaller.jobs.search({ title: "engineer", limit: 10, offset: 0 })).resolves.toEqual(expect.any(Array));
+    await expect(authedCaller.jobs.getSavedJobs()).resolves.toEqual(expect.any(Array));
   });
 });
-
-// ============================================================================
-// PROFILE ROUTER TESTS
-// ============================================================================
 
 describe("Profile Router", () => {
-  it("should get user profile", async () => {
-    const ctx = createMockContext();
-    const caller = appRouter.createCaller(ctx);
-    
+  it("gets user profile and exposes structured profile sections", async () => {
+    const caller = appRouter.createCaller(createMockContext());
+
     const profile = await caller.profile.get();
-    
-    // Profile may be null if not created yet
-    expect(profile === null || typeof profile === "object").toBe(true);
+    expect(profile === undefined || profile === null || typeof profile === "object").toBe(true);
+    expect(caller.profile.getWorkExperiences).toBeDefined();
+    expect(caller.profile.getEducation).toBeDefined();
+    expect(caller.profile.getSkills).toBeDefined();
+    expect(caller.profile.getProjects).toBeDefined();
   });
 });
-
-// ============================================================================
-// MATCHING ROUTER TESTS
-// ============================================================================
 
 describe("Matching Router", () => {
-  it("should have matching router available", async () => {
-    const ctx = createMockContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    expect(caller.matching).toBeDefined();
-    expect(caller.matching.calculateMatch).toBeDefined();
-    expect(caller.matching.getMatches).toBeDefined();
-  });
+  it("gets user matches", async () => {
+    const caller = appRouter.createCaller(createMockContext());
 
-  it("should get user matches", async () => {
-    const ctx = createMockContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    const matches = await caller.matching.getMatches({ minScore: 70 });
-    
-    expect(Array.isArray(matches)).toBe(true);
+    await expect(caller.matching.getMatches({ minScore: 70 })).resolves.toEqual(expect.any(Array));
+    expect(caller.matching.calculateMatch).toBeDefined();
   });
 });
-
-// ============================================================================
-// AI ROUTER TESTS
-// ============================================================================
 
 describe("AI Router", () => {
-  it("should have AI router available", async () => {
-    const ctx = createMockContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    expect(caller.ai).toBeDefined();
+  it("exposes AI helpers", () => {
+    const caller = appRouter.createCaller(createMockContext());
+
     expect(caller.ai.generateCoverLetter).toBeDefined();
-    expect(caller.ai.prepareInterview).toBeDefined();
+    expect(caller.ai.identifyDecisionMakers).toBeDefined();
+    expect(caller.ai.generateInterviewPrep).toBeDefined();
   });
 });
-
-// ============================================================================
-// DECISION MAKERS ROUTER TESTS
-// ============================================================================
-
-describe("Decision Makers Router", () => {
-  it("should have decision makers router available", async () => {
-    const ctx = createMockContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    expect(caller.decisionMakers).toBeDefined();
-    expect(caller.decisionMakers.identify).toBeDefined();
-    expect(caller.decisionMakers.getForCompany).toBeDefined();
-  });
-});
-
-// ============================================================================
-// SOCIAL CONNECTIONS TESTS
-// ============================================================================
 
 describe("Social Connections", () => {
-  it("should have social router available", async () => {
-    const ctx = createMockContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    expect(caller.social).toBeDefined();
-    expect(caller.social.connect).toBeDefined();
-    expect(caller.social.disconnect).toBeDefined();
-    expect(caller.social.getConnections).toBeDefined();
-  });
+  it("exposes current social profile helpers", () => {
+    const caller = appRouter.createCaller(createMockContext());
 
-  it("should have social connection methods", async () => {
-    const ctx = createMockContext();
-    const caller = appRouter.createCaller(ctx);
-    
+    expect(caller.social.validateUrl).toBeDefined();
     expect(caller.social.connect).toBeDefined();
-    expect(caller.social.disconnect).toBeDefined();
+    expect(caller.social.analyzeLinkedIn).toBeDefined();
+    expect(caller.social.analyzeGitHub).toBeDefined();
+    expect(caller.social.analyzePortfolio).toBeDefined();
   });
 });
 
-// ============================================================================
-// AUTH TESTS
-// ============================================================================
-
 describe("Authentication", () => {
-  it("should return user info for authenticated context", async () => {
-    const ctx = createMockContext();
-    const caller = appRouter.createCaller(ctx);
-    
+  it("returns user info for authenticated context", async () => {
+    const caller = appRouter.createCaller(createMockContext());
+
     const user = await caller.auth.me();
-    
+
     expect(user).toBeDefined();
     expect(user?.id).toBe(1);
     expect(user?.email).toBe("test1@example.com");
   });
 
-  it("should return null for unauthenticated context", async () => {
-    const ctx = createPublicContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    const user = await caller.auth.me();
-    
-    expect(user).toBeNull();
+  it("returns null for unauthenticated context", async () => {
+    const caller = appRouter.createCaller(createPublicContext());
+
+    await expect(caller.auth.me()).resolves.toBeNull();
   });
 
-  it("should handle logout", async () => {
-    const ctx = createMockContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    const result = await caller.auth.logout();
-    
-    expect(result.success).toBe(true);
-  });
-});
+  it("handles logout", async () => {
+    const caller = appRouter.createCaller(createMockContext());
 
-// ============================================================================
-// SCHEDULER TESTS
-// ============================================================================
-
-describe("Scraping Scheduler", () => {
-  it("should have scheduler router available", async () => {
-    const ctx = createMockContext();
-    const caller = appRouter.createCaller(ctx);
-    
-    expect(caller.scraping.status).toBeDefined();
+    await expect(caller.auth.logout()).resolves.toEqual({ success: true });
   });
 });
