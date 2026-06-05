@@ -1,8 +1,12 @@
 import { invokeLLM } from "./_core/llm";
-// @ts-ignore - pdf-parse module types
-import pdf from "pdf-parse";
+import { createRequire } from "module";
 import mammoth from "mammoth";
 import { storagePut } from "./storage";
+
+// pdf-parse is a CJS module; use createRequire to avoid ESM default-export error in production
+const require = createRequire(import.meta.url);
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const pdf = require("pdf-parse") as (buffer: Buffer) => Promise<{ text: string }>;
 
 /**
  * AI-powered resume parsing service
