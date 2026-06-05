@@ -41,7 +41,16 @@ jobs:
         run: pnpm check
 
       - name: Run tests
-        run: pnpm test
+        run: |
+          set -o pipefail
+          pnpm test 2>&1 | tee test-output.log
+
+      - name: Upload test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-output
+          path: test-output.log
 
       - name: Build
         run: pnpm build
