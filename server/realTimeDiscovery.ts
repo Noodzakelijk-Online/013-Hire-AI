@@ -5,7 +5,8 @@
 
 import { getDb } from "./db";
 import { jobs } from "../drizzle/schema";
-import { desc, gt, and, eq, sql } from "drizzle-orm";
+import { asc, desc, gt, and, eq, gte, inArray, like, or, sql } from "drizzle-orm";
+import { sampleJobs } from "./sampleData";
 
 // ============================================================================
 // TYPES
@@ -54,6 +55,7 @@ export interface DiscoverySubscription {
 class SubscriptionManager {
   private subscriptions: Map<number, DiscoverySubscription> = new Map();
   private lastCheckedTimestamp: Date = new Date();
+  private lastCheckedId = 0;
   private pollingInterval: NodeJS.Timeout | null = null;
   private isPolling = false;
 
@@ -132,19 +134,28 @@ class SubscriptionManager {
           salaryMax: jobs.salaryMax,
           platformId: jobs.platformId,
           postedDate: jobs.postedDate,
+          createdAt: jobs.createdAt,
         })
         .from(jobs)
         .where(
           and(
-            gt(jobs.createdAt, this.lastCheckedTimestamp),
+            or(
+              gt(jobs.createdAt, this.lastCheckedTimestamp),
+              and(
+                eq(jobs.createdAt, this.lastCheckedTimestamp),
+                gt(jobs.id, this.lastCheckedId)
+              )
+            ),
             eq(jobs.isActive, 1)
           )
         )
-        .orderBy(desc(jobs.createdAt))
+        .orderBy(asc(jobs.createdAt), asc(jobs.id))
         .limit(100);
 
       if (newJobs.length > 0) {
-        this.lastCheckedTimestamp = new Date();
+        const newestJob = newJobs[newJobs.length - 1];
+        this.lastCheckedTimestamp = newestJob.createdAt;
+        this.lastCheckedId = newestJob.id;
         this.notifySubscribers(newJobs as JobSummary[]);
       }
     } catch (error) {
@@ -270,7 +281,45 @@ export async function getRecentJobs(options: {
   postedAfter?: Date;
 }): Promise<{ jobs: JobSummary[]; total: number }> {
   const db = await getDb();
-  if (!db) return { jobs: [], total: 0 };
+  if (!db) {
+    const limit = options.limit || 20;
+    const offset = options.offset || 0;
+    let filteredJobs = sampleJobs.filter((job) => job.isActive === 1);
+
+    if (options.keywords?.length) {
+      filteredJobs = filteredJobs.filter((job) => {
+        const searchable = `${job.title} ${job.company} ${job.description || ""} ${job.skills || ""}`.toLowerCase();
+        return options.keywords!.some((keyword) => searchable.includes(keyword.toLowerCase()));
+      });
+    }
+    if (options.locations?.length) {
+      filteredJobs = filteredJobs.filter((job) => {
+        const location = (job.location || "").toLowerCase();
+        return options.locations!.some((item) => location.includes(item.toLowerCase()));
+      });
+    }
+    if (options.platformIds?.length) {
+      filteredJobs = filteredJobs.filter((job) => options.platformIds!.includes(job.platformId));
+    }
+    if (options.minSalary) {
+      filteredJobs = filteredJobs.filter((job) => !job.salaryMin || job.salaryMin >= options.minSalary!);
+    }
+
+    const mappedJobs = filteredJobs
+      .sort((a, b) => (b.postedDate?.getTime() || 0) - (a.postedDate?.getTime() || 0))
+      .map((job) => ({
+        id: job.id,
+        title: job.title,
+        company: job.company,
+        location: job.location,
+        salaryMin: job.salaryMin,
+        salaryMax: job.salaryMax,
+        platformId: job.platformId,
+        postedDate: job.postedDate,
+      }));
+
+    return { jobs: mappedJobs.slice(offset, offset + limit), total: filteredJobs.length };
+  }
 
   const limit = options.limit || 20;
   const offset = options.offset || 0;
@@ -279,6 +328,32 @@ export async function getRecentJobs(options: {
 
   if (options.postedAfter) {
     conditions.push(gt(jobs.postedDate, options.postedAfter));
+  }
+  if (options.keywords?.length) {
+    const keywordConditions = options.keywords.map((keyword) => {
+      const pattern = `%${keyword}%`;
+      return or(
+        like(jobs.title, pattern),
+        like(jobs.company, pattern),
+        like(jobs.description, pattern),
+        like(jobs.skills, pattern)
+      );
+    });
+    conditions.push(or(...keywordConditions)!);
+  }
+  if (options.locations?.length) {
+    conditions.push(or(...options.locations.map((location) =>
+      like(jobs.location, `%${location}%`)
+    ))!);
+  }
+  if (options.platformIds?.length) {
+    conditions.push(inArray(jobs.platformId, options.platformIds));
+  }
+  if (options.minSalary) {
+    conditions.push(or(
+      sql`${jobs.salaryMin} IS NULL`,
+      gte(jobs.salaryMin, options.minSalary)
+    )!);
   }
 
   const jobList = await db
@@ -305,28 +380,7 @@ export async function getRecentJobs(options: {
 
   const total = countResult[0]?.count || 0;
 
-  let filteredJobs = jobList as JobSummary[];
-
-  if (options.keywords && options.keywords.length > 0) {
-    filteredJobs = filteredJobs.filter((job) => {
-      const titleLower = job.title.toLowerCase();
-      return options.keywords!.some((kw) => titleLower.includes(kw.toLowerCase()));
-    });
-  }
-
-  if (options.locations && options.locations.length > 0) {
-    filteredJobs = filteredJobs.filter((job) => {
-      if (!job.location) return false;
-      const locationLower = job.location.toLowerCase();
-      return options.locations!.some((loc) => locationLower.includes(loc.toLowerCase()));
-    });
-  }
-
-  if (options.platformIds && options.platformIds.length > 0) {
-    filteredJobs = filteredJobs.filter((job) => options.platformIds!.includes(job.platformId));
-  }
-
-  return { jobs: filteredJobs, total };
+  return { jobs: jobList as JobSummary[], total };
 }
 
 /**
@@ -341,12 +395,26 @@ export async function getDiscoveryStats(): Promise<{
 }> {
   const db = await getDb();
   if (!db) {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const weekStart = new Date(todayStart.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const activeJobs = sampleJobs.filter((job) => job.isActive === 1);
     return {
-      totalJobs: 0,
-      jobsToday: 0,
-      jobsThisWeek: 0,
-      topPlatforms: [],
-      topLocations: [],
+      totalJobs: activeJobs.length,
+      jobsToday: activeJobs.filter((job) => job.createdAt > todayStart).length,
+      jobsThisWeek: activeJobs.filter((job) => job.createdAt > weekStart).length,
+      topPlatforms: Object.entries(
+        activeJobs.reduce<Record<string, number>>((counts, job) => {
+          counts[job.platformId] = (counts[job.platformId] || 0) + 1;
+          return counts;
+        }, {})
+      ).map(([platformId, count]) => ({ platformId: Number(platformId), count })),
+      topLocations: Object.entries(
+        activeJobs.reduce<Record<string, number>>((counts, job) => {
+          if (job.location) counts[job.location] = (counts[job.location] || 0) + 1;
+          return counts;
+        }, {})
+      ).map(([location, count]) => ({ location, count })),
     };
   }
 
@@ -416,7 +484,34 @@ export async function searchJobs(query: string, options?: {
   offset?: number;
 }): Promise<{ jobs: JobSummary[]; total: number }> {
   const db = await getDb();
-  if (!db) return { jobs: [], total: 0 };
+  if (!db) {
+    const limit = options?.limit || 20;
+    const offset = options?.offset || 0;
+    const searchTerms = query.toLowerCase().split(/\s+/).filter(Boolean);
+    const scoredJobs = sampleJobs
+      .map((job) => {
+        const searchable = `${job.title} ${job.company} ${job.description || ""} ${job.skills || ""}`.toLowerCase();
+        const score = searchTerms.reduce((total, term) => total + (searchable.includes(term) ? 1 : 0), 0);
+        return { job, score };
+      })
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score);
+
+    return {
+      jobs: scoredJobs.slice(offset, offset + limit).map(({ job, score }) => ({
+        id: job.id,
+        title: job.title,
+        company: job.company,
+        location: job.location,
+        salaryMin: job.salaryMin,
+        salaryMax: job.salaryMax,
+        platformId: job.platformId,
+        postedDate: job.postedDate,
+        matchScore: score,
+      })),
+      total: scoredJobs.length,
+    };
+  }
 
   const limit = options?.limit || 20;
   const offset = options?.offset || 0;

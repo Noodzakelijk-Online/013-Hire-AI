@@ -2,6 +2,9 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { getAdminOperatingControlAction } from "@/lib/adminOperatingControl";
+import { getAdminOperatingSummary } from "@/lib/adminOperatingSummary";
+import { getAdminReviewEvidenceSummary } from "@/lib/adminReviewEvidence";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -60,6 +63,27 @@ function StatusBadge({ status }: { status: string }) {
     rejected: "bg-red-500/20 text-red-400 border-red-500/30",
     paid: "bg-green-500/20 text-green-400 border-green-500/30",
     failed: "bg-red-500/20 text-red-400 border-red-500/30",
+    open: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+    in_progress: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    resolved: "bg-green-500/20 text-green-400 border-green-500/30",
+    dismissed: "bg-slate-500/20 text-slate-400 border-slate-500/30",
+    low: "bg-slate-500/20 text-slate-400 border-slate-500/30",
+    medium: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+    high: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+    critical: "bg-red-500/20 text-red-400 border-red-500/30",
+    application_review: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+    submission_evidence: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+    employer_response: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    offer_attribution: "bg-green-500/20 text-green-400 border-green-500/30",
+    verification_overdue: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+    payment_failed: "bg-red-500/20 text-red-400 border-red-500/30",
+    legal_escalation: "bg-red-500/20 text-red-400 border-red-500/30",
+    employment_ended: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+    apply: "bg-green-500/20 text-green-400 border-green-500/30",
+    save: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    ignore: "bg-slate-500/20 text-slate-400 border-slate-500/30",
+    review: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+    manual_apply: "bg-purple-500/20 text-purple-400 border-purple-500/30",
   };
   const cls = variants[status] ?? "bg-slate-500/20 text-slate-400 border-slate-500/30";
   return (
@@ -82,12 +106,24 @@ export default function AdminPanel() {
   const [statusDialog, setStatusDialog] = useState<{ open: boolean; feeId: number | null; currentStatus: string }>({ open: false, feeId: null, currentStatus: "" });
   const [newStatus, setNewStatus] = useState("");
   const [statusNote, setStatusNote] = useState("");
+  const [reviewDialog, setReviewDialog] = useState<{ open: boolean; itemId: number | null; status: "resolved" | "dismissed" }>({ open: false, itemId: null, status: "resolved" });
+  const [reviewResolution, setReviewResolution] = useState("");
+  const [evidenceDialog, setEvidenceDialog] = useState<{ open: boolean; itemId: number | null }>({ open: false, itemId: null });
 
   // Data queries
   const { data: stats, refetch: refetchStats } = trpc.admin.getStats.useQuery();
   const { data: fees, refetch: refetchFees } = trpc.admin.listFees.useQuery({ status: "all", limit: 100, offset: 0 });
   const { data: overdue, refetch: refetchOverdue } = trpc.admin.listOverdueVerifications.useQuery();
   const { data: pendingVerifications, refetch: refetchVerifications } = trpc.admin.listPendingVerifications.useQuery();
+  const { data: reviewQueue, refetch: refetchReviewQueue } = trpc.admin.getReviewQueue.useQuery({ status: "open" });
+  const {
+    data: reviewEvidence,
+    isLoading: reviewEvidenceLoading,
+    error: reviewEvidenceError,
+  } = trpc.admin.getReviewEvidence.useQuery(
+    { reviewItemId: evidenceDialog.itemId ?? 0 },
+    { enabled: evidenceDialog.open && evidenceDialog.itemId !== null }
+  );
   const { data: payments } = trpc.admin.listPayments.useQuery({ limit: 50, offset: 0 });
 
   // Mutations
@@ -109,6 +145,7 @@ export default function AdminPanel() {
       refetchVerifications();
       refetchOverdue();
       refetchStats();
+      refetchReviewQueue();
     },
     onError: (err) => toast.error(err.message),
   });
@@ -142,6 +179,16 @@ export default function AdminPanel() {
     },
     onError: (err) => toast.error(err.message),
   });
+  const resolveReviewItem = trpc.admin.resolveReviewItem.useMutation({
+    onSuccess: () => {
+      toast.success("Review item updated");
+      refetchReviewQueue();
+      refetchStats();
+      setReviewDialog({ open: false, itemId: null, status: "resolved" });
+      setReviewResolution("");
+    },
+    onError: (err) => toast.error(err.message),
+  });
 
   // Auth guard
   if (loading) {
@@ -171,11 +218,32 @@ export default function AdminPanel() {
     { label: "Active Fees", value: stats?.activeFees ?? 0, icon: Activity, color: "text-green-400" },
     { label: "Pending Verification", value: stats?.pendingFees ?? 0, icon: FileText, color: "text-yellow-400" },
     { label: "Overdue Verifications", value: stats?.overdueVerifications ?? 0, icon: AlertTriangle, color: "text-orange-400" },
+    { label: "Review Items", value: reviewQueue?.length ?? 0, icon: Shield, color: "text-cyan-400" },
     { label: "Suspended", value: stats?.suspendedFees ?? 0, icon: Ban, color: "text-red-400" },
     { label: "Monthly Revenue", value: `$${(stats?.monthlyRevenueUsd ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}`, icon: DollarSign, color: "text-cyan-400" },
     { label: "Total Revenue", value: `$${(stats?.totalRevenueUsd ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}`, icon: DollarSign, color: "text-blue-400" },
     { label: "Total Users", value: stats?.totalUsers ?? 0, icon: Users, color: "text-purple-400" },
   ];
+  const operatingSummary = getAdminOperatingSummary({
+    stats,
+    overdue,
+    pendingVerifications,
+    reviewQueue,
+    payments,
+  });
+  const operatingSummaryClass = {
+    clear: "border-emerald-500/30 text-emerald-300",
+    watch: "border-blue-500/30 text-blue-300",
+    attention: "border-amber-500/30 text-amber-300",
+    critical: "border-red-500/30 text-red-300",
+  }[operatingSummary.status];
+  const operatingAction = getAdminOperatingControlAction(operatingSummary);
+  const operatingActionClass = {
+    low: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+    medium: "border-blue-500/30 bg-blue-500/10 text-blue-300",
+    high: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+    critical: "border-red-500/30 bg-red-500/10 text-red-300",
+  }[operatingAction.risk];
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
@@ -198,6 +266,7 @@ export default function AdminPanel() {
                 refetchFees();
                 refetchOverdue();
                 refetchVerifications();
+                refetchReviewQueue();
               }}
               className="text-slate-400 hover:text-white"
             >
@@ -217,8 +286,77 @@ export default function AdminPanel() {
       </header>
 
       <div className="max-w-7xl mx-auto px-4 py-8">
+        <Card className="mb-6 bg-slate-900/70 border-slate-800/50">
+          <CardContent className="p-5">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+              <div className="max-w-2xl">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <Shield className="h-5 w-5 text-cyan-400" />
+                  <h2 className="text-base font-semibold text-white">Admin Operating Queue</h2>
+                  <Badge variant="outline" className={operatingSummaryClass}>
+                    {operatingSummary.label}
+                  </Badge>
+                </div>
+                <p className="text-sm text-slate-400">{operatingSummary.nextAction}</p>
+                <div className="mt-3 text-xs text-slate-500">
+                  Manual admin approval is still required for legal escalation, suspension, billing changes, and verification decisions.
+                </div>
+                <div
+                  data-testid="admin-operating-control"
+                  className="mt-4 rounded-md border border-slate-800 bg-slate-950/50 p-4"
+                >
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" className={operatingActionClass}>
+                      {operatingAction.label}
+                    </Badge>
+                    {operatingAction.approvalGated && (
+                      <Badge variant="outline" className="border-cyan-500/30 text-cyan-300">
+                        Approval gated
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="text-sm font-medium text-white">{operatingAction.headline}</div>
+                  <p className="mt-1 text-xs text-slate-400">{operatingAction.detail}</p>
+                  <Button
+                    data-testid="admin-operating-primary"
+                    type="button"
+                    size="sm"
+                    className="mt-3 bg-cyan-600 hover:bg-cyan-700 text-white"
+                    onClick={() => setActiveTab(operatingAction.tab)}
+                  >
+                    {operatingAction.cta}
+                  </Button>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:min-w-[560px]">
+                {[
+                  ["Open work", operatingSummary.totalOpenWork, "review"],
+                  ["Critical", operatingSummary.criticalItems, "review"],
+                  ["Overdue", operatingSummary.overdueVerifications, "overdue"],
+                  ["Verifications", operatingSummary.pendingVerifications, "verifications"],
+                  ["Failed payments", operatingSummary.failedPayments, "payments"],
+                  ["Legal", operatingSummary.legalEscalations, "review"],
+                  ["Offer reviews", operatingSummary.offerAttributionReviews, "review"],
+                  ["Monthly revenue", `$${operatingSummary.monthlyRevenueUsd.toLocaleString("en-US", { minimumFractionDigits: 2 })}`, "overview"],
+                ].map(([label, value, tab]) => (
+                  <button
+                    key={label}
+                    data-testid={`admin-operating-metric-${String(label).toLowerCase().replace(/\s+/g, "-")}`}
+                    type="button"
+                    onClick={() => setActiveTab(String(tab))}
+                    className="rounded-md border border-slate-700/70 bg-slate-950/60 p-3 text-left transition hover:border-cyan-500/40"
+                  >
+                    <div className="text-xs text-slate-500">{label}</div>
+                    <div className="mt-1 text-lg font-semibold text-white">{value}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Stats Row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 mb-8">
           {statCards.map((s) => (
             <Card key={s.label} className="bg-slate-900/60 border-slate-800/50">
               <CardContent className="p-4">
@@ -241,6 +379,9 @@ export default function AdminPanel() {
             </TabsTrigger>
             <TabsTrigger value="verifications" className="data-[state=active]:bg-yellow-500/20 data-[state=active]:text-yellow-400">
               Verifications {pendingVerifications && pendingVerifications.length > 0 && <Badge className="ml-1 bg-yellow-500 text-white text-xs px-1.5">{pendingVerifications.length}</Badge>}
+            </TabsTrigger>
+            <TabsTrigger value="review" className="data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-400">
+              Review {reviewQueue && reviewQueue.length > 0 && <Badge className="ml-1 bg-cyan-500 text-white text-xs px-1.5">{reviewQueue.length}</Badge>}
             </TabsTrigger>
             <TabsTrigger value="payments" className="data-[state=active]:bg-green-500/20 data-[state=active]:text-green-400">
               Payments
@@ -498,6 +639,128 @@ export default function AdminPanel() {
             </Card>
           </TabsContent>
 
+          {/* Review Queue Tab */}
+          <TabsContent value="review">
+            <Card className="bg-slate-900/60 border-slate-800/50">
+              <CardHeader>
+                <CardTitle className="text-white text-base flex items-center gap-2">
+                  <Shield className="h-5 w-5 text-cyan-400" />
+                  Operating Review Queue
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {reviewQueue?.map((item) => (
+                    (() => {
+                      const evidence = getAdminReviewEvidenceSummary(item);
+                      return (
+                        <div
+                          key={item.id}
+                          data-testid="admin-review-item"
+                          data-review-category={item.category}
+                          className="border border-slate-800 rounded-lg p-4 bg-slate-900/40"
+                        >
+                          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="min-w-0 flex-1">
+                              <div className="mb-2 flex flex-wrap items-center gap-2">
+                                <StatusBadge status={item.priority} />
+                                <StatusBadge status={item.category} />
+                                <span className="text-xs text-slate-500">{item.entityType} #{item.entityId}</span>
+                                <Badge variant="outline" className="border-cyan-500/30 text-cyan-300">
+                                  {evidence.label}
+                                </Badge>
+                              </div>
+                              <div className="font-medium text-white">{item.title}</div>
+                              {item.description && (
+                                <p className="mt-1 text-sm text-slate-400">{item.description}</p>
+                              )}
+                              <div
+                                data-testid="admin-review-evidence"
+                                className="mt-3 rounded-md border border-slate-800 bg-slate-950/50 p-3"
+                              >
+                                <div className="mb-2 flex flex-wrap items-center gap-2">
+                                  <Badge
+                                    variant="outline"
+                                    className={evidence.risk === "critical"
+                                      ? "border-red-500/40 text-red-300"
+                                      : evidence.risk === "high"
+                                        ? "border-orange-500/40 text-orange-300"
+                                        : evidence.risk === "medium"
+                                          ? "border-amber-500/40 text-amber-300"
+                                          : "border-slate-700 text-slate-300"}
+                                  >
+                                    {evidence.risk}
+                                  </Badge>
+                                  {evidence.requiresManualDecision && (
+                                    <Badge variant="outline" className="border-cyan-500/30 text-cyan-300">
+                                      Manual decision
+                                    </Badge>
+                                  )}
+                                </div>
+                                <p className="text-sm font-medium text-white">{evidence.headline}</p>
+                                <p className="mt-1 text-sm text-slate-400">{evidence.detail}</p>
+                                <div className="mt-3 grid gap-2 md:grid-cols-2">
+                                  {evidence.checklist.map((proof) => (
+                                    <div key={proof} className="flex items-start gap-2 text-xs text-slate-300">
+                                      <CheckCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-300" />
+                                      <span>{proof}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                              <div className="mt-2 text-xs text-slate-500">
+                                User #{item.userId} - Created {formatDate(item.createdAt)}
+                              </div>
+                            </div>
+                            <div className="flex shrink-0 flex-wrap gap-2">
+                              <Button
+                                data-testid="admin-review-open-evidence"
+                                size="sm"
+                                variant="outline"
+                                className="h-8 border-slate-700 text-slate-300"
+                                onClick={() => setEvidenceDialog({ open: true, itemId: item.id })}
+                              >
+                                <FileText className="h-3.5 w-3.5 mr-1" />
+                                Evidence
+                              </Button>
+                              <Button
+                                size="sm"
+                                className="h-8 bg-cyan-600 hover:bg-cyan-700 text-white"
+                                onClick={() => {
+                                  setReviewDialog({ open: true, itemId: item.id, status: "resolved" });
+                                  setReviewResolution("");
+                                }}
+                              >
+                                <CheckCircle className="h-3.5 w-3.5 mr-1" />
+                                Resolve
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 border-slate-700 text-slate-300"
+                                onClick={() => {
+                                  setReviewDialog({ open: true, itemId: item.id, status: "dismissed" });
+                                  setReviewResolution("");
+                                }}
+                              >
+                                Dismiss
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()
+                  ))}
+                  {(!reviewQueue || reviewQueue.length === 0) && (
+                    <div className="py-8 text-center text-slate-500">
+                      No open review items.
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           {/* Payments Tab */}
           <TabsContent value="payments">
             <Card className="bg-slate-900/60 border-slate-800/50">
@@ -555,6 +818,305 @@ export default function AdminPanel() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Admin Evidence Dialog */}
+      <Dialog open={evidenceDialog.open} onOpenChange={(o) => !o && setEvidenceDialog({ open: false, itemId: null })}>
+        <DialogContent
+          data-testid="admin-review-evidence-dialog"
+          className="max-h-[85vh] max-w-4xl overflow-y-auto bg-slate-900 border-slate-800 text-white"
+        >
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-cyan-400" />
+              Review Evidence
+            </DialogTitle>
+          </DialogHeader>
+
+          {reviewEvidenceLoading ? (
+            <div className="rounded-md border border-slate-800 bg-slate-950/50 p-4 text-sm text-slate-400">
+              Loading linked evidence...
+            </div>
+          ) : reviewEvidenceError ? (
+            <div className="rounded-md border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">
+              {reviewEvidenceError.message}
+            </div>
+          ) : reviewEvidence ? (
+            <div className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-md border border-slate-800 bg-slate-950/50 p-3">
+                  <div className="text-xs uppercase tracking-wide text-slate-500">Review item</div>
+                  <div className="mt-1 font-medium text-white">{reviewEvidence.reviewItem.title}</div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <StatusBadge status={reviewEvidence.reviewItem.priority} />
+                    <StatusBadge status={reviewEvidence.reviewItem.category} />
+                    <StatusBadge status={reviewEvidence.reviewItem.status} />
+                  </div>
+                  {reviewEvidence.reviewItem.description && (
+                    <p className="mt-2 text-sm text-slate-400">{reviewEvidence.reviewItem.description}</p>
+                  )}
+                </div>
+
+                <div className="rounded-md border border-slate-800 bg-slate-950/50 p-3">
+                  <div className="text-xs uppercase tracking-wide text-slate-500">Job seeker</div>
+                  <div className="mt-1 font-medium text-white">{reviewEvidence.user?.name ?? "Unknown user"}</div>
+                  <div className="text-sm text-slate-400">{reviewEvidence.user?.email ?? "No email"}</div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <StatusBadge status={reviewEvidence.user?.accountStatus ?? "unknown"} />
+                    <Badge variant="outline" className="border-slate-700 text-slate-300">
+                      ToS {reviewEvidence.user?.tosAcceptedAt ? "accepted" : "missing"}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
+                {[
+                  ["Decision", reviewEvidence.decision ? 1 : 0],
+                  ["Approvals", reviewEvidence.approvals.length],
+                  ["Attempts", reviewEvidence.attempts.length],
+                  ["Responses", reviewEvidence.employerResponses.length],
+                  ["Audit", reviewEvidence.auditEvents.length],
+                  ["Material", reviewEvidence.material ? 1 : 0],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-md border border-slate-800 bg-slate-950/50 p-3">
+                    <div className="text-xs text-slate-500">{label}</div>
+                    <div className="mt-1 text-lg font-semibold text-white">{value}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div
+                data-testid="admin-review-evidence-linked-application"
+                className="rounded-md border border-slate-800 bg-slate-950/50 p-3"
+              >
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <div className="text-sm font-medium text-slate-300">Linked application</div>
+                  {reviewEvidence.application?.status && <StatusBadge status={reviewEvidence.application.status} />}
+                </div>
+                {reviewEvidence.application ? (
+                  <div className="space-y-2">
+                    <div>
+                      <div className="font-medium text-white">
+                        {reviewEvidence.application.job?.title ?? `Application #${reviewEvidence.application.id}`}
+                      </div>
+                      <div className="text-sm text-slate-400">
+                        {reviewEvidence.application.job?.company ?? "Unknown company"} - {reviewEvidence.application.job?.location ?? "Unknown location"}
+                      </div>
+                    </div>
+                    <p className="text-sm text-slate-400">{reviewEvidence.application.notes ?? "No application notes recorded."}</p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-orange-200">
+                    The review item points to an application record that could not be loaded for the linked user.
+                  </p>
+                )}
+              </div>
+
+              <div
+                data-testid="admin-review-evidence-decision"
+                className="rounded-md border border-slate-800 bg-slate-950/50 p-3"
+              >
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-sm font-medium text-slate-300">Decision and policy</div>
+                  {reviewEvidence.decision ? (
+                    <div className="flex flex-wrap gap-2">
+                      <StatusBadge status={reviewEvidence.decision.decision ?? "review"} />
+                      <StatusBadge status={reviewEvidence.decision.riskLevel ?? "medium"} />
+                      {reviewEvidence.decision.matchScore != null && (
+                        <Badge variant="outline" className="border-cyan-500/30 text-cyan-300">
+                          {reviewEvidence.decision.matchScore}% match
+                        </Badge>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+                {reviewEvidence.decision ? (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Decision reason</div>
+                      <p className="mt-1 text-sm text-slate-300">
+                        {reviewEvidence.decision.decisionReason || "No decision reason recorded."}
+                      </p>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Review reason</div>
+                      <p className="mt-1 text-sm text-slate-300">
+                        {reviewEvidence.decision.reviewReason || "No review reason recorded."}
+                      </p>
+                    </div>
+                    <div className="rounded border border-slate-800 bg-slate-900/60 p-2 text-xs text-slate-400 md:col-span-2">
+                      Decided by {reviewEvidence.decision.decidedBy}. External action remains blocked until the approval gate and evidence checklist are resolved.
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500">
+                    No application decision record is linked to this review item yet.
+                  </p>
+                )}
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="rounded-md border border-slate-800 bg-slate-950/50 p-3">
+                  <div className="mb-2 text-sm font-medium text-slate-300">Material and claims</div>
+                  {reviewEvidence.material ? (
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-400">Cover letter</span>
+                        <span className={reviewEvidence.material.coverLetter ? "text-cyan-300" : "text-slate-500"}>
+                          {reviewEvidence.material.coverLetter ? "stored" : "missing"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-400">Custom answers</span>
+                        <span className={reviewEvidence.material.customAnswers ? "text-cyan-300" : "text-slate-500"}>
+                          {reviewEvidence.material.customAnswers ? "stored" : "missing"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-400">Supported claims</span>
+                        <span className={reviewEvidence.material.claimsMade ? "text-cyan-300" : "text-slate-500"}>
+                          {reviewEvidence.material.claimsMade ? "stored" : "missing"}
+                        </span>
+                      </div>
+                      {reviewEvidence.material.claimsMade && (
+                        <p className="line-clamp-4 rounded border border-slate-800 bg-slate-900/60 p-2 text-xs text-slate-400">
+                          {reviewEvidence.material.claimsMade}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500">No prepared material is linked to this review item.</p>
+                  )}
+                </div>
+
+                <div className="rounded-md border border-slate-800 bg-slate-950/50 p-3">
+                  <div className="mb-2 text-sm font-medium text-slate-300">Approval gates</div>
+                  {reviewEvidence.approvals.length > 0 ? (
+                    <div className="space-y-2">
+                      {reviewEvidence.approvals.slice(0, 4).map((approval) => (
+                        <div key={approval.id} className="rounded border border-slate-800 bg-slate-900/60 p-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <StatusBadge status={approval.status} />
+                            <StatusBadge status={approval.riskLevel} />
+                            <span className="text-sm text-white">{approval.title}</span>
+                          </div>
+                          {approval.description && <p className="mt-1 text-xs text-slate-400">{approval.description}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500">No approval gates are linked to this entity.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="rounded-md border border-slate-800 bg-slate-950/50 p-3">
+                  <div className="mb-2 text-sm font-medium text-slate-300">Submission attempts</div>
+                  {reviewEvidence.attempts.length > 0 ? (
+                    <div className="space-y-2">
+                      {reviewEvidence.attempts.slice(0, 4).map((attempt) => (
+                        <div key={attempt.id} className="rounded border border-slate-800 bg-slate-900/60 p-2 text-sm">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <StatusBadge status={attempt.status} />
+                            <span className="text-slate-300">{attempt.attemptType.replace(/_/g, " ")}</span>
+                          </div>
+                          {attempt.confirmationText && <p className="mt-1 text-xs text-slate-400">{attempt.confirmationText}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500">No submission attempt evidence has been recorded.</p>
+                  )}
+                </div>
+
+                <div className="rounded-md border border-slate-800 bg-slate-950/50 p-3">
+                  <div className="mb-2 text-sm font-medium text-slate-300">Employer responses</div>
+                  {reviewEvidence.employerResponses.length > 0 ? (
+                    <div className="space-y-2">
+                      {reviewEvidence.employerResponses.slice(0, 4).map((response) => (
+                        <div key={response.id} className="rounded border border-slate-800 bg-slate-900/60 p-2 text-sm">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <StatusBadge status={response.responseType} />
+                            <span className="text-slate-400">{formatDate(response.receivedAt)}</span>
+                          </div>
+                          <p className="mt-1 text-xs text-slate-400">{response.summary}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500">No employer response is linked to this review item.</p>
+                  )}
+                </div>
+              </div>
+
+              <div
+                data-testid="admin-review-evidence-audit-count"
+                className="rounded-md border border-slate-800 bg-slate-950/50 p-3"
+              >
+                <div className="mb-2 text-sm font-medium text-slate-300">
+                  Audit trail ({reviewEvidence.auditEvents.length})
+                </div>
+                {reviewEvidence.auditEvents.length > 0 ? (
+                  <div className="space-y-2">
+                    {reviewEvidence.auditEvents.slice(0, 6).map((event) => (
+                      <div key={event.id} className="border-l border-slate-700 pl-3 text-sm">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <StatusBadge status={event.riskLevel} />
+                          <span className="font-medium text-white">{event.action}</span>
+                          <span className="text-xs text-slate-500">{formatDate(event.createdAt)}</span>
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          {event.actor} via {event.source ?? "unknown source"}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500">No audit events are linked to this entity.</p>
+                )}
+              </div>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      {/* Review Resolution Dialog */}
+      <Dialog open={reviewDialog.open} onOpenChange={(o) => !o && setReviewDialog({ open: false, itemId: null, status: "resolved" })}>
+        <DialogContent className="bg-slate-900 border-slate-800 text-white">
+          <DialogHeader>
+            <DialogTitle>{reviewDialog.status === "resolved" ? "Resolve Review Item" : "Dismiss Review Item"}</DialogTitle>
+          </DialogHeader>
+          <div>
+            <Label className="text-slate-300">Resolution Note</Label>
+            <Textarea
+              value={reviewResolution}
+              onChange={(e) => setReviewResolution(e.target.value)}
+              placeholder="Describe what was reviewed and why this item can be closed..."
+              className="bg-slate-800 border-slate-700 text-white mt-1"
+              rows={4}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setReviewDialog({ open: false, itemId: null, status: "resolved" })}>Cancel</Button>
+            <Button
+              className="bg-cyan-600 hover:bg-cyan-700"
+              disabled={!reviewResolution.trim() || resolveReviewItem.isPending}
+              onClick={() => {
+                if (reviewDialog.itemId) {
+                  resolveReviewItem.mutate({
+                    reviewItemId: reviewDialog.itemId,
+                    status: reviewDialog.status,
+                    resolution: reviewResolution,
+                  });
+                }
+              }}
+            >
+              {reviewDialog.status === "resolved" ? "Resolve" : "Dismiss"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Status Change Dialog */}
       <Dialog open={statusDialog.open} onOpenChange={(o) => !o && setStatusDialog({ open: false, feeId: null, currentStatus: "" })}>

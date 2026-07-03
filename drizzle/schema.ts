@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { index, int, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -131,6 +131,26 @@ export const socialMediaProfiles = mysqlTable("social_media_profiles", {
 });
 
 /**
+ * User Connector Accounts
+ * Tracks consent and readiness for external account integrations without storing tokens.
+ */
+export const userConnectorAccounts = mysqlTable("user_connector_accounts", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  provider: mysqlEnum("provider", ["gmail", "google_drive", "dropbox", "outlook", "linkedin", "github", "portfolio"]).notNull(),
+  status: mysqlEnum("status", ["not_connected", "connection_requested", "connected", "needs_reauth", "disabled"]).default("not_connected").notNull(),
+  consentScopes: text("consent_scopes"),
+  externalAccountLabel: varchar("external_account_label", { length: 255 }),
+  connectionRequestedAt: timestamp("connection_requested_at"),
+  lastVerifiedAt: timestamp("last_verified_at"),
+  disconnectedAt: timestamp("disconnected_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("user_connector_accounts_user_provider_unique").on(table.userId, table.provider),
+]);
+
+/**
  * Applications
  * Tracks job applications submitted through the platform
  */
@@ -156,7 +176,266 @@ export const applications = mysqlTable("applications", {
   isAutoApplied: int("is_auto_applied").default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => [
+  uniqueIndex("applications_user_job_unique").on(table.userId, table.jobId),
+]);
+
+/**
+ * Application Decisions
+ * Stores the operating-ledger decision for each user/job pair.
+ */
+export const applicationDecisions = mysqlTable("application_decisions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  jobId: int("job_id").notNull(),
+  decision: mysqlEnum("decision", ["apply", "save", "ignore", "review", "manual_apply"]).notNull(),
+  decisionReason: text("decision_reason"),
+  matchScore: int("match_score"),
+  riskLevel: mysqlEnum("risk_level", ["low", "medium", "high"]).default("medium").notNull(),
+  reviewRequired: int("review_required").default(1).notNull(),
+  reviewReason: text("review_reason"),
+  decidedBy: mysqlEnum("decided_by", ["system", "user", "admin"]).default("system").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("application_decisions_user_job_unique").on(table.userId, table.jobId),
+  index("application_decisions_user_decision_idx").on(table.userId, table.decision),
+  index("application_decisions_review_required_idx").on(table.reviewRequired),
+]);
+
+/**
+ * Application Materials
+ * Stores the exact candidate-facing material prepared for an application.
+ */
+export const applicationMaterials = mysqlTable("application_materials", {
+  id: int("id").autoincrement().primaryKey(),
+  applicationId: int("application_id").notNull(),
+  resumeId: int("resume_id"),
+  customResume: text("custom_resume"),
+  coverLetter: text("cover_letter"),
+  customAnswers: text("custom_answers"),
+  claimsMade: text("claims_made"),
+  sourceProfileSnapshot: text("source_profile_snapshot"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("application_materials_application_unique").on(table.applicationId),
+]);
+
+/**
+ * Application Attempts
+ * Tracks every preparation, handoff, and confirmed submission attempt.
+ */
+export const applicationAttempts = mysqlTable("application_attempts", {
+  id: int("id").autoincrement().primaryKey(),
+  applicationId: int("application_id").notNull(),
+  userId: int("user_id").notNull(),
+  jobId: int("job_id").notNull(),
+  platformId: int("platform_id"),
+  attemptType: mysqlEnum("attempt_type", ["prepare", "manual_confirmation", "external_handoff"]).default("prepare").notNull(),
+  status: mysqlEnum("status", ["prepared", "review_required", "submitted", "failed", "cancelled"]).default("prepared").notNull(),
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  finishedAt: timestamp("finished_at"),
+  errorMessage: text("error_message"),
+  confirmationText: text("confirmation_text"),
+  confirmationUrl: varchar("confirmation_url", { length: 1000 }),
+  screenshotKey: varchar("screenshot_key", { length: 500 }),
+  retryCount: int("retry_count").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("application_attempts_application_idx").on(table.applicationId),
+  index("application_attempts_user_status_idx").on(table.userId, table.status),
+]);
+
+/**
+ * Employer Responses
+ * Stores the exact employer reply classification that moved or informed an application.
+ */
+export const employerResponses = mysqlTable("employer_responses", {
+  id: int("id").autoincrement().primaryKey(),
+  applicationId: int("application_id").notNull(),
+  userId: int("user_id").notNull(),
+  responseType: mysqlEnum("response_type", [
+    "viewed",
+    "rejection",
+    "interview_invite",
+    "offer",
+    "employer_question",
+    "other",
+  ]).notNull(),
+  source: mysqlEnum("source", ["email", "employer_portal", "linkedin", "phone", "other"]).notNull(),
+  summary: text("summary").notNull(),
+  receivedAt: timestamp("received_at").notNull(),
+  statusBefore: mysqlEnum("status_before", [
+    "pending",
+    "applied",
+    "viewed",
+    "interview",
+    "offer",
+    "rejected",
+    "accepted",
+    "withdrawn"
+  ]).notNull(),
+  statusAfter: mysqlEnum("status_after", [
+    "pending",
+    "applied",
+    "viewed",
+    "interview",
+    "offer",
+    "rejected",
+    "accepted",
+    "withdrawn"
+  ]).notNull(),
+  noteId: int("note_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("employer_responses_application_idx").on(table.applicationId),
+  index("employer_responses_user_received_idx").on(table.userId, table.receivedAt),
+]);
+
+/**
+ * Audit Events
+ * Records consequential operating-ledger decisions and actions.
+ */
+export const auditEvents = mysqlTable("audit_events", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  entityType: mysqlEnum("entity_type", ["job", "application", "success_fee", "verification", "user", "admin_review"]).notNull(),
+  entityId: int("entity_id").notNull(),
+  action: varchar("action", { length: 120 }).notNull(),
+  actor: mysqlEnum("actor", ["system", "user", "admin"]).default("system").notNull(),
+  source: varchar("source", { length: 120 }),
+  beforeState: text("before_state"),
+  afterState: text("after_state"),
+  riskLevel: mysqlEnum("risk_level", ["low", "medium", "high", "critical"]).default("medium").notNull(),
+  approvalId: int("approval_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("audit_events_user_created_idx").on(table.userId, table.createdAt),
+  index("audit_events_entity_idx").on(table.entityType, table.entityId),
+]);
+
+/**
+ * Admin Review Items
+ * Surfaces compliance, revenue, and high-risk automation items for admin action.
+ */
+export const adminReviewItems = mysqlTable("admin_review_items", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  entityType: mysqlEnum("entity_type", ["job", "application", "success_fee", "verification", "user"]).notNull(),
+  entityId: int("entity_id").notNull(),
+  category: mysqlEnum("category", [
+    "application_review",
+    "submission_evidence",
+    "employer_response",
+    "offer_attribution",
+    "verification_overdue",
+    "payment_failed",
+    "legal_escalation",
+    "employment_ended"
+  ]).notNull(),
+  status: mysqlEnum("status", ["open", "in_progress", "resolved", "dismissed"]).default("open").notNull(),
+  priority: mysqlEnum("priority", ["low", "medium", "high", "critical"]).default("medium").notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  assignedTo: int("assigned_to"),
+  resolvedBy: int("resolved_by"),
+  resolvedAt: timestamp("resolved_at"),
+  resolution: text("resolution"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("admin_review_items_status_priority_idx").on(table.status, table.priority),
+  index("admin_review_items_user_status_idx").on(table.userId, table.status),
+  index("admin_review_items_entity_idx").on(table.entityType, table.entityId),
+]);
+
+/**
+ * Application Approvals
+ * Captures explicit user/admin approval for consequential job-search actions.
+ */
+export const applicationApprovals = mysqlTable("application_approvals", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  applicationId: int("application_id"),
+  entityType: mysqlEnum("entity_type", ["application", "follow_up", "success_fee", "profile", "billing"]).notNull(),
+  entityId: int("entity_id").notNull(),
+  approvalType: mysqlEnum("approval_type", [
+    "application_submission",
+    "follow_up_send",
+    "offer_attribution",
+    "interview_schedule",
+    "profile_claim",
+    "billing_action"
+  ]).notNull(),
+  status: mysqlEnum("status", ["pending", "approved", "rejected", "cancelled"]).default("pending").notNull(),
+  riskLevel: mysqlEnum("risk_level", ["low", "medium", "high", "critical"]).default("medium").notNull(),
+  requestedBy: mysqlEnum("requested_by", ["system", "user", "admin"]).default("system").notNull(),
+  decidedBy: mysqlEnum("decided_by", ["user", "admin"]),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  payload: text("payload"),
+  decisionNote: text("decision_note"),
+  requestedAt: timestamp("requested_at").defaultNow().notNull(),
+  decidedAt: timestamp("decided_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  index("application_approvals_user_status_idx").on(table.userId, table.status),
+  index("application_approvals_application_idx").on(table.applicationId),
+  index("application_approvals_entity_idx").on(table.entityType, table.entityId),
+]);
+
+/**
+ * Application Campaigns
+ * Stores the durable operating-state snapshot for a user's active job-search campaign.
+ */
+export const applicationCampaigns = mysqlTable("application_campaigns", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  status: mysqlEnum("status", ["active", "paused", "completed", "archived"]).default("active").notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  targetRoles: text("target_roles"),
+  targetLocations: text("target_locations"),
+  salaryMin: int("salary_min"),
+  salaryMax: int("salary_max"),
+  remoteOnly: int("remote_only").default(1).notNull(),
+  automationMode: mysqlEnum("automation_mode", ["review_first", "auto_apply"]).default("review_first").notNull(),
+  dailyApplicationLimit: int("daily_application_limit").default(12).notNull(),
+  minMatchScore: int("min_match_score").default(70).notNull(),
+  readinessScore: int("readiness_score").default(0).notNull(),
+  autoApplyEligible: int("auto_apply_eligible").default(0).notNull(),
+  blockers: text("blockers"),
+  nextActions: text("next_actions"),
+  lastPlanSummary: text("last_plan_summary"),
+  lastSyncedAt: timestamp("last_synced_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("application_campaigns_user_unique").on(table.userId),
+  index("application_campaigns_status_idx").on(table.status),
+  index("application_campaigns_synced_idx").on(table.lastSyncedAt),
+]);
+
+/**
+ * Autonomous run state
+ * Provides durable scheduling state and a cross-instance execution lease.
+ */
+export const autonomousRunStates = mysqlTable("autonomous_run_states", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  leaseToken: varchar("lease_token", { length: 64 }),
+  leaseExpiresAt: timestamp("lease_expires_at"),
+  lastStartedAt: timestamp("last_started_at"),
+  lastCompletedAt: timestamp("last_completed_at"),
+  lastStatus: mysqlEnum("last_status", ["running", "completed", "failed"]),
+  lastError: text("last_error"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("autonomous_run_states_user_id_unique").on(table.userId),
+  index("autonomous_run_states_lease_expires_idx").on(table.leaseExpiresAt),
+]);
 
 /**
  * Decision Makers
@@ -385,7 +664,17 @@ export type Job = typeof jobs.$inferSelect;
 export type JobDuplicate = typeof jobDuplicates.$inferSelect;
 export type UserProfile = typeof userProfiles.$inferSelect;
 export type SocialMediaProfile = typeof socialMediaProfiles.$inferSelect;
+export type UserConnectorAccount = typeof userConnectorAccounts.$inferSelect;
 export type Application = typeof applications.$inferSelect;
+export type ApplicationDecision = typeof applicationDecisions.$inferSelect;
+export type ApplicationMaterial = typeof applicationMaterials.$inferSelect;
+export type ApplicationAttempt = typeof applicationAttempts.$inferSelect;
+export type EmployerResponse = typeof employerResponses.$inferSelect;
+export type AuditEvent = typeof auditEvents.$inferSelect;
+export type AdminReviewItem = typeof adminReviewItems.$inferSelect;
+export type ApplicationApproval = typeof applicationApprovals.$inferSelect;
+export type ApplicationCampaign = typeof applicationCampaigns.$inferSelect;
+export type AutonomousRunState = typeof autonomousRunStates.$inferSelect;
 export type DecisionMaker = typeof decisionMakers.$inferSelect;
 export type JobMatch = typeof jobMatches.$inferSelect;
 export type InterviewPreparation = typeof interviewPreparation.$inferSelect;

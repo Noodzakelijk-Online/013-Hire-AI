@@ -1,11 +1,17 @@
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
+import {
+  getReportHireCompletionSummary,
+  getReportHireEvidenceSummary,
+  type ReportHireEvidenceState,
+} from "@/lib/reportHireEvidence";
 import { toast } from "sonner";
 import { Upload, FileText, CheckCircle, AlertCircle, Briefcase, DollarSign, Calendar } from "lucide-react";
 
@@ -18,6 +24,7 @@ interface ReportHireDialogProps {
 
 export function ReportHireDialog({ open, onOpenChange, applicationId, onSuccess }: ReportHireDialogProps) {
   const [step, setStep] = useState<"form" | "terms" | "payment" | "success">("form");
+  const [selectedApplicationId, setSelectedApplicationId] = useState<number | undefined>(applicationId);
   const [formData, setFormData] = useState({
     employerName: "",
     jobTitle: "",
@@ -29,6 +36,45 @@ export function ReportHireDialog({ open, onOpenChange, applicationId, onSuccess 
   const [offerLetterBase64, setOfferLetterBase64] = useState<string>("");
   const [termsAccepted, setTermsAccepted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { data: applications = [] } = trpc.applications.list.useQuery(undefined, { enabled: open });
+  const { data: offerAttributionReviews = [] } = trpc.successFees.getOfferAttributionReviews.useQuery(undefined, { enabled: open });
+  const offerApplications = applications.filter((application: any) =>
+    ["offer", "accepted"].includes(application.status)
+  );
+  const linkedApplication = applications.find((application: any) => application.id === selectedApplicationId);
+  const selectableApplications = linkedApplication && !offerApplications.some((application: any) => application.id === linkedApplication.id)
+    ? [linkedApplication, ...offerApplications]
+    : offerApplications;
+  const selectedAttributionReview = offerAttributionReviews.find((review: any) => {
+    const reviewApplicationId = review?.approval?.applicationId ?? review?.application?.id;
+    return selectedApplicationId && reviewApplicationId === selectedApplicationId;
+  });
+  const evidenceSummary = getReportHireEvidenceSummary({
+    application: linkedApplication,
+    attributionReview: selectedAttributionReview,
+    hasOfferLetter: Boolean(offerLetter && offerLetterBase64),
+    termsAccepted,
+  });
+
+  const getCheckpointClassName = (state: ReportHireEvidenceState) => {
+    if (state === "complete") return "border-green-500/30 bg-green-500/10 text-green-300";
+    if (state === "review") return "border-amber-500/30 bg-amber-500/10 text-amber-300";
+    return "border-[#30363d] bg-[#0d1117] text-gray-400";
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    setSelectedApplicationId(applicationId);
+  }, [applicationId, open]);
+
+  useEffect(() => {
+    if (!open || !linkedApplication?.job) return;
+    setFormData((previous) => ({
+      ...previous,
+      employerName: previous.employerName || linkedApplication.job?.company || "",
+      jobTitle: previous.jobTitle || linkedApplication.job?.title || "",
+    }));
+  }, [linkedApplication, open]);
 
   const reportHire = trpc.successFees.reportHire.useMutation({
     onSuccess: (data) => {
@@ -38,12 +84,13 @@ export function ReportHireDialog({ open, onOpenChange, applicationId, onSuccess 
       }
       setStep("success");
       onSuccess?.();
-      toast.success("Hire reported successfully! Your success fee subscription has been set up.");
+      toast.success("Hire report recorded. Proof, billing, and review state are now in the operating ledger.");
     },
     onError: (err) => {
       toast.error(err.message || "Failed to report hire. Please try again.");
     },
   });
+  const completionSummary = getReportHireCompletionSummary(reportHire.data);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -82,12 +129,20 @@ export function ReportHireDialog({ open, onOpenChange, applicationId, onSuccess 
       toast.error("Minimum monthly salary is $300");
       return;
     }
+    if (!evidenceSummary.canContinueToTerms) {
+      toast.error(evidenceSummary.nextAction);
+      return;
+    }
     setStep("terms");
   };
 
   const handleConfirm = () => {
     if (!termsAccepted) {
       toast.error("Please accept the terms to continue");
+      return;
+    }
+    if (!evidenceSummary.canConfirm) {
+      toast.error(evidenceSummary.nextAction);
       return;
     }
 
@@ -97,7 +152,7 @@ export function ReportHireDialog({ open, onOpenChange, applicationId, onSuccess 
       monthlySalary: parseFloat(formData.monthlySalary),
       currency: formData.currency,
       startDate: formData.startDate,
-      applicationId,
+      applicationId: selectedApplicationId,
       offerLetterBase64,
       offerLetterMimeType: offerLetter!.type,
       offerLetterFileName: offerLetter!.name,
@@ -108,19 +163,19 @@ export function ReportHireDialog({ open, onOpenChange, applicationId, onSuccess 
   const monthlyFee = formData.monthlySalary ? (parseFloat(formData.monthlySalary) * 0.05).toFixed(2) : "0.00";
 
   const handleClose = () => {
-    if (step !== "success") {
-      setStep("form");
-      setFormData({
-        employerName: "",
-        jobTitle: "",
-        monthlySalary: "",
-        currency: "USD",
-        startDate: new Date().toISOString().split("T")[0],
-      });
-      setOfferLetter(null);
-      setOfferLetterBase64("");
-      setTermsAccepted(false);
-    }
+    setStep("form");
+    setFormData({
+      employerName: "",
+      jobTitle: "",
+      monthlySalary: "",
+      currency: "USD",
+      startDate: new Date().toISOString().split("T")[0],
+    });
+    setOfferLetter(null);
+    setOfferLetterBase64("");
+    setTermsAccepted(false);
+    setSelectedApplicationId(applicationId);
+    reportHire.reset();
     onOpenChange(false);
   };
 
@@ -139,6 +194,83 @@ export function ReportHireDialog({ open, onOpenChange, applicationId, onSuccess 
             </DialogHeader>
 
             <div className="space-y-4 mt-2">
+              {selectableApplications.length > 0 && (
+                <div className="space-y-1.5">
+                  <Label className="text-gray-300 flex items-center gap-1.5">
+                    <Briefcase className="w-3.5 h-3.5" /> Link Hire.AI Application
+                  </Label>
+                  <Select
+                    value={selectedApplicationId ? String(selectedApplicationId) : "none"}
+                    onValueChange={(value) => {
+                      if (value === "none") {
+                        setSelectedApplicationId(undefined);
+                        return;
+                      }
+                      const resolvedId = Number(value);
+                      setSelectedApplicationId(resolvedId);
+                      const application = selectableApplications.find((item: any) => item.id === resolvedId);
+                      if (application?.job) {
+                        setFormData((previous) => ({
+                          ...previous,
+                          employerName: previous.employerName || application.job?.company || "",
+                          jobTitle: previous.jobTitle || application.job?.title || "",
+                        }));
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="bg-[#161b22] border-[#30363d] text-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No linked application</SelectItem>
+                      {selectableApplications.map((application: any) => (
+                        <SelectItem key={application.id} value={String(application.id)}>
+                          {application.job?.title || "Application"} at {application.job?.company || "Company"}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-gray-500">
+                    Linking the hire preserves offer attribution for success-fee review.
+                  </p>
+                </div>
+              )}
+
+              <div
+                data-testid="report-hire-evidence-control"
+                className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-3"
+              >
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-cyan-200">{evidenceSummary.label}</p>
+                    <p className="mt-1 text-xs text-gray-400">{evidenceSummary.nextAction}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge className={evidenceSummary.risk === "critical"
+                      ? "border-red-500/30 bg-red-500/10 text-red-300"
+                      : "border-orange-500/30 bg-orange-500/10 text-orange-300"}
+                    >
+                      {evidenceSummary.risk}
+                    </Badge>
+                    <Badge className="border-amber-500/30 bg-amber-500/10 text-amber-300">
+                      Approval-gated
+                    </Badge>
+                  </div>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {evidenceSummary.checkpoints.map((checkpoint) => (
+                    <div
+                      key={checkpoint.id}
+                      data-testid={`report-hire-checkpoint-${checkpoint.id}`}
+                      className={`rounded-md border p-2 text-xs ${getCheckpointClassName(checkpoint.state)}`}
+                    >
+                      <div className="font-medium">{checkpoint.label}</div>
+                      <div className="mt-1 text-[11px] leading-relaxed opacity-90">{checkpoint.detail}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               <div className="space-y-1.5">
                 <Label className="text-gray-300 flex items-center gap-1.5">
                   <Briefcase className="w-3.5 h-3.5" /> Employer Name <span className="text-red-400">*</span>
@@ -270,6 +402,24 @@ export function ReportHireDialog({ open, onOpenChange, applicationId, onSuccess 
                 </div>
               </div>
 
+              <div
+                data-testid="report-hire-terms-evidence-control"
+                className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-3 text-sm"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-semibold text-cyan-200">{evidenceSummary.label}</p>
+                  <Badge className="border-amber-500/30 bg-amber-500/10 text-amber-300">
+                    Audit + admin review
+                  </Badge>
+                </div>
+                <p className="mt-1 text-xs text-gray-400">{evidenceSummary.nextAction}</p>
+                {selectedAttributionReview?.latestEmployerResponse?.summary && (
+                  <p className="mt-2 rounded-md border border-[#30363d] bg-[#0d1117] p-2 text-xs text-gray-300">
+                    {selectedAttributionReview.latestEmployerResponse.summary}
+                  </p>
+                )}
+              </div>
+
               <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-sm text-amber-300 space-y-1.5">
                 <div className="flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
@@ -322,22 +472,59 @@ export function ReportHireDialog({ open, onOpenChange, applicationId, onSuccess 
         {step === "success" && (
           <>
             <DialogHeader>
-              <DialogTitle className="text-xl">All Set! 🎉</DialogTitle>
+              <DialogTitle className="text-xl">Hire Report Recorded</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 mt-2 text-center">
               <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto">
                 <CheckCircle className="w-8 h-8 text-green-400" />
               </div>
               <div>
-                <p className="text-gray-300">Your success fee has been set up for</p>
+                <p className="text-gray-300">{completionSummary.label}</p>
                 <p className="text-white font-semibold text-lg">{formData.jobTitle} at {formData.employerName}</p>
               </div>
-              <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-3 text-sm">
-                <p className="text-gray-400">Monthly fee: <span className="text-cyan-400 font-bold">${monthlyFee}</span></p>
-                <p className="text-gray-400 mt-1">Next verification due in <span className="text-white">90 days</span></p>
+              <div
+                data-testid="report-hire-completion-control"
+                className="bg-[#161b22] border border-[#30363d] rounded-lg p-3 text-sm text-left"
+              >
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-gray-400">
+                      Monthly fee: <span className="text-cyan-400 font-bold">
+                        ${(completionSummary.monthlyFeeCents / 100 || Number(monthlyFee)).toFixed(2)}
+                      </span>
+                    </p>
+                    {completionSummary.feeId && (
+                      <p className="mt-1 text-xs text-gray-500">Ledger fee #{completionSummary.feeId}</p>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {completionSummary.adminReviewRequired && (
+                      <Badge className="border-amber-500/30 bg-amber-500/10 text-amber-300">
+                        Admin review
+                      </Badge>
+                    )}
+                    {completionSummary.paymentActionRequired && (
+                      <Badge className="border-cyan-500/30 bg-cyan-500/10 text-cyan-300">
+                        Payment setup
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {completionSummary.items.map((item) => (
+                    <div
+                      key={item.id}
+                      data-testid={`report-hire-completion-${item.id}`}
+                      className={`rounded-md border p-2 text-xs ${getCheckpointClassName(item.state)}`}
+                    >
+                      <div className="font-medium">{item.label}</div>
+                      <div className="mt-1 text-[11px] leading-relaxed opacity-90">{item.detail}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
               <p className="text-xs text-gray-500">
-                You'll receive a notification when your quarterly verification is due. Visit the Billing page to manage your fees and payment history.
+                {completionSummary.nextAction}
               </p>
               <Button
                 onClick={handleClose}

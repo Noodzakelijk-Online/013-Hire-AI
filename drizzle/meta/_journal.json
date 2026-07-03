@@ -36,6 +36,83 @@
       "when": 1779891322436,
       "tag": "0004_blue_moon_knight",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1781187833762,
+      "tag": "0005_daffy_legion",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1781386510564,
+      "tag": "0006_public_wong",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1781575200000,
+      "tag": "0007_application_decisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1781661600000,
+      "tag": "0008_application_materials_attempts",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1781748000000,
+      "tag": "0009_audit_admin_review",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1781834400000,
+      "tag": "0010_application_approvals",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "5",
+      "when": 1781920800000,
+      "tag": "0011_application_campaigns",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "5",
+      "when": 1782007200000,
+      "tag": "0012_interview_schedule_approvals",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "5",
+      "when": 1782093600000,
+      "tag": "0013_employer_responses",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "5",
+      "when": 1782180000000,
+      "tag": "0014_user_connector_accounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "5",
+      "when": 1782266400000,
+      "tag": "0015_employment_ended_review",
+      "breakpoints": true
     }
   ]
 }

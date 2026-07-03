@@ -1,4 +1,4 @@
-import { eq, desc } from "drizzle-orm";
+import { and, desc, eq, gte, like, or, sql, type SQL } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { 
   InsertUser, 
@@ -6,33 +6,105 @@ import {
   jobPlatforms,
   jobs,
   userProfiles,
+  userConnectorAccounts,
   applications,
+  applicationDecisions,
+  applicationMaterials,
+  applicationAttempts,
+  employerResponses,
+  auditEvents,
+  adminReviewItems,
+  applicationApprovals,
+  applicationCampaigns,
+  interviewPreparation,
   jobMatches,
   decisionMakers,
   workExperiences,
   educationEntries,
   userSkills,
   userProjects,
+  autonomousRunStates,
+  successFees,
   type Job,
   type UserProfile,
+  type UserConnectorAccount,
   type Application,
+  type ApplicationDecision,
+  type ApplicationMaterial,
+  type ApplicationAttempt,
+  type EmployerResponse,
+  type AuditEvent,
+  type AdminReviewItem,
+  type ApplicationApproval,
+  type ApplicationCampaign,
+  type InterviewPreparation,
+  type User,
   type JobMatch,
   type DecisionMaker,
   type WorkExperience,
   type EducationEntry,
   type UserSkill,
-  type UserProject
+  type UserProject,
+  type SuccessFee
 } from "../drizzle/schema";
 import type { InferInsertModel } from "drizzle-orm";
+import { ENV } from "./_core/env";
+import { sampleJobs, samplePlatforms } from "./sampleData";
+import {
+  canTransitionApplicationStatus,
+  type ApplicationStatus,
+} from "./applicationLifecycle";
 
 type InsertJob = InferInsertModel<typeof jobs>;
 type InsertUserProfile = InferInsertModel<typeof userProfiles>;
+type InsertUserConnectorAccount = InferInsertModel<typeof userConnectorAccounts>;
 type InsertApplication = InferInsertModel<typeof applications>;
+type InsertApplicationDecision = InferInsertModel<typeof applicationDecisions>;
+type InsertApplicationMaterial = InferInsertModel<typeof applicationMaterials>;
+type InsertApplicationAttempt = InferInsertModel<typeof applicationAttempts>;
+type InsertEmployerResponse = InferInsertModel<typeof employerResponses>;
+type InsertAuditEvent = InferInsertModel<typeof auditEvents>;
+type InsertAdminReviewItem = InferInsertModel<typeof adminReviewItems>;
+type InsertApplicationApproval = InferInsertModel<typeof applicationApprovals>;
+type InsertApplicationCampaign = InferInsertModel<typeof applicationCampaigns>;
+type InsertInterviewPreparation = InferInsertModel<typeof interviewPreparation>;
 type InsertJobMatch = InferInsertModel<typeof jobMatches>;
 type InsertDecisionMaker = InferInsertModel<typeof decisionMakers>;
-import { ENV } from './_core/env';
+type InsertWorkExperience = InferInsertModel<typeof workExperiences>;
+type InsertEducationEntry = InferInsertModel<typeof educationEntries>;
+type InsertUserSkill = InferInsertModel<typeof userSkills>;
+type InsertUserProject = InferInsertModel<typeof userProjects>;
+type InsertSuccessFee = InferInsertModel<typeof successFees>;
 
 let _db: ReturnType<typeof drizzle> | null = null;
+const memoryUsers: (InsertUser & {
+  id: number;
+  role: "user" | "admin";
+  accountStatus: "active" | "suspended" | "pending";
+  stripeCustomerId: string | null;
+  tosAcceptedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  lastSignedIn: Date;
+})[] = [];
+const memoryProfiles = new Map<number, UserProfile>();
+const memoryConnectorAccounts: (InsertUserConnectorAccount & { id: number; createdAt: Date; updatedAt: Date })[] = [];
+const memoryApplications: (InsertApplication & { id: number; createdAt: Date; updatedAt: Date })[] = [];
+const memoryApplicationDecisions: (InsertApplicationDecision & { id: number; createdAt: Date; updatedAt: Date })[] = [];
+const memoryApplicationMaterials: (InsertApplicationMaterial & { id: number; createdAt: Date; updatedAt: Date })[] = [];
+const memoryApplicationAttempts: (InsertApplicationAttempt & { id: number; createdAt: Date })[] = [];
+const memoryEmployerResponses: (InsertEmployerResponse & { id: number; createdAt: Date })[] = [];
+const memoryAuditEvents: (InsertAuditEvent & { id: number; createdAt: Date })[] = [];
+const memoryAdminReviewItems: (InsertAdminReviewItem & { id: number; createdAt: Date; updatedAt: Date })[] = [];
+const memoryApplicationApprovals: (InsertApplicationApproval & { id: number; createdAt: Date; updatedAt: Date })[] = [];
+const memoryApplicationCampaigns: (InsertApplicationCampaign & { id: number; createdAt: Date; updatedAt: Date })[] = [];
+const memoryInterviewPreparations: (InsertInterviewPreparation & { id: number; createdAt: Date })[] = [];
+const memorySuccessFees: (InsertSuccessFee & { id: number; createdAt: Date; updatedAt: Date })[] = [];
+const memoryAutonomousRuns = new Map<number, {
+  leaseToken: string | null;
+  leaseExpiresAt: number;
+  lastCompletedAt: number;
+}>();
 
 // Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
@@ -54,7 +126,35 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 
   const db = await getDb();
   if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
+    const existing = memoryUsers.find((item) => item.openId === user.openId);
+    const signedInAt = user.lastSignedIn ?? new Date();
+    if (existing) {
+      existing.name = user.name ?? existing.name ?? null;
+      existing.email = user.email ?? existing.email ?? null;
+      existing.loginMethod = user.loginMethod ?? existing.loginMethod ?? null;
+      existing.role = user.role ?? existing.role ?? (user.openId === ENV.ownerOpenId ? "admin" : "user");
+      existing.stripeCustomerId = user.stripeCustomerId ?? existing.stripeCustomerId ?? null;
+      existing.accountStatus = user.accountStatus ?? existing.accountStatus ?? "active";
+      existing.tosAcceptedAt = user.tosAcceptedAt ?? existing.tosAcceptedAt ?? null;
+      existing.lastSignedIn = signedInAt;
+      existing.updatedAt = new Date();
+      return;
+    }
+
+    memoryUsers.push({
+      ...user,
+      id: memoryUsers.length + 1,
+      name: user.name ?? null,
+      email: user.email ?? null,
+      loginMethod: user.loginMethod ?? null,
+      role: user.role ?? (user.openId === ENV.ownerOpenId ? "admin" : "user"),
+      stripeCustomerId: user.stripeCustomerId ?? null,
+      accountStatus: user.accountStatus ?? "active",
+      tosAcceptedAt: user.tosAcceptedAt ?? null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      lastSignedIn: signedInAt,
+    });
     return;
   }
 
@@ -85,8 +185,20 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       values.role = user.role;
       updateSet.role = user.role;
     } else if (user.openId === ENV.ownerOpenId) {
-      values.role = 'admin';
-      updateSet.role = 'admin';
+      values.role = "admin";
+      updateSet.role = "admin";
+    }
+    if (user.stripeCustomerId !== undefined) {
+      values.stripeCustomerId = user.stripeCustomerId;
+      updateSet.stripeCustomerId = user.stripeCustomerId;
+    }
+    if (user.accountStatus !== undefined) {
+      values.accountStatus = user.accountStatus;
+      updateSet.accountStatus = user.accountStatus;
+    }
+    if (user.tosAcceptedAt !== undefined) {
+      values.tosAcceptedAt = user.tosAcceptedAt;
+      updateSet.tosAcceptedAt = user.tosAcceptedAt;
     }
 
     if (!values.lastSignedIn) {
@@ -109,8 +221,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 export async function getUserByOpenId(openId: string) {
   const db = await getDb();
   if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
-    return undefined;
+    return memoryUsers.find((user) => user.openId === openId) as User | undefined;
   }
 
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
@@ -121,13 +232,13 @@ export async function getUserByOpenId(openId: string) {
 // Job Platforms
 export async function getAllJobPlatforms() {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) return samplePlatforms;
   return await db.select().from(jobPlatforms);
 }
 
 export async function getActiveJobPlatforms() {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) return samplePlatforms.filter((platform) => platform.isActive === 1);
   return await db.select().from(jobPlatforms).where(eq(jobPlatforms.isActive, 1));
 }
 
@@ -141,22 +252,36 @@ export async function updatePlatformLastScraped(platformId: number) {
 export async function createJob(job: InsertJob) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(jobs).values(job);
-  return result;
+  return await db.insert(jobs).values(job);
 }
 
 export async function getActiveJobs(limit = 100, offset = 0) {
+  const boundedLimit = Math.min(Math.max(limit, 1), 250);
+  const boundedOffset = Math.max(offset, 0);
   const db = await getDb();
-  if (!db) return [];
-  return await db.select().from(jobs).where(eq(jobs.isActive, 1)).limit(limit).offset(offset);
+  if (!db) {
+    return sampleJobs
+      .filter((job) => job.isActive === 1)
+      .sort((a, b) => (b.postedDate?.getTime() || 0) - (a.postedDate?.getTime() || 0))
+      .slice(boundedOffset, boundedOffset + boundedLimit);
+  }
+  return await db
+    .select()
+    .from(jobs)
+    .where(eq(jobs.isActive, 1))
+    .orderBy(desc(jobs.postedDate), desc(jobs.createdAt))
+    .limit(boundedLimit)
+    .offset(boundedOffset);
 }
 
 export async function getJobById(jobId: number) {
   const db = await getDb();
-  if (!db) return undefined;
+  if (!db) return sampleJobs.find((job) => job.id === jobId);
   const result = await db.select().from(jobs).where(eq(jobs.id, jobId)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
+
+const searchTerm = (value: string) => `%${value.trim().replace(/[%_]/g, "\\$&")}%`;
 
 export async function searchJobs(filters: {
   title?: string;
@@ -167,27 +292,263 @@ export async function searchJobs(filters: {
   offset?: number;
 }) {
   const db = await getDb();
-  if (!db) return [];
-  
-  let query = db.select().from(jobs).where(eq(jobs.isActive, 1));
-  
-  // Note: In production, you'd use proper SQL LIKE queries or full-text search
-  // This is a simplified version
-  
-  return await query.limit(filters.limit || 50).offset(filters.offset || 0);
+  if (!db) {
+    const title = filters.title?.toLowerCase();
+    const company = filters.company?.toLowerCase();
+    const location = filters.location?.toLowerCase();
+    const skills = filters.skills?.toLowerCase();
+
+    const boundedLimit = Math.min(Math.max(filters.limit || 50, 1), 100);
+    const boundedOffset = Math.max(filters.offset || 0, 0);
+
+    return sampleJobs
+      .filter((job) => job.isActive === 1)
+      .filter((job) => !title || job.title.toLowerCase().includes(title))
+      .filter((job) => !company || job.company.toLowerCase().includes(company))
+      .filter((job) => !location || (job.location || "").toLowerCase().includes(location))
+      .filter((job) => !skills || `${job.skills || ""} ${job.description || ""} ${job.requirements || ""}`.toLowerCase().includes(skills))
+      .slice(boundedOffset, boundedOffset + boundedLimit);
+  }
+
+  const conditions: SQL[] = [eq(jobs.isActive, 1)];
+
+  if (filters.title?.trim()) {
+    conditions.push(like(jobs.title, searchTerm(filters.title)));
+  }
+  if (filters.company?.trim()) {
+    conditions.push(like(jobs.company, searchTerm(filters.company)));
+  }
+  if (filters.location?.trim()) {
+    conditions.push(like(jobs.location, searchTerm(filters.location)));
+  }
+  if (filters.skills?.trim()) {
+    const term = searchTerm(filters.skills);
+    const skillCondition = or(
+      like(jobs.skills, term),
+      like(jobs.description, term),
+      like(jobs.requirements, term)
+    );
+    if (skillCondition) conditions.push(skillCondition);
+  }
+
+  return await db
+    .select()
+    .from(jobs)
+    .where(and(...conditions))
+    .limit(Math.min(Math.max(filters.limit || 50, 1), 100))
+    .offset(Math.max(filters.offset || 0, 0));
 }
 
 // User Profiles
 export async function getUserProfile(userId: number) {
   const db = await getDb();
-  if (!db) return undefined;
+  if (!db) return memoryProfiles.get(userId);
   const result = await db.select().from(userProfiles).where(eq(userProfiles.userId, userId)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
 
+export async function getProfilesWithAutonomousPreferences() {
+  const db = await getDb();
+  if (!db) {
+    return Array.from(memoryProfiles.values())
+      .filter((profile) => {
+        try {
+          return JSON.parse(profile.preferences || "{}").autonomousEnabled === true;
+        } catch {
+          return false;
+        }
+      })
+      .map((profile) => ({
+        userId: profile.userId,
+        preferences: profile.preferences,
+      }));
+  }
+
+  const candidates = await db
+    .select({
+      userId: userProfiles.userId,
+      preferences: userProfiles.preferences,
+    })
+    .from(userProfiles)
+    .innerJoin(users, eq(userProfiles.userId, users.id))
+    .where(and(
+      sql`${userProfiles.preferences} IS NOT NULL`,
+      sql`TRIM(${userProfiles.preferences}) <> ''`,
+      eq(users.accountStatus, "active"),
+      sql`${users.tosAcceptedAt} IS NOT NULL`
+    ));
+
+  return candidates.filter((profile) => {
+    try {
+      return JSON.parse(profile.preferences || "{}").autonomousEnabled === true;
+    } catch {
+      return false;
+    }
+  });
+}
+
+export async function getAutonomousUserEligibility(userId: number): Promise<{
+  eligible: boolean;
+  reason?: string;
+}> {
+  const db = await getDb();
+  if (!db) return { eligible: true };
+
+  const result = await db
+    .select({
+      accountStatus: users.accountStatus,
+      tosAcceptedAt: users.tosAcceptedAt,
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  const user = result[0];
+  if (!user) return { eligible: false, reason: "User account was not found." };
+  if (user.accountStatus !== "active") {
+    return { eligible: false, reason: "Autonomous actions are disabled while the account is not active." };
+  }
+  if (!user.tosAcceptedAt) {
+    return { eligible: false, reason: "Terms of Service acceptance is required before autonomous actions can run." };
+  }
+  return { eligible: true };
+}
+
+export async function acquireAutonomousRunLease(
+  userId: number,
+  leaseToken: string,
+  minimumIntervalMs: number
+) {
+  const db = await getDb();
+  const now = new Date();
+  const intervalCutoff = new Date(now.getTime() - minimumIntervalMs);
+  const leaseExpiresAt = new Date(now.getTime() + 30 * 60 * 1000);
+  if (!db) {
+    const state = memoryAutonomousRuns.get(userId);
+    const leaseAvailable = !state || state.leaseExpiresAt <= now.getTime();
+    const intervalElapsed = !state || minimumIntervalMs === 0 || state.lastCompletedAt <= intervalCutoff.getTime();
+    if (!leaseAvailable || !intervalElapsed) return false;
+
+    memoryAutonomousRuns.set(userId, {
+      leaseToken,
+      leaseExpiresAt: leaseExpiresAt.getTime(),
+      lastCompletedAt: state?.lastCompletedAt || 0,
+    });
+    return true;
+  }
+
+  const canAcquire = sql`(
+    (${autonomousRunStates.leaseExpiresAt} IS NULL OR ${autonomousRunStates.leaseExpiresAt} <= ${now})
+    AND (${minimumIntervalMs} = 0 OR ${autonomousRunStates.lastCompletedAt} IS NULL OR ${autonomousRunStates.lastCompletedAt} <= ${intervalCutoff})
+  )`;
+  await db
+    .insert(autonomousRunStates)
+    .values({
+      userId,
+      leaseToken,
+      leaseExpiresAt,
+      lastStartedAt: now,
+      lastStatus: "running",
+      lastError: null,
+    })
+    .onDuplicateKeyUpdate({
+      set: {
+        leaseToken: sql`IF(${canAcquire}, ${leaseToken}, ${autonomousRunStates.leaseToken})`,
+        leaseExpiresAt: sql`IF(${canAcquire}, ${leaseExpiresAt}, ${autonomousRunStates.leaseExpiresAt})`,
+        lastStartedAt: sql`IF(${canAcquire}, ${now}, ${autonomousRunStates.lastStartedAt})`,
+        lastStatus: sql`IF(${canAcquire}, 'running', ${autonomousRunStates.lastStatus})`,
+        lastError: sql`IF(${canAcquire}, NULL, ${autonomousRunStates.lastError})`,
+      },
+    });
+
+  const state = await db
+    .select({ leaseToken: autonomousRunStates.leaseToken })
+    .from(autonomousRunStates)
+    .where(eq(autonomousRunStates.userId, userId))
+    .limit(1);
+  return state[0]?.leaseToken === leaseToken;
+}
+
+export async function completeAutonomousRunLease(
+  userId: number,
+  leaseToken: string,
+  error?: string
+) {
+  const db = await getDb();
+  if (!db) {
+    const state = memoryAutonomousRuns.get(userId);
+    if (state?.leaseToken !== leaseToken) return false;
+    memoryAutonomousRuns.set(userId, {
+      leaseToken: null,
+      leaseExpiresAt: 0,
+      lastCompletedAt: error ? state.lastCompletedAt : Date.now(),
+    });
+    return true;
+  }
+
+  const result = await db
+    .update(autonomousRunStates)
+    .set({
+      leaseToken: null,
+      leaseExpiresAt: null,
+      lastCompletedAt: error ? sql`${autonomousRunStates.lastCompletedAt}` : new Date(),
+      lastStatus: error ? "failed" : "completed",
+      lastError: error?.slice(0, 2000) || null,
+    })
+    .where(and(
+      eq(autonomousRunStates.userId, userId),
+      eq(autonomousRunStates.leaseToken, leaseToken)
+    ));
+  return Number(result[0].affectedRows) > 0;
+}
+
+export async function renewAutonomousRunLease(userId: number, leaseToken: string) {
+  const db = await getDb();
+  const leaseExpiresAt = new Date(Date.now() + 30 * 60 * 1000);
+  if (!db) {
+    const state = memoryAutonomousRuns.get(userId);
+    if (state?.leaseToken !== leaseToken) return false;
+    state.leaseExpiresAt = leaseExpiresAt.getTime();
+    return true;
+  }
+
+  const result = await db
+    .update(autonomousRunStates)
+    .set({ leaseExpiresAt })
+    .where(and(
+      eq(autonomousRunStates.userId, userId),
+      eq(autonomousRunStates.leaseToken, leaseToken),
+      eq(autonomousRunStates.lastStatus, "running")
+    ));
+  return Number(result[0].affectedRows) > 0;
+}
+
 export async function upsertUserProfile(profile: InsertUserProfile) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) {
+    const existing = memoryProfiles.get(profile.userId);
+    memoryProfiles.set(profile.userId, {
+      id: existing?.id || memoryProfiles.size + 1,
+      userId: profile.userId,
+      skills: profile.skills ?? existing?.skills ?? null,
+      experience: profile.experience ?? existing?.experience ?? null,
+      education: profile.education ?? existing?.education ?? null,
+      preferences: profile.preferences ?? existing?.preferences ?? null,
+      desiredJobTypes: profile.desiredJobTypes ?? existing?.desiredJobTypes ?? null,
+      desiredLocations: profile.desiredLocations ?? existing?.desiredLocations ?? null,
+      salaryExpectationMin: profile.salaryExpectationMin ?? existing?.salaryExpectationMin ?? null,
+      salaryExpectationMax: profile.salaryExpectationMax ?? existing?.salaryExpectationMax ?? null,
+      resumeUrl: profile.resumeUrl ?? existing?.resumeUrl ?? null,
+      resumeFileKey: profile.resumeFileKey ?? existing?.resumeFileKey ?? null,
+      linkedinUrl: profile.linkedinUrl ?? existing?.linkedinUrl ?? null,
+      githubUrl: profile.githubUrl ?? existing?.githubUrl ?? null,
+      portfolioUrl: profile.portfolioUrl ?? existing?.portfolioUrl ?? null,
+      diversityGroup: profile.diversityGroup ?? existing?.diversityGroup ?? null,
+      needsVisaSponsorship: profile.needsVisaSponsorship ?? existing?.needsVisaSponsorship ?? 0,
+      createdAt: existing?.createdAt || new Date(),
+      updatedAt: new Date(),
+    });
+    return;
+  }
   
   const existing = await getUserProfile(profile.userId);
   
@@ -198,26 +559,1296 @@ export async function upsertUserProfile(profile: InsertUserProfile) {
   }
 }
 
+export async function listUserConnectorAccounts(userId: number): Promise<UserConnectorAccount[]> {
+  const db = await getDb();
+  if (!db) {
+    return memoryConnectorAccounts
+      .filter((account) => account.userId === userId)
+      .map((account) => ({
+        ...account,
+        consentScopes: account.consentScopes ?? null,
+        externalAccountLabel: account.externalAccountLabel ?? null,
+        connectionRequestedAt: account.connectionRequestedAt ?? null,
+        lastVerifiedAt: account.lastVerifiedAt ?? null,
+        disconnectedAt: account.disconnectedAt ?? null,
+      })) as UserConnectorAccount[];
+  }
+
+  return await db
+    .select()
+    .from(userConnectorAccounts)
+    .where(eq(userConnectorAccounts.userId, userId));
+}
+
+export async function upsertUserConnectorAccount(account: InsertUserConnectorAccount) {
+  const db = await getDb();
+  const now = new Date();
+  if (!db) {
+    const existing = memoryConnectorAccounts.find((item) =>
+      item.userId === account.userId && item.provider === account.provider
+    );
+    if (existing) {
+      existing.status = account.status ?? existing.status;
+      existing.consentScopes = account.consentScopes ?? existing.consentScopes ?? null;
+      existing.externalAccountLabel = account.externalAccountLabel ?? existing.externalAccountLabel ?? null;
+      existing.connectionRequestedAt = account.connectionRequestedAt ?? existing.connectionRequestedAt ?? null;
+      existing.lastVerifiedAt = account.lastVerifiedAt ?? existing.lastVerifiedAt ?? null;
+      existing.disconnectedAt = account.disconnectedAt ?? existing.disconnectedAt ?? null;
+      existing.updatedAt = now;
+      return existing;
+    }
+
+    const created = {
+      id: memoryConnectorAccounts.length + 1,
+      userId: account.userId,
+      provider: account.provider,
+      status: account.status ?? "not_connected",
+      consentScopes: account.consentScopes ?? null,
+      externalAccountLabel: account.externalAccountLabel ?? null,
+      connectionRequestedAt: account.connectionRequestedAt ?? null,
+      lastVerifiedAt: account.lastVerifiedAt ?? null,
+      disconnectedAt: account.disconnectedAt ?? null,
+      createdAt: now,
+      updatedAt: now,
+    } satisfies InsertUserConnectorAccount & { id: number; createdAt: Date; updatedAt: Date };
+    memoryConnectorAccounts.push(created);
+    return created;
+  }
+
+  await db
+    .insert(userConnectorAccounts)
+    .values(account)
+    .onDuplicateKeyUpdate({
+      set: {
+        status: account.status ?? "not_connected",
+        consentScopes: account.consentScopes ?? null,
+        externalAccountLabel: account.externalAccountLabel ?? null,
+        connectionRequestedAt: account.connectionRequestedAt ?? null,
+        lastVerifiedAt: account.lastVerifiedAt ?? null,
+        disconnectedAt: account.disconnectedAt ?? null,
+        updatedAt: new Date(),
+      },
+    });
+
+  const accounts = await db
+    .select()
+    .from(userConnectorAccounts)
+    .where(and(
+      eq(userConnectorAccounts.userId, account.userId),
+      eq(userConnectorAccounts.provider, account.provider)
+    ))
+    .limit(1);
+  return accounts[0];
+}
+
+export async function requestUserConnectorConnection(input: {
+  userId: number;
+  provider: InsertUserConnectorAccount["provider"];
+  consentScopes: string[];
+}) {
+  return await upsertUserConnectorAccount({
+    userId: input.userId,
+    provider: input.provider,
+    status: "connection_requested",
+    consentScopes: JSON.stringify(input.consentScopes),
+    externalAccountLabel: null,
+    connectionRequestedAt: new Date(),
+    lastVerifiedAt: null,
+    disconnectedAt: null,
+  });
+}
+
+export async function disconnectUserConnectorAccount(userId: number, provider: InsertUserConnectorAccount["provider"]) {
+  return await upsertUserConnectorAccount({
+    userId,
+    provider,
+    status: "disabled",
+    disconnectedAt: new Date(),
+  });
+}
+
 // Applications
 export async function createApplication(application: InsertApplication) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  return await db.insert(applications).values(application);
+  if (!db) {
+    const existing = memoryApplications.find((item) =>
+      item.userId === application.userId && item.jobId === application.jobId
+    );
+    if (existing) {
+      const currentStatus = existing.status || "pending";
+      if (application.status === "applied" && currentStatus === "pending") {
+        existing.status = "applied";
+        existing.appliedDate = application.appliedDate || new Date();
+        existing.lastActivity = new Date();
+        existing.notes = application.notes ?? existing.notes;
+        existing.coverLetter = application.coverLetter ?? existing.coverLetter;
+        existing.customResume = application.customResume ?? existing.customResume;
+        existing.isAutoApplied = application.isAutoApplied ?? existing.isAutoApplied;
+        existing.updatedAt = new Date();
+      } else if (application.status === "pending" && currentStatus === "withdrawn" && !existing.appliedDate) {
+        existing.status = "pending";
+        existing.lastActivity = new Date();
+        existing.notes = application.notes ?? existing.notes;
+        existing.coverLetter = application.coverLetter ?? existing.coverLetter;
+        existing.customResume = application.customResume ?? existing.customResume;
+        existing.isAutoApplied = application.isAutoApplied ?? existing.isAutoApplied;
+        existing.updatedAt = new Date();
+      } else if (application.status === "pending" && currentStatus === "pending") {
+        existing.notes = application.notes ?? existing.notes;
+        existing.coverLetter = application.coverLetter ?? existing.coverLetter;
+        existing.customResume = application.customResume ?? existing.customResume;
+        existing.isAutoApplied = application.isAutoApplied ?? existing.isAutoApplied;
+        existing.updatedAt = new Date();
+      }
+      return { insertId: existing.id, existing: true };
+    }
+
+    const record = {
+      ...application,
+      id: memoryApplications.length + 1,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    memoryApplications.push(record);
+    return { insertId: record.id };
+  }
+
+  const result = await db
+    .insert(applications)
+    .values(application)
+    .onDuplicateKeyUpdate({
+      set: {
+        id: sql`LAST_INSERT_ID(${applications.id})`,
+        appliedDate: sql`IF(${applications.status} = 'pending' AND VALUES(${applications.status}) = 'applied', COALESCE(VALUES(${applications.appliedDate}), NOW()), ${applications.appliedDate})`,
+        lastActivity: sql`IF((${applications.status} = 'pending' AND VALUES(${applications.status}) = 'applied') OR (${applications.status} = 'withdrawn' AND ${applications.appliedDate} IS NULL AND VALUES(${applications.status}) = 'pending'), NOW(), ${applications.lastActivity})`,
+        notes: sql`IF((${applications.status} = 'pending' AND VALUES(${applications.status}) IN ('pending', 'applied')) OR (${applications.status} = 'withdrawn' AND ${applications.appliedDate} IS NULL AND VALUES(${applications.status}) = 'pending'), COALESCE(VALUES(${applications.notes}), ${applications.notes}), ${applications.notes})`,
+        coverLetter: sql`IF((${applications.status} = 'pending' AND VALUES(${applications.status}) IN ('pending', 'applied')) OR (${applications.status} = 'withdrawn' AND ${applications.appliedDate} IS NULL AND VALUES(${applications.status}) = 'pending'), COALESCE(VALUES(${applications.coverLetter}), ${applications.coverLetter}), ${applications.coverLetter})`,
+        customResume: sql`IF((${applications.status} = 'pending' AND VALUES(${applications.status}) IN ('pending', 'applied')) OR (${applications.status} = 'withdrawn' AND ${applications.appliedDate} IS NULL AND VALUES(${applications.status}) = 'pending'), COALESCE(VALUES(${applications.customResume}), ${applications.customResume}), ${applications.customResume})`,
+        isAutoApplied: sql`IF((${applications.status} = 'pending' AND VALUES(${applications.status}) IN ('pending', 'applied')) OR (${applications.status} = 'withdrawn' AND ${applications.appliedDate} IS NULL AND VALUES(${applications.status}) = 'pending'), COALESCE(VALUES(${applications.isAutoApplied}), ${applications.isAutoApplied}), ${applications.isAutoApplied})`,
+        status: sql`IF(${applications.status} = 'pending' AND VALUES(${applications.status}) = 'applied', 'applied', IF(${applications.status} = 'withdrawn' AND ${applications.appliedDate} IS NULL AND VALUES(${applications.status}) = 'pending', 'pending', ${applications.status}))`,
+      },
+    });
+  const writeResult = result[0];
+  return {
+    insertId: Number(writeResult.insertId),
+    existing: Number(writeResult.affectedRows) !== 1,
+  };
 }
 
 export async function getUserApplications(userId: number) {
   const db = await getDb();
-  if (!db) return [];
-  return await db.select().from(applications).where(eq(applications.userId, userId));
+  if (!db) {
+    return memoryApplications
+      .filter((application) => application.userId === userId)
+      .map((application) => ({
+        ...application,
+        job: sampleJobs.find((job) => job.id === application.jobId),
+      }));
+  }
+  return await db
+    .select({
+      id: applications.id,
+      userId: applications.userId,
+      jobId: applications.jobId,
+      status: applications.status,
+      appliedDate: applications.appliedDate,
+      lastActivity: applications.lastActivity,
+      coverLetter: applications.coverLetter,
+      customResume: applications.customResume,
+      notes: applications.notes,
+      isAutoApplied: applications.isAutoApplied,
+      createdAt: applications.createdAt,
+      updatedAt: applications.updatedAt,
+      job: {
+        id: jobs.id,
+        title: jobs.title,
+        company: jobs.company,
+        location: jobs.location,
+        salaryMin: jobs.salaryMin,
+        salaryMax: jobs.salaryMax,
+        jobType: jobs.jobType,
+        applicationUrl: jobs.applicationUrl,
+        sourceUrl: jobs.sourceUrl,
+      },
+    })
+    .from(applications)
+    .leftJoin(jobs, eq(applications.jobId, jobs.id))
+    .where(eq(applications.userId, userId))
+    .orderBy(desc(applications.createdAt));
 }
 
 export async function updateApplicationStatus(
   applicationId: number,
-  status: "pending" | "applied" | "viewed" | "interview" | "offer" | "rejected" | "accepted" | "withdrawn"
+  status: ApplicationStatus,
+  userId?: number
 ) {
   const db = await getDb();
-  if (!db) return;
-  await db.update(applications).set({ status, lastActivity: new Date() }).where(eq(applications.id, applicationId));
+  if (!db) {
+    const application = memoryApplications.find((item) =>
+      item.id === applicationId && (userId === undefined || item.userId === userId)
+    );
+    if (!application) throw new Error("Application not found.");
+    const currentStatus = application.status || "pending";
+    if (!canTransitionApplicationStatus(currentStatus, status)) {
+      throw new Error(`Application cannot move from ${currentStatus} to ${status}.`);
+    }
+    if (currentStatus === status) return;
+    application.status = status;
+    if (status === "applied" && !application.appliedDate) {
+      application.appliedDate = new Date();
+    }
+    application.lastActivity = new Date();
+    application.updatedAt = new Date();
+    return;
+  }
+
+  const conditions = userId === undefined
+    ? eq(applications.id, applicationId)
+    : and(eq(applications.id, applicationId), eq(applications.userId, userId));
+  const existing = await db
+    .select({
+      status: applications.status,
+      appliedDate: applications.appliedDate,
+    })
+    .from(applications)
+    .where(conditions)
+    .limit(1);
+  if (!existing[0]) throw new Error("Application not found.");
+  if (!canTransitionApplicationStatus(existing[0].status, status)) {
+    throw new Error(`Application cannot move from ${existing[0].status} to ${status}.`);
+  }
+  if (existing[0].status === status) return;
+
+  const result = await db
+    .update(applications)
+    .set({
+      status,
+      lastActivity: new Date(),
+      ...(status === "applied" && !existing[0].appliedDate ? { appliedDate: new Date() } : {}),
+    })
+    .where(and(
+      conditions,
+      eq(applications.status, existing[0].status)
+    ));
+  if (Number(result[0].affectedRows) === 0) {
+    throw new Error("Application status changed concurrently. Refresh and try again.");
+  }
+}
+
+export async function createApplicationDecision(decision: InsertApplicationDecision) {
+  const db = await getDb();
+  if (!db) {
+    const existing = memoryApplicationDecisions.find((item) =>
+      item.userId === decision.userId && item.jobId === decision.jobId
+    );
+    if (existing) {
+      existing.decision = decision.decision;
+      existing.decisionReason = decision.decisionReason ?? existing.decisionReason ?? null;
+      existing.matchScore = decision.matchScore ?? existing.matchScore ?? null;
+      existing.riskLevel = decision.riskLevel ?? existing.riskLevel ?? "medium";
+      existing.reviewRequired = decision.reviewRequired ?? existing.reviewRequired ?? 1;
+      existing.reviewReason = decision.reviewReason ?? existing.reviewReason ?? null;
+      existing.decidedBy = decision.decidedBy ?? existing.decidedBy ?? "system";
+      existing.updatedAt = new Date();
+      return { insertId: existing.id, existing: true };
+    }
+
+    const record = {
+      ...decision,
+      id: memoryApplicationDecisions.length + 1,
+      decisionReason: decision.decisionReason ?? null,
+      matchScore: decision.matchScore ?? null,
+      riskLevel: decision.riskLevel ?? "medium",
+      reviewRequired: decision.reviewRequired ?? 1,
+      reviewReason: decision.reviewReason ?? null,
+      decidedBy: decision.decidedBy ?? "system",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    memoryApplicationDecisions.push(record);
+    return { insertId: record.id };
+  }
+
+  const result = await db
+    .insert(applicationDecisions)
+    .values(decision)
+    .onDuplicateKeyUpdate({
+      set: {
+        id: sql`LAST_INSERT_ID(${applicationDecisions.id})`,
+        decision: sql`VALUES(${applicationDecisions.decision})`,
+        decisionReason: sql`VALUES(${applicationDecisions.decisionReason})`,
+        matchScore: sql`VALUES(${applicationDecisions.matchScore})`,
+        riskLevel: sql`VALUES(${applicationDecisions.riskLevel})`,
+        reviewRequired: sql`VALUES(${applicationDecisions.reviewRequired})`,
+        reviewReason: sql`VALUES(${applicationDecisions.reviewReason})`,
+        decidedBy: sql`VALUES(${applicationDecisions.decidedBy})`,
+        updatedAt: new Date(),
+      },
+    });
+
+  const writeResult = result[0];
+  return {
+    insertId: Number(writeResult.insertId),
+    existing: Number(writeResult.affectedRows) !== 1,
+  };
+}
+
+export async function getUserApplicationDecisions(userId: number) {
+  const db = await getDb();
+  if (!db) {
+    return memoryApplicationDecisions
+      .filter((decision) => decision.userId === userId)
+      .map((decision) => ({
+        ...decision,
+        job: sampleJobs.find((job) => job.id === decision.jobId),
+      }))
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+  }
+
+  return await db
+    .select({
+      id: applicationDecisions.id,
+      userId: applicationDecisions.userId,
+      jobId: applicationDecisions.jobId,
+      decision: applicationDecisions.decision,
+      decisionReason: applicationDecisions.decisionReason,
+      matchScore: applicationDecisions.matchScore,
+      riskLevel: applicationDecisions.riskLevel,
+      reviewRequired: applicationDecisions.reviewRequired,
+      reviewReason: applicationDecisions.reviewReason,
+      decidedBy: applicationDecisions.decidedBy,
+      createdAt: applicationDecisions.createdAt,
+      updatedAt: applicationDecisions.updatedAt,
+      job: {
+        id: jobs.id,
+        title: jobs.title,
+        company: jobs.company,
+        location: jobs.location,
+        applicationUrl: jobs.applicationUrl,
+        sourceUrl: jobs.sourceUrl,
+      },
+    })
+    .from(applicationDecisions)
+    .leftJoin(jobs, eq(applicationDecisions.jobId, jobs.id))
+    .where(eq(applicationDecisions.userId, userId))
+    .orderBy(desc(applicationDecisions.updatedAt));
+}
+
+export async function createApplicationMaterial(material: InsertApplicationMaterial) {
+  const db = await getDb();
+  if (!db) {
+    const existing = memoryApplicationMaterials.find((item) =>
+      item.applicationId === material.applicationId
+    );
+    if (existing) {
+      existing.resumeId = material.resumeId ?? existing.resumeId ?? null;
+      existing.customResume = material.customResume ?? existing.customResume ?? null;
+      existing.coverLetter = material.coverLetter ?? existing.coverLetter ?? null;
+      existing.customAnswers = material.customAnswers ?? existing.customAnswers ?? null;
+      existing.claimsMade = material.claimsMade ?? existing.claimsMade ?? null;
+      existing.sourceProfileSnapshot = material.sourceProfileSnapshot ?? existing.sourceProfileSnapshot ?? null;
+      existing.updatedAt = new Date();
+      return { insertId: existing.id, existing: true };
+    }
+
+    const record = {
+      ...material,
+      id: memoryApplicationMaterials.length + 1,
+      resumeId: material.resumeId ?? null,
+      customResume: material.customResume ?? null,
+      coverLetter: material.coverLetter ?? null,
+      customAnswers: material.customAnswers ?? null,
+      claimsMade: material.claimsMade ?? null,
+      sourceProfileSnapshot: material.sourceProfileSnapshot ?? null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    memoryApplicationMaterials.push(record);
+    return { insertId: record.id };
+  }
+
+  const result = await db
+    .insert(applicationMaterials)
+    .values(material)
+    .onDuplicateKeyUpdate({
+      set: {
+        id: sql`LAST_INSERT_ID(${applicationMaterials.id})`,
+        resumeId: sql`COALESCE(VALUES(${applicationMaterials.resumeId}), ${applicationMaterials.resumeId})`,
+        customResume: sql`COALESCE(VALUES(${applicationMaterials.customResume}), ${applicationMaterials.customResume})`,
+        coverLetter: sql`COALESCE(VALUES(${applicationMaterials.coverLetter}), ${applicationMaterials.coverLetter})`,
+        customAnswers: sql`COALESCE(VALUES(${applicationMaterials.customAnswers}), ${applicationMaterials.customAnswers})`,
+        claimsMade: sql`COALESCE(VALUES(${applicationMaterials.claimsMade}), ${applicationMaterials.claimsMade})`,
+        sourceProfileSnapshot: sql`COALESCE(VALUES(${applicationMaterials.sourceProfileSnapshot}), ${applicationMaterials.sourceProfileSnapshot})`,
+        updatedAt: new Date(),
+      },
+    });
+
+  const writeResult = result[0];
+  return {
+    insertId: Number(writeResult.insertId),
+    existing: Number(writeResult.affectedRows) !== 1,
+  };
+}
+
+export async function createApplicationAttempt(attempt: InsertApplicationAttempt) {
+  const db = await getDb();
+  if (!db) {
+    const record = {
+      ...attempt,
+      id: memoryApplicationAttempts.length + 1,
+      platformId: attempt.platformId ?? null,
+      attemptType: attempt.attemptType ?? "prepare",
+      status: attempt.status ?? "prepared",
+      startedAt: attempt.startedAt ?? new Date(),
+      finishedAt: attempt.finishedAt ?? null,
+      errorMessage: attempt.errorMessage ?? null,
+      confirmationText: attempt.confirmationText ?? null,
+      confirmationUrl: attempt.confirmationUrl ?? null,
+      screenshotKey: attempt.screenshotKey ?? null,
+      retryCount: attempt.retryCount ?? 0,
+      createdAt: new Date(),
+    };
+    memoryApplicationAttempts.push(record);
+    return { insertId: record.id };
+  }
+
+  const result = await db.insert(applicationAttempts).values({
+    attemptType: "prepare",
+    status: "prepared",
+    retryCount: 0,
+    ...attempt,
+  });
+  return { insertId: Number(result[0].insertId) };
+}
+
+export async function getApplicationLedgerArtifacts(applicationId: number, userId: number): Promise<{
+  material: ApplicationMaterial | null;
+  interviewPreparation: InterviewPreparation | null;
+  attempts: ApplicationAttempt[];
+  employerResponses: EmployerResponse[];
+  auditEvents: AuditEvent[];
+}> {
+  const db = await getDb();
+  if (!db) {
+    const application = memoryApplications.find((item) =>
+      item.id === applicationId && item.userId === userId
+    );
+    if (!application) throw new Error("Application not found.");
+    const material = memoryApplicationMaterials.find((item) => item.applicationId === applicationId) || null;
+    const preparation = memoryInterviewPreparations.find((item) =>
+      item.userId === userId && item.jobId === application.jobId
+    ) || null;
+    const attempts = memoryApplicationAttempts
+      .filter((item) => item.applicationId === applicationId && item.userId === userId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const responses = memoryEmployerResponses
+      .filter((item) => item.applicationId === applicationId && item.userId === userId)
+      .sort((a, b) => b.receivedAt.getTime() - a.receivedAt.getTime());
+    const events = memoryAuditEvents
+      .filter((item) => item.userId === userId && item.entityType === "application" && item.entityId === applicationId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    return {
+      material: material as ApplicationMaterial | null,
+      interviewPreparation: preparation as InterviewPreparation | null,
+      attempts: attempts as ApplicationAttempt[],
+      employerResponses: responses as EmployerResponse[],
+      auditEvents: events as AuditEvent[],
+    };
+  }
+
+  const application = await db
+    .select({ id: applications.id, jobId: applications.jobId })
+    .from(applications)
+    .where(and(eq(applications.id, applicationId), eq(applications.userId, userId)))
+    .limit(1);
+  if (!application[0]) throw new Error("Application not found.");
+
+  const [materialRows, preparationRows, attempts, responses, events] = await Promise.all([
+    db
+      .select()
+      .from(applicationMaterials)
+      .where(eq(applicationMaterials.applicationId, applicationId))
+      .limit(1),
+    db
+      .select()
+      .from(interviewPreparation)
+      .where(and(
+        eq(interviewPreparation.userId, userId),
+        eq(interviewPreparation.jobId, application[0].jobId)
+      ))
+      .orderBy(desc(interviewPreparation.createdAt))
+      .limit(1),
+    db
+      .select()
+      .from(applicationAttempts)
+      .where(and(
+        eq(applicationAttempts.applicationId, applicationId),
+        eq(applicationAttempts.userId, userId)
+      ))
+      .orderBy(desc(applicationAttempts.createdAt)),
+    db
+      .select()
+      .from(employerResponses)
+      .where(and(
+        eq(employerResponses.applicationId, applicationId),
+        eq(employerResponses.userId, userId)
+      ))
+      .orderBy(desc(employerResponses.receivedAt)),
+    db
+      .select()
+      .from(auditEvents)
+      .where(and(
+        eq(auditEvents.userId, userId),
+        eq(auditEvents.entityType, "application"),
+        eq(auditEvents.entityId, applicationId)
+      ))
+      .orderBy(desc(auditEvents.createdAt)),
+  ]);
+
+  return {
+    material: materialRows[0] || null,
+    interviewPreparation: preparationRows[0] || null,
+    attempts,
+    employerResponses: responses,
+    auditEvents: events,
+  };
+}
+
+export async function createEmployerResponse(response: InsertEmployerResponse) {
+  const db = await getDb();
+  if (!db) {
+    const record = {
+      ...response,
+      id: memoryEmployerResponses.length + 1,
+      noteId: response.noteId ?? null,
+      createdAt: new Date(),
+    };
+    memoryEmployerResponses.push(record);
+    return { insertId: record.id };
+  }
+
+  const result = await db.insert(employerResponses).values(response);
+  return { insertId: Number(result[0].insertId) };
+}
+
+export async function getEmployerResponses(applicationId: number, userId: number) {
+  const db = await getDb();
+  if (!db) {
+    const application = memoryApplications.find((item) =>
+      item.id === applicationId && item.userId === userId
+    );
+    if (!application) throw new Error("Application not found.");
+    return memoryEmployerResponses
+      .filter((response) => response.applicationId === applicationId && response.userId === userId)
+      .sort((a, b) => b.receivedAt.getTime() - a.receivedAt.getTime()) as EmployerResponse[];
+  }
+
+  const application = await db
+    .select({ id: applications.id })
+    .from(applications)
+    .where(and(eq(applications.id, applicationId), eq(applications.userId, userId)))
+    .limit(1);
+  if (!application[0]) throw new Error("Application not found.");
+
+  return await db
+    .select()
+    .from(employerResponses)
+    .where(and(
+      eq(employerResponses.applicationId, applicationId),
+      eq(employerResponses.userId, userId)
+    ))
+    .orderBy(desc(employerResponses.receivedAt));
+}
+
+function parseApprovalPayload(payload?: string | null): Record<string, unknown> | null {
+  if (!payload) return null;
+  try {
+    const parsed = JSON.parse(payload);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getUserOfferAttributionReviews(userId: number) {
+  const approvals = (await listUserApplicationApprovals(userId, "pending"))
+    .filter((approval) => approval.approvalType === "offer_attribution");
+  const userApplications = await getUserApplications(userId);
+
+  return await Promise.all(approvals.map(async (approval) => {
+    const applicationId = approval.applicationId ??
+      (approval.entityType === "application" ? approval.entityId : null);
+    const application = applicationId
+      ? userApplications.find((item) => item.id === applicationId) ?? null
+      : null;
+    let response: EmployerResponse | null = null;
+    if (applicationId) {
+      try {
+        const responses = await getEmployerResponses(applicationId, userId);
+        response = responses.find((item) => item.responseType === "offer") ?? responses[0] ?? null;
+      } catch {
+        response = null;
+      }
+    }
+
+    return {
+      approval,
+      application,
+      latestEmployerResponse: response,
+      payload: parseApprovalPayload(approval.payload),
+      recommendedAction: "report_hire" as const,
+    };
+  }));
+}
+
+export async function createSuccessFee(fee: InsertSuccessFee) {
+  const db = await getDb();
+  if (!db) {
+    const record = {
+      ...fee,
+      id: memorySuccessFees.length + 1,
+      applicationId: fee.applicationId ?? null,
+      currency: fee.currency ?? "USD",
+      feePercent: fee.feePercent ?? 5,
+      stripeSubscriptionId: fee.stripeSubscriptionId ?? null,
+      stripePriceId: fee.stripePriceId ?? null,
+      status: fee.status ?? "pending_verification",
+      endDate: fee.endDate ?? null,
+      nextVerificationDue: fee.nextVerificationDue ?? null,
+      verificationGraceExpiry: fee.verificationGraceExpiry ?? null,
+      offerLetterUrl: fee.offerLetterUrl ?? null,
+      offerLetterKey: fee.offerLetterKey ?? null,
+      termsAcceptedAt: fee.termsAcceptedAt ?? null,
+      notes: fee.notes ?? null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    memorySuccessFees.push(record);
+    return { insertId: record.id };
+  }
+
+  const result = await db.insert(successFees).values(fee);
+  return { insertId: Number(result[0].insertId) };
+}
+
+export async function getUserSuccessFees(userId: number) {
+  const db = await getDb();
+  if (!db) {
+    return memorySuccessFees
+      .filter((fee) => fee.userId === userId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()) as SuccessFee[];
+  }
+
+  return await db
+    .select()
+    .from(successFees)
+    .where(eq(successFees.userId, userId))
+    .orderBy(desc(successFees.createdAt));
+}
+
+export async function createAuditEvent(event: InsertAuditEvent) {
+  const db = await getDb();
+  if (!db) {
+    const record = {
+      ...event,
+      id: memoryAuditEvents.length + 1,
+      actor: event.actor ?? "system",
+      source: event.source ?? null,
+      beforeState: event.beforeState ?? null,
+      afterState: event.afterState ?? null,
+      riskLevel: event.riskLevel ?? "medium",
+      approvalId: event.approvalId ?? null,
+      createdAt: new Date(),
+    };
+    memoryAuditEvents.push(record);
+    return { insertId: record.id };
+  }
+
+  const result = await db.insert(auditEvents).values(event);
+  return { insertId: Number(result[0].insertId) };
+}
+
+export async function getAuditEventsForEntity(
+  userId: number,
+  entityType: AuditEvent["entityType"],
+  entityId: number
+) {
+  const db = await getDb();
+  if (!db) {
+    return memoryAuditEvents
+      .filter((event) =>
+        event.userId === userId &&
+        event.entityType === entityType &&
+        event.entityId === entityId
+      )
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()) as AuditEvent[];
+  }
+
+  return await db
+    .select()
+    .from(auditEvents)
+    .where(and(
+      eq(auditEvents.userId, userId),
+      eq(auditEvents.entityType, entityType),
+      eq(auditEvents.entityId, entityId)
+    ))
+    .orderBy(desc(auditEvents.createdAt));
+}
+
+export async function getAuditEventsForUser(userId: number, limit = 50) {
+  const db = await getDb();
+  const boundedLimit = Math.max(1, Math.min(limit, 100));
+  if (!db) {
+    return memoryAuditEvents
+      .filter((event) => event.userId === userId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, boundedLimit) as AuditEvent[];
+  }
+
+  return await db
+    .select()
+    .from(auditEvents)
+    .where(eq(auditEvents.userId, userId))
+    .orderBy(desc(auditEvents.createdAt))
+    .limit(boundedLimit);
+}
+
+export async function createAdminReviewItem(item: InsertAdminReviewItem) {
+  const db = await getDb();
+  const openStatuses = new Set(["open", "in_progress"]);
+  if (!db) {
+    const existing = memoryAdminReviewItems.find((review) =>
+      review.userId === item.userId &&
+      review.entityType === item.entityType &&
+      review.entityId === item.entityId &&
+      review.category === item.category &&
+      openStatuses.has(review.status || "open")
+    );
+    if (existing) {
+      existing.priority = item.priority ?? existing.priority ?? "medium";
+      existing.title = item.title ?? existing.title;
+      existing.description = item.description ?? existing.description ?? null;
+      existing.assignedTo = item.assignedTo ?? existing.assignedTo ?? null;
+      existing.updatedAt = new Date();
+      return { insertId: existing.id, existing: true };
+    }
+
+    const record = {
+      ...item,
+      id: memoryAdminReviewItems.length + 1,
+      status: item.status ?? "open",
+      priority: item.priority ?? "medium",
+      description: item.description ?? null,
+      assignedTo: item.assignedTo ?? null,
+      resolvedBy: item.resolvedBy ?? null,
+      resolvedAt: item.resolvedAt ?? null,
+      resolution: item.resolution ?? null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    memoryAdminReviewItems.push(record);
+    return { insertId: record.id };
+  }
+
+  const existing = await db
+    .select({ id: adminReviewItems.id })
+    .from(adminReviewItems)
+    .where(and(
+      eq(adminReviewItems.userId, item.userId),
+      eq(adminReviewItems.entityType, item.entityType),
+      eq(adminReviewItems.entityId, item.entityId),
+      eq(adminReviewItems.category, item.category),
+      or(eq(adminReviewItems.status, "open"), eq(adminReviewItems.status, "in_progress"))
+    ))
+    .limit(1);
+
+  if (existing[0]) {
+    await db
+      .update(adminReviewItems)
+      .set({
+        priority: item.priority ?? "medium",
+        title: item.title,
+        description: item.description,
+        assignedTo: item.assignedTo,
+      })
+      .where(eq(adminReviewItems.id, existing[0].id));
+    return { insertId: existing[0].id, existing: true };
+  }
+
+  const result = await db.insert(adminReviewItems).values(item);
+  return { insertId: Number(result[0].insertId) };
+}
+
+export async function listAdminReviewItems(status: AdminReviewItem["status"] | "all" = "open") {
+  const db = await getDb();
+  if (!db) {
+    return memoryAdminReviewItems
+      .filter((item) => status === "all" || item.status === status)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()) as AdminReviewItem[];
+  }
+
+  return await db
+    .select()
+    .from(adminReviewItems)
+    .where(status === "all" ? undefined : eq(adminReviewItems.status, status))
+    .orderBy(desc(adminReviewItems.createdAt));
+}
+
+export async function getAdminReviewEvidenceSnapshot(reviewItemId: number) {
+  const reviewItem = (await listAdminReviewItems("all")).find((item) => item.id === reviewItemId);
+  if (!reviewItem) {
+    throw new Error("Review item not found.");
+  }
+
+  const db = await getDb();
+  const user = !db
+    ? memoryUsers.find((item) => item.id === reviewItem.userId)
+    : (await db
+      .select({
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        role: users.role,
+        accountStatus: users.accountStatus,
+        tosAcceptedAt: users.tosAcceptedAt,
+        createdAt: users.createdAt,
+        lastSignedIn: users.lastSignedIn,
+      })
+      .from(users)
+      .where(eq(users.id, reviewItem.userId))
+      .limit(1))[0];
+
+  let application: Awaited<ReturnType<typeof getUserApplications>>[number] | null = null;
+  let artifacts: Awaited<ReturnType<typeof getApplicationLedgerArtifacts>> | null = null;
+  let approvals: ApplicationApproval[] = [];
+  let decision: Awaited<ReturnType<typeof getUserApplicationDecisions>>[number] | null = null;
+
+  if (reviewItem.entityType === "application") {
+    const applicationsForUser = await getUserApplications(reviewItem.userId);
+    application = applicationsForUser.find((item) => item.id === reviewItem.entityId) ?? null;
+    approvals = (await listUserApplicationApprovals(reviewItem.userId, "all"))
+      .filter((approval) =>
+        approval.applicationId === reviewItem.entityId ||
+        (approval.entityType === "application" && approval.entityId === reviewItem.entityId)
+      );
+
+    if (application) {
+      artifacts = await getApplicationLedgerArtifacts(reviewItem.entityId, reviewItem.userId);
+      const decisions = await getUserApplicationDecisions(reviewItem.userId);
+      decision = decisions.find((item) => item.jobId === application?.jobId) ?? null;
+    }
+  }
+
+  return {
+    reviewItem,
+    user: user
+      ? {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          accountStatus: user.accountStatus,
+          tosAcceptedAt: user.tosAcceptedAt,
+          createdAt: user.createdAt,
+          lastSignedIn: user.lastSignedIn,
+        }
+      : null,
+    application,
+    decision,
+    material: artifacts?.material ?? null,
+    attempts: artifacts?.attempts ?? [],
+    employerResponses: artifacts?.employerResponses ?? [],
+    approvals,
+    auditEvents: artifacts?.auditEvents ?? [],
+  };
+}
+
+export async function resolveAdminReviewItem(
+  reviewItemId: number,
+  adminUserId: number,
+  status: "resolved" | "dismissed",
+  resolution: string
+) {
+  const db = await getDb();
+  if (!db) {
+    const item = memoryAdminReviewItems.find((review) => review.id === reviewItemId);
+    if (!item) throw new Error("Review item not found.");
+    item.status = status;
+    item.resolvedBy = adminUserId;
+    item.resolvedAt = new Date();
+    item.resolution = resolution;
+    item.updatedAt = new Date();
+    return { success: true };
+  }
+
+  const result = await db
+    .update(adminReviewItems)
+    .set({
+      status,
+      resolvedBy: adminUserId,
+      resolvedAt: new Date(),
+      resolution,
+    })
+    .where(eq(adminReviewItems.id, reviewItemId));
+  if (Number(result[0].affectedRows) === 0) {
+    throw new Error("Review item not found.");
+  }
+  return { success: true };
+}
+
+export async function createApplicationApproval(approval: InsertApplicationApproval) {
+  const db = await getDb();
+  if (!db) {
+    const existing = memoryApplicationApprovals.find((item) =>
+      item.userId === approval.userId &&
+      item.entityType === approval.entityType &&
+      item.entityId === approval.entityId &&
+      item.approvalType === approval.approvalType &&
+      item.status === "pending"
+    );
+    if (existing) {
+      existing.applicationId = approval.applicationId ?? existing.applicationId ?? null;
+      existing.riskLevel = approval.riskLevel ?? existing.riskLevel ?? "medium";
+      existing.requestedBy = approval.requestedBy ?? existing.requestedBy ?? "system";
+      existing.title = approval.title ?? existing.title;
+      existing.description = approval.description ?? existing.description ?? null;
+      existing.payload = approval.payload ?? existing.payload ?? null;
+      existing.updatedAt = new Date();
+      return { insertId: existing.id, existing: true };
+    }
+
+    const record = {
+      ...approval,
+      id: memoryApplicationApprovals.length + 1,
+      applicationId: approval.applicationId ?? null,
+      status: approval.status ?? "pending",
+      riskLevel: approval.riskLevel ?? "medium",
+      requestedBy: approval.requestedBy ?? "system",
+      decidedBy: approval.decidedBy ?? null,
+      description: approval.description ?? null,
+      payload: approval.payload ?? null,
+      decisionNote: approval.decisionNote ?? null,
+      requestedAt: approval.requestedAt ?? new Date(),
+      decidedAt: approval.decidedAt ?? null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    memoryApplicationApprovals.push(record);
+    return { insertId: record.id };
+  }
+
+  const existing = await db
+    .select({ id: applicationApprovals.id })
+    .from(applicationApprovals)
+    .where(and(
+      eq(applicationApprovals.userId, approval.userId),
+      eq(applicationApprovals.entityType, approval.entityType),
+      eq(applicationApprovals.entityId, approval.entityId),
+      eq(applicationApprovals.approvalType, approval.approvalType),
+      eq(applicationApprovals.status, "pending")
+    ))
+    .limit(1);
+  if (existing[0]) {
+    await db
+      .update(applicationApprovals)
+      .set({
+        applicationId: approval.applicationId,
+        riskLevel: approval.riskLevel ?? "medium",
+        requestedBy: approval.requestedBy ?? "system",
+        title: approval.title,
+        description: approval.description,
+        payload: approval.payload,
+      })
+      .where(eq(applicationApprovals.id, existing[0].id));
+    return { insertId: existing[0].id, existing: true };
+  }
+
+  const result = await db.insert(applicationApprovals).values(approval);
+  return { insertId: Number(result[0].insertId) };
+}
+
+export async function listUserApplicationApprovals(
+  userId: number,
+  status: ApplicationApproval["status"] | "all" = "pending"
+) {
+  const db = await getDb();
+  if (!db) {
+    return memoryApplicationApprovals
+      .filter((approval) => approval.userId === userId && (status === "all" || approval.status === status))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()) as ApplicationApproval[];
+  }
+
+  const conditions: SQL[] = [eq(applicationApprovals.userId, userId)];
+  if (status !== "all") {
+    conditions.push(eq(applicationApprovals.status, status));
+  }
+
+  return await db
+    .select()
+    .from(applicationApprovals)
+    .where(and(...conditions))
+    .orderBy(desc(applicationApprovals.createdAt));
+}
+
+export async function getPendingFollowUpApproval(followUpId: number, userId: number) {
+  const db = await getDb();
+  if (!db) {
+    return memoryApplicationApprovals.find((approval) =>
+      approval.userId === userId &&
+      approval.entityType === "follow_up" &&
+      approval.entityId === followUpId &&
+      approval.approvalType === "follow_up_send" &&
+      approval.status === "pending"
+    ) as ApplicationApproval | undefined;
+  }
+
+  const result = await db
+    .select()
+    .from(applicationApprovals)
+    .where(and(
+      eq(applicationApprovals.userId, userId),
+      eq(applicationApprovals.entityType, "follow_up"),
+      eq(applicationApprovals.entityId, followUpId),
+      eq(applicationApprovals.approvalType, "follow_up_send"),
+      eq(applicationApprovals.status, "pending")
+    ))
+    .limit(1);
+  return result[0];
+}
+
+export async function resolveApplicationApproval(
+  approvalId: number,
+  userId: number,
+  status: "approved" | "rejected" | "cancelled",
+  decisionNote?: string,
+  decidedBy: "user" | "admin" = "user"
+) {
+  const db = await getDb();
+  const decidedAt = new Date();
+  if (!db) {
+    const approval = memoryApplicationApprovals.find((item) => item.id === approvalId && item.userId === userId);
+    if (!approval) throw new Error("Approval not found.");
+    if (approval.status !== "pending") throw new Error("Approval has already been resolved.");
+    approval.status = status;
+    approval.decidedBy = decidedBy;
+    approval.decisionNote = decisionNote ?? null;
+    approval.decidedAt = decidedAt;
+    approval.updatedAt = decidedAt;
+    return { success: true, approval };
+  }
+
+  const existing = await db
+    .select()
+    .from(applicationApprovals)
+    .where(and(eq(applicationApprovals.id, approvalId), eq(applicationApprovals.userId, userId)))
+    .limit(1);
+  if (!existing[0]) throw new Error("Approval not found.");
+  if (existing[0].status !== "pending") throw new Error("Approval has already been resolved.");
+
+  await db
+    .update(applicationApprovals)
+    .set({
+      status,
+      decidedBy,
+      decisionNote,
+      decidedAt,
+    })
+    .where(and(eq(applicationApprovals.id, approvalId), eq(applicationApprovals.userId, userId)));
+
+  return {
+    success: true,
+    approval: {
+      ...existing[0],
+      status,
+      decidedBy,
+      decisionNote: decisionNote ?? null,
+      decidedAt,
+    },
+  };
+}
+
+export async function getApplicationCampaign(userId: number) {
+  const db = await getDb();
+  if (!db) {
+    return memoryApplicationCampaigns.find((campaign) => campaign.userId === userId) as ApplicationCampaign | undefined;
+  }
+
+  const result = await db
+    .select()
+    .from(applicationCampaigns)
+    .where(eq(applicationCampaigns.userId, userId))
+    .limit(1);
+  return result[0];
+}
+
+export async function upsertApplicationCampaign(campaign: InsertApplicationCampaign) {
+  const db = await getDb();
+  const now = new Date();
+
+  if (!db) {
+    const existing = memoryApplicationCampaigns.find((item) => item.userId === campaign.userId);
+    if (existing) {
+      existing.status = campaign.status ?? existing.status ?? "active";
+      existing.title = campaign.title ?? existing.title;
+      existing.targetRoles = campaign.targetRoles ?? existing.targetRoles ?? null;
+      existing.targetLocations = campaign.targetLocations ?? existing.targetLocations ?? null;
+      existing.salaryMin = campaign.salaryMin ?? existing.salaryMin ?? null;
+      existing.salaryMax = campaign.salaryMax ?? existing.salaryMax ?? null;
+      existing.remoteOnly = campaign.remoteOnly ?? existing.remoteOnly ?? 1;
+      existing.automationMode = campaign.automationMode ?? existing.automationMode ?? "review_first";
+      existing.dailyApplicationLimit = campaign.dailyApplicationLimit ?? existing.dailyApplicationLimit ?? 12;
+      existing.minMatchScore = campaign.minMatchScore ?? existing.minMatchScore ?? 70;
+      existing.readinessScore = campaign.readinessScore ?? existing.readinessScore ?? 0;
+      existing.autoApplyEligible = campaign.autoApplyEligible ?? existing.autoApplyEligible ?? 0;
+      existing.blockers = campaign.blockers ?? existing.blockers ?? null;
+      existing.nextActions = campaign.nextActions ?? existing.nextActions ?? null;
+      existing.lastPlanSummary = campaign.lastPlanSummary ?? existing.lastPlanSummary ?? null;
+      existing.lastSyncedAt = campaign.lastSyncedAt ?? now;
+      existing.updatedAt = now;
+      return { insertId: existing.id, existing: true };
+    }
+
+    const record = {
+      ...campaign,
+      id: memoryApplicationCampaigns.length + 1,
+      status: campaign.status ?? "active",
+      targetRoles: campaign.targetRoles ?? null,
+      targetLocations: campaign.targetLocations ?? null,
+      salaryMin: campaign.salaryMin ?? null,
+      salaryMax: campaign.salaryMax ?? null,
+      remoteOnly: campaign.remoteOnly ?? 1,
+      automationMode: campaign.automationMode ?? "review_first",
+      dailyApplicationLimit: campaign.dailyApplicationLimit ?? 12,
+      minMatchScore: campaign.minMatchScore ?? 70,
+      readinessScore: campaign.readinessScore ?? 0,
+      autoApplyEligible: campaign.autoApplyEligible ?? 0,
+      blockers: campaign.blockers ?? null,
+      nextActions: campaign.nextActions ?? null,
+      lastPlanSummary: campaign.lastPlanSummary ?? null,
+      lastSyncedAt: campaign.lastSyncedAt ?? now,
+      createdAt: now,
+      updatedAt: now,
+    };
+    memoryApplicationCampaigns.push(record);
+    return { insertId: record.id };
+  }
+
+  const result = await db
+    .insert(applicationCampaigns)
+    .values(campaign)
+    .onDuplicateKeyUpdate({
+      set: {
+        id: sql`LAST_INSERT_ID(${applicationCampaigns.id})`,
+        status: sql`VALUES(${applicationCampaigns.status})`,
+        title: sql`VALUES(${applicationCampaigns.title})`,
+        targetRoles: sql`VALUES(${applicationCampaigns.targetRoles})`,
+        targetLocations: sql`VALUES(${applicationCampaigns.targetLocations})`,
+        salaryMin: sql`VALUES(${applicationCampaigns.salaryMin})`,
+        salaryMax: sql`VALUES(${applicationCampaigns.salaryMax})`,
+        remoteOnly: sql`VALUES(${applicationCampaigns.remoteOnly})`,
+        automationMode: sql`VALUES(${applicationCampaigns.automationMode})`,
+        dailyApplicationLimit: sql`VALUES(${applicationCampaigns.dailyApplicationLimit})`,
+        minMatchScore: sql`VALUES(${applicationCampaigns.minMatchScore})`,
+        readinessScore: sql`VALUES(${applicationCampaigns.readinessScore})`,
+        autoApplyEligible: sql`VALUES(${applicationCampaigns.autoApplyEligible})`,
+        blockers: sql`VALUES(${applicationCampaigns.blockers})`,
+        nextActions: sql`VALUES(${applicationCampaigns.nextActions})`,
+        lastPlanSummary: sql`VALUES(${applicationCampaigns.lastPlanSummary})`,
+        lastSyncedAt: sql`VALUES(${applicationCampaigns.lastSyncedAt})`,
+        updatedAt: now,
+      },
+    });
+
+  return {
+    insertId: Number(result[0].insertId),
+    existing: Number(result[0].affectedRows) !== 1,
+  };
+}
+
+export async function upsertInterviewPreparation(preparation: InsertInterviewPreparation) {
+  const db = await getDb();
+  const now = new Date();
+  if (!db) {
+    const existing = memoryInterviewPreparations.find((item) =>
+      item.userId === preparation.userId && item.jobId === preparation.jobId
+    );
+    if (existing) {
+      existing.questions = preparation.questions ?? existing.questions ?? null;
+      existing.coachingTips = preparation.coachingTips ?? existing.coachingTips ?? null;
+      existing.companyInsights = preparation.companyInsights ?? existing.companyInsights ?? null;
+      return { insertId: existing.id, existing: true };
+    }
+
+    const record = {
+      ...preparation,
+      id: memoryInterviewPreparations.length + 1,
+      questions: preparation.questions ?? null,
+      coachingTips: preparation.coachingTips ?? null,
+      companyInsights: preparation.companyInsights ?? null,
+      createdAt: preparation.createdAt ?? now,
+    };
+    memoryInterviewPreparations.push(record);
+    return { insertId: record.id, existing: false };
+  }
+
+  const existing = await db
+    .select({ id: interviewPreparation.id })
+    .from(interviewPreparation)
+    .where(and(
+      eq(interviewPreparation.userId, preparation.userId),
+      eq(interviewPreparation.jobId, preparation.jobId)
+    ))
+    .orderBy(desc(interviewPreparation.createdAt))
+    .limit(1);
+
+  if (existing[0]) {
+    await db
+      .update(interviewPreparation)
+      .set({
+        questions: preparation.questions ?? null,
+        coachingTips: preparation.coachingTips ?? null,
+        companyInsights: preparation.companyInsights ?? null,
+      })
+      .where(eq(interviewPreparation.id, existing[0].id));
+    return { insertId: existing[0].id, existing: true };
+  }
+
+  const result = await db.insert(interviewPreparation).values(preparation);
+  return { insertId: Number(result[0].insertId), existing: false };
+}
+
+export async function getInterviewPreparationForJob(userId: number, jobId: number) {
+  const db = await getDb();
+  if (!db) {
+    return memoryInterviewPreparations.find((item) =>
+      item.userId === userId && item.jobId === jobId
+    ) as InterviewPreparation | undefined;
+  }
+
+  const rows = await db
+    .select()
+    .from(interviewPreparation)
+    .where(and(eq(interviewPreparation.userId, userId), eq(interviewPreparation.jobId, jobId)))
+    .orderBy(desc(interviewPreparation.createdAt))
+    .limit(1);
+  return rows[0];
+}
+
+export async function listInterviewPreparationsForUser(userId: number) {
+  const db = await getDb();
+  if (!db) {
+    return memoryInterviewPreparations
+      .filter((item) => item.userId === userId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()) as InterviewPreparation[];
+  }
+
+  return await db
+    .select()
+    .from(interviewPreparation)
+    .where(eq(interviewPreparation.userId, userId))
+    .orderBy(desc(interviewPreparation.createdAt));
 }
 
 // Job Matches
@@ -233,8 +1864,8 @@ export async function getUserJobMatches(userId: number, minScore = 70) {
   return await db
     .select()
     .from(jobMatches)
-    .where(eq(jobMatches.userId, userId))
-    .orderBy(jobMatches.matchScore);
+    .where(and(eq(jobMatches.userId, userId), gte(jobMatches.matchScore, minScore)))
+    .orderBy(desc(jobMatches.matchScore));
 }
 
 // Decision Makers
@@ -250,13 +1881,6 @@ export async function createDecisionMaker(decisionMaker: InsertDecisionMaker) {
   return await db.insert(decisionMakers).values(decisionMaker);
 }
 
-
-// Types for inserts
-type InsertWorkExperience = InferInsertModel<typeof workExperiences>;
-type InsertEducationEntry = InferInsertModel<typeof educationEntries>;
-type InsertUserSkill = InferInsertModel<typeof userSkills>;
-type InsertUserProject = InferInsertModel<typeof userProjects>;
-
 // Work Experiences
 export async function getWorkExperiences(userId: number) {
   const db = await getDb();
@@ -269,8 +1893,7 @@ export async function getWorkExperiences(userId: number) {
 export async function createWorkExperience(experience: InsertWorkExperience) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(workExperiences).values(experience);
-  return result;
+  return await db.insert(workExperiences).values(experience);
 }
 
 export async function updateWorkExperience(id: number, userId: number, experience: Partial<InsertWorkExperience>) {
@@ -278,13 +1901,13 @@ export async function updateWorkExperience(id: number, userId: number, experienc
   if (!db) throw new Error("Database not available");
   await db.update(workExperiences)
     .set({ ...experience, updatedAt: new Date() })
-    .where(eq(workExperiences.id, id));
+    .where(and(eq(workExperiences.id, id), eq(workExperiences.userId, userId)));
 }
 
 export async function deleteWorkExperience(id: number, userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.delete(workExperiences).where(eq(workExperiences.id, id));
+  await db.delete(workExperiences).where(and(eq(workExperiences.id, id), eq(workExperiences.userId, userId)));
 }
 
 // Education Entries
@@ -299,8 +1922,7 @@ export async function getEducationEntries(userId: number) {
 export async function createEducationEntry(education: InsertEducationEntry) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(educationEntries).values(education);
-  return result;
+  return await db.insert(educationEntries).values(education);
 }
 
 export async function updateEducationEntry(id: number, userId: number, education: Partial<InsertEducationEntry>) {
@@ -308,13 +1930,13 @@ export async function updateEducationEntry(id: number, userId: number, education
   if (!db) throw new Error("Database not available");
   await db.update(educationEntries)
     .set({ ...education, updatedAt: new Date() })
-    .where(eq(educationEntries.id, id));
+    .where(and(eq(educationEntries.id, id), eq(educationEntries.userId, userId)));
 }
 
 export async function deleteEducationEntry(id: number, userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.delete(educationEntries).where(eq(educationEntries.id, id));
+  await db.delete(educationEntries).where(and(eq(educationEntries.id, id), eq(educationEntries.userId, userId)));
 }
 
 // User Skills
@@ -329,8 +1951,7 @@ export async function getUserSkills(userId: number) {
 export async function createUserSkill(skill: InsertUserSkill) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(userSkills).values(skill);
-  return result;
+  return await db.insert(userSkills).values(skill);
 }
 
 export async function updateUserSkill(id: number, userId: number, skill: Partial<InsertUserSkill>) {
@@ -338,13 +1959,13 @@ export async function updateUserSkill(id: number, userId: number, skill: Partial
   if (!db) throw new Error("Database not available");
   await db.update(userSkills)
     .set(skill)
-    .where(eq(userSkills.id, id));
+    .where(and(eq(userSkills.id, id), eq(userSkills.userId, userId)));
 }
 
 export async function deleteUserSkill(id: number, userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.delete(userSkills).where(eq(userSkills.id, id));
+  await db.delete(userSkills).where(and(eq(userSkills.id, id), eq(userSkills.userId, userId)));
 }
 
 // User Projects
@@ -359,8 +1980,7 @@ export async function getUserProjects(userId: number) {
 export async function createUserProject(project: InsertUserProject) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(userProjects).values(project);
-  return result;
+  return await db.insert(userProjects).values(project);
 }
 
 export async function updateUserProject(id: number, userId: number, project: Partial<InsertUserProject>) {
@@ -368,11 +1988,11 @@ export async function updateUserProject(id: number, userId: number, project: Par
   if (!db) throw new Error("Database not available");
   await db.update(userProjects)
     .set({ ...project, updatedAt: new Date() })
-    .where(eq(userProjects.id, id));
+    .where(and(eq(userProjects.id, id), eq(userProjects.userId, userId)));
 }
 
 export async function deleteUserProject(id: number, userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.delete(userProjects).where(eq(userProjects.id, id));
+  await db.delete(userProjects).where(and(eq(userProjects.id, id), eq(userProjects.userId, userId)));
 }

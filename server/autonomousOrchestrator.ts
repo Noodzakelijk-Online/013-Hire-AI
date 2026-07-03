@@ -1,0 +1,418 @@
+import type { Application, Job, UserProfile } from "../drizzle/schema";
+import { detectATSType, isAutomationSupported } from "./applicationAutomation";
+import { normalizeExperienceLevel, normalizeLocation } from "./jobNormalization";
+
+export type AutonomousMode = "review_first" | "auto_apply";
+
+export interface AutonomousPreferences {
+  autonomousEnabled?: boolean;
+  mode?: AutonomousMode;
+  minMatchScore?: number;
+  dailyApplicationLimit?: number;
+  remoteOnly?: boolean;
+  requireHumanReview?: boolean;
+  allowUnsupportedATS?: boolean;
+  createFollowUps?: boolean;
+  scanFrequency?: "continuous" | "hourly" | "twice-daily" | "daily";
+}
+
+export interface AutonomousJobDecision {
+  jobId: number;
+  title: string;
+  company: string;
+  matchScore: number;
+  confidence: "high" | "medium" | "low";
+  atsType: string;
+  automationSupported: boolean;
+  action: "auto_apply" | "queue_for_review" | "manual_apply" | "skip";
+  priority: "urgent" | "high" | "normal" | "low";
+  reasons: string[];
+  blockers: string[];
+  reviewRequired: boolean;
+  automationNotes: string[];
+}
+
+export interface AutonomousFollowUpDecision {
+  applicationId: number;
+  jobId: number;
+  status: string;
+  daysSinceActivity: number;
+  action: "send_follow_up" | "wait" | "skip";
+  messageType: "initial" | "reminder" | "thank_you" | "status_check";
+  reason: string;
+}
+
+export interface AutonomousPlan {
+  mode: AutonomousMode;
+  summary: {
+    scanned: number;
+    eligible: number;
+    queuedForApply: number;
+    queuedForReview: number;
+    manualApply: number;
+    skipped: number;
+    followUpsDue: number;
+    dailyRemaining: number;
+    policyWarnings: number;
+  };
+  decisions: AutonomousJobDecision[];
+  followUps: AutonomousFollowUpDecision[];
+  nextActions: string[];
+  policyWarnings: string[];
+}
+
+function splitList(value?: string | null): string[] {
+  return (value || "")
+    .split(/[,;\n]/)
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+export function parseAutonomousPreferences(value?: string | null): AutonomousPreferences {
+  if (!value) return {};
+
+  try {
+    const parsed = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+
+    return {
+      autonomousEnabled: parsed.autonomousEnabled === true,
+      mode: parsed.mode === "auto_apply" ? "auto_apply" : "review_first",
+      minMatchScore: typeof parsed.minMatchScore === "number"
+        ? Math.min(100, Math.max(0, Math.round(parsed.minMatchScore)))
+        : undefined,
+      dailyApplicationLimit: typeof parsed.dailyApplicationLimit === "number"
+        ? Math.min(25, Math.max(1, Math.round(parsed.dailyApplicationLimit)))
+        : undefined,
+      remoteOnly: typeof parsed.remoteOnly === "boolean" ? parsed.remoteOnly : undefined,
+      requireHumanReview: typeof parsed.requireHumanReview === "boolean" ? parsed.requireHumanReview : undefined,
+      allowUnsupportedATS: typeof parsed.allowUnsupportedATS === "boolean" ? parsed.allowUnsupportedATS : undefined,
+      createFollowUps: typeof parsed.createFollowUps === "boolean" ? parsed.createFollowUps : undefined,
+      scanFrequency: ["continuous", "hourly", "twice-daily", "daily"].includes(parsed.scanFrequency)
+        ? parsed.scanFrequency
+        : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function hasOverlap(candidate: string[], target: string[]): number {
+  if (candidate.length === 0 || target.length === 0) return 0;
+  return candidate.filter((skill) =>
+    target.some((jobSkill) => jobSkill.includes(skill) || skill.includes(jobSkill))
+  ).length;
+}
+
+function daysSince(date?: Date | string | null): number {
+  if (!date) return 0;
+  return Math.max(0, Math.floor((Date.now() - new Date(date).getTime()) / 86400000));
+}
+
+function hasAppliedToday(application: Application): boolean {
+  const createdAt = application.createdAt ? new Date(application.createdAt) : null;
+  if (!createdAt) return false;
+  const notes = application.notes?.toLowerCase() || "";
+  const isAutonomousPreparation =
+    application.isAutoApplied === 1 ||
+    notes.includes("autonomous") ||
+    notes.includes("manual apply queue");
+  const today = new Date();
+  return (
+    createdAt.getFullYear() === today.getFullYear() &&
+    createdAt.getMonth() === today.getMonth() &&
+    createdAt.getDate() === today.getDate() &&
+    isAutonomousPreparation
+  );
+}
+
+export function scoreJobForProfile(job: Job, profile?: Partial<UserProfile> | null): {
+  score: number;
+  reasons: string[];
+  blockers: string[];
+} {
+  const reasons: string[] = [];
+  const blockers: string[] = [];
+  let score = 35;
+
+  const userSkills = splitList(profile?.skills);
+  const jobSkills = splitList(job.skills);
+  const skillMatches = hasOverlap(userSkills, jobSkills);
+  if (userSkills.length > 0 && jobSkills.length > 0) {
+    const skillScore = Math.round((skillMatches / Math.max(1, Math.min(userSkills.length, jobSkills.length))) * 35);
+    score += Math.min(35, skillScore);
+    if (skillMatches > 0) reasons.push(`${skillMatches} required skills match the profile`);
+  } else {
+    reasons.push("Profile or job skills are incomplete, using neutral skill score");
+  }
+
+  const normalizedLocation = normalizeLocation(job.location);
+  const desiredLocations = splitList(profile?.desiredLocations);
+  if (normalizedLocation.isRemote) {
+    score += 12;
+    reasons.push("Remote-compatible role");
+  }
+  if (desiredLocations.length > 0) {
+    const locationText = `${job.location || ""} ${normalizedLocation.country} ${normalizedLocation.region}`.toLowerCase();
+    const locationMatch = desiredLocations.some((location) => locationText.includes(location));
+    if (locationMatch) {
+      score += 8;
+      reasons.push("Location matches stated preferences");
+    }
+  }
+
+  const desiredTypes = splitList(profile?.desiredJobTypes).map((type) => type.replace("_", "-"));
+  if (desiredTypes.length > 0 && job.jobType && desiredTypes.includes(job.jobType)) {
+    score += 8;
+    reasons.push("Job type matches preference");
+  }
+
+  if (profile?.salaryExpectationMin && job.salaryMax && job.salaryMax < profile.salaryExpectationMin) {
+    blockers.push("Salary range is below the user's minimum expectation");
+    score -= 25;
+  } else if (profile?.salaryExpectationMin && job.salaryMin && job.salaryMin >= profile.salaryExpectationMin) {
+    score += 8;
+    reasons.push("Salary meets stated expectations");
+  }
+
+  if (profile?.needsVisaSponsorship && !job.visaSponsorshipAvailable) {
+    blockers.push("Visa sponsorship is not marked as available");
+    score -= 20;
+  }
+
+  const experience = normalizeExperienceLevel(`${job.title} ${job.requirements || ""}`);
+  if (experience !== "unknown") {
+    reasons.push(`${experience} level detected`);
+  }
+
+  if (!job.applicationUrl && !job.applicationEmail) {
+    blockers.push("No application destination found");
+    score -= 30;
+  }
+
+  return {
+    score: Math.max(0, Math.min(100, Math.round(score))),
+    reasons,
+    blockers,
+  };
+}
+
+export function buildAutonomousPlan(
+  jobs: Job[],
+  profile?: Partial<UserProfile> | null,
+  applications: Application[] = [],
+  preferences: AutonomousPreferences = {}
+): AutonomousPlan {
+  const mode = preferences.mode || "review_first";
+  const minMatchScore = Math.min(100, Math.max(0, Math.round(preferences.minMatchScore ?? 70)));
+  const dailyLimit = Math.min(25, Math.max(1, Math.round(preferences.dailyApplicationLimit ?? 12)));
+  const requireHumanReview = preferences.requireHumanReview ?? true;
+  const allowUnsupportedATS = preferences.allowUnsupportedATS ?? false;
+  const appliedJobIds = new Set(applications.map((application) => application.jobId));
+  const alreadyQueuedToday = applications.filter(hasAppliedToday).length;
+  const dailyRemaining = Math.max(0, dailyLimit - alreadyQueuedToday);
+  const policyWarnings: string[] = [];
+
+  if (mode === "auto_apply" && requireHumanReview) {
+    policyWarnings.push("Human review is enabled, so high-fit jobs will be queued for review before submission.");
+  }
+  if (!profile?.resumeUrl && !profile?.resumeFileKey) {
+    policyWarnings.push("No resume is connected. Autonomous application records can be prepared, but submissions should not run.");
+  }
+  if (!profile?.skills) {
+    policyWarnings.push("Profile skills are incomplete, reducing match confidence.");
+  }
+
+  const followUps: AutonomousFollowUpDecision[] = applications.map((application) => {
+    const activityDate = application.lastActivity || application.appliedDate || application.createdAt;
+    const age = daysSince(activityDate);
+    const status = application.status || "pending";
+
+    if (status === "interview") {
+      const messageType = age >= 5 ? "status_check" : "thank_you";
+      return {
+        applicationId: application.id,
+        jobId: application.jobId,
+        status,
+        daysSinceActivity: age,
+        action: age >= 1 ? "send_follow_up" : "wait",
+        messageType,
+        reason: age >= 5
+          ? "Interview-stage application has no recent activity and should receive a status check."
+          : age >= 1
+            ? "Interview-stage application should receive a thank-you note."
+            : "Recently moved to interview stage.",
+      };
+    }
+
+    if (["applied", "viewed"].includes(status)) {
+      return {
+        applicationId: application.id,
+        jobId: application.jobId,
+        status,
+        daysSinceActivity: age,
+        action: age >= 5 ? "send_follow_up" : "wait",
+        messageType: age >= 10 ? "status_check" : "reminder",
+        reason: age >= 5 ? "No recent activity after application submission." : "Follow-up window has not opened yet.",
+      };
+    }
+
+    return {
+      applicationId: application.id,
+      jobId: application.jobId,
+      status,
+      daysSinceActivity: age,
+      action: "skip",
+      messageType: "status_check",
+      reason: "Application status does not need autonomous follow-up.",
+    };
+  });
+
+  const followUpsDue = preferences.createFollowUps
+    ? followUps.filter((followUp) => followUp.action === "send_follow_up").length
+    : 0;
+
+  const rankedDecisions = jobs
+    .filter((job) => job.isActive === 1)
+    .map((job) => {
+      const { score, reasons, blockers } = scoreJobForProfile(job, profile);
+      const support = job.applicationUrl
+        ? isAutomationSupported(job.applicationUrl)
+        : {
+            supported: false,
+            preparationSupported: false,
+            atsType: "unknown",
+            message: "No application URL",
+          };
+      const automationNotes: string[] = [support.message];
+
+      if (appliedJobIds.has(job.id)) {
+        blockers.push("Already applied to this job");
+      }
+
+      if (preferences.remoteOnly && !normalizeLocation(job.location).isRemote) {
+        blockers.push("Remote-only mode is enabled");
+      }
+
+      if (!profile?.resumeUrl && !profile?.resumeFileKey) {
+        blockers.push("Resume is required before autonomous submission");
+      }
+
+      if (!support.supported && !allowUnsupportedATS) {
+        automationNotes.push("Unsupported ATS requires manual application or human review.");
+      }
+
+      let action: AutonomousJobDecision["action"] = "skip";
+      const resumeMissing = blockers.includes("Resume is required before autonomous submission");
+      const hardBlockers = blockers.filter((blocker) =>
+        blocker !== "Resume is required before autonomous submission"
+      );
+
+      if (score >= minMatchScore && hardBlockers.length === 0) {
+        if (resumeMissing) {
+          action = "queue_for_review";
+          automationNotes.push("A resume must be connected before this job can enter the submission queue.");
+        } else if (support.preparationSupported) {
+          action = "queue_for_review";
+          automationNotes.push("The form may be prepared automatically, but final submission requires user review.");
+        } else if (!support.supported && allowUnsupportedATS) {
+          action = "manual_apply";
+        } else if (mode === "auto_apply" && support.supported && !requireHumanReview) {
+          action = "auto_apply";
+        } else {
+          action = "queue_for_review";
+        }
+      }
+
+      return {
+        jobId: job.id,
+        title: job.title,
+        company: job.company,
+        matchScore: score,
+        confidence: score >= 80 ? "high" : score >= 65 ? "medium" : "low",
+        atsType: detectATSType(job.applicationUrl || ""),
+        automationSupported: support.supported,
+        action,
+        priority: score >= 85 ? "urgent" : score >= 75 ? "high" : score >= minMatchScore ? "normal" : "low",
+        reasons: reasons.slice(0, 4),
+        blockers,
+        reviewRequired: requireHumanReview || !support.supported || blockers.length > 0,
+        automationNotes,
+      } satisfies AutonomousJobDecision;
+    })
+    .sort((a, b) => b.matchScore - a.matchScore);
+
+  let preparationSlots = dailyRemaining;
+  const decisions = rankedDecisions.map((decision) => {
+    if (!["auto_apply", "queue_for_review", "manual_apply"].includes(decision.action)) {
+      return decision;
+    }
+    if (preparationSlots <= 0) {
+      return {
+        ...decision,
+        action: "skip" as const,
+        automationNotes: [
+          ...decision.automationNotes,
+          "Daily preparation limit reached; this job will be reconsidered on a future run.",
+        ],
+      };
+    }
+    preparationSlots -= 1;
+    return decision;
+  });
+
+  const queuedForApply = decisions.filter((decision) => decision.action === "auto_apply").length;
+  const queuedForReview = decisions.filter((decision) => decision.action === "queue_for_review").length;
+  const manualApply = decisions.filter((decision) => decision.action === "manual_apply").length;
+  const skipped = decisions.filter((decision) => decision.action === "skip").length;
+
+  const nextActions: string[] = [];
+  if (!profile?.resumeUrl && !profile?.resumeFileKey) {
+    nextActions.push("Upload or connect a resume before autonomous submissions can be fully trusted.");
+  }
+  if (queuedForReview > 0) {
+    nextActions.push(`Review ${queuedForReview} high-fit jobs before submission.`);
+  }
+  if (queuedForApply > 0) {
+    nextActions.push(`Queue ${queuedForApply} supported applications for autonomous submission.`);
+  }
+  if (manualApply > 0) {
+    nextActions.push(`Prepare ${manualApply} manual application tasks for unsupported platforms.`);
+  }
+  if (followUpsDue > 0) {
+    nextActions.push(`Draft ${followUpsDue} timely follow-up message${followUpsDue === 1 ? "" : "s"}.`);
+  }
+  if (nextActions.length === 0) {
+    nextActions.push("Keep scouting and wait for stronger matches.");
+  }
+
+  return {
+    mode,
+    summary: {
+      scanned: jobs.length,
+      eligible: decisions.filter((decision) => decision.action !== "skip").length,
+      queuedForApply,
+      queuedForReview,
+      manualApply,
+      skipped,
+      followUpsDue,
+      dailyRemaining,
+      policyWarnings: policyWarnings.length,
+    },
+    decisions,
+    followUps,
+    nextActions,
+    policyWarnings,
+  };
+}
+
+export function getExecutableDecisions(plan: AutonomousPlan) {
+  return {
+    autoApply: plan.decisions.filter((decision) => decision.action === "auto_apply"),
+    review: plan.decisions.filter((decision) => decision.action === "queue_for_review"),
+    manual: plan.decisions.filter((decision) => decision.action === "manual_apply"),
+    followUps: plan.summary.followUpsDue > 0
+      ? plan.followUps.filter((followUp) => followUp.action === "send_follow_up")
+      : [],
+  };
+}

@@ -3,11 +3,56 @@
  * Handles saved jobs, application notes, interview scheduling, and follow-up emails
  */
 
-import { eq, and, desc, asc, sql } from "drizzle-orm";
-import { getDb } from "./db";
-import { savedJobs, applicationNotes, interviewSchedules, followUps, applications, jobs, jobAlerts } from "../drizzle/schema";
+import { eq, and, desc, asc, sql, inArray, isNull } from "drizzle-orm";
+import {
+  createApplicationApproval,
+  createAdminReviewItem,
+  createApplicationAttempt,
+  createAuditEvent,
+  createEmployerResponse,
+  getEmployerResponses,
+  getInterviewPreparationForJob,
+  getDb,
+  getJobById,
+  getUserApplications,
+  listUserApplicationApprovals,
+  resolveApplicationApproval,
+  updateApplicationStatus,
+  upsertInterviewPreparation,
+} from "./db";
+import { savedJobs, applicationNotes, interviewSchedules, followUps, applications, applicationAttempts, employerResponses, auditEvents, adminReviewItems, applicationApprovals, jobs, jobAlerts, type FollowUp, type InterviewSchedule } from "../drizzle/schema";
+import { generateInterviewPreparation as generateAiInterviewPreparation } from "./aiMatching";
 import { invokeLLM } from "./_core/llm";
 import { notifyOwner } from "./_core/notification";
+import {
+  canTransitionApplicationStatus,
+  canTransitionInterviewStatus,
+} from "./applicationLifecycle";
+import { sanitizeFollowUpMessage } from "./messageSanitization";
+import {
+  normalizeSubmissionEvidence,
+  type SubmissionEvidenceInput,
+} from "./applicationSubmissionEvidence";
+import {
+  normalizeEmployerResponse,
+  type EmployerResponseInput,
+} from "./applicationResponses";
+
+async function assertUserOwnsApplication(applicationId: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db
+    .select({ id: applications.id, status: applications.status })
+    .from(applications)
+    .where(and(eq(applications.id, applicationId), eq(applications.userId, userId)))
+    .limit(1);
+
+  if (result.length === 0) {
+    throw new Error("Application not found");
+  }
+  return result[0];
+}
 
 // ==================== SAVED JOBS ====================
 
@@ -19,9 +64,48 @@ export interface SaveJobInput {
   priority?: "low" | "medium" | "high";
 }
 
+const memorySavedJobs: {
+  id: number;
+  userId: number;
+  jobId: number;
+  notes: string | null;
+  tags: string | null;
+  priority: "low" | "medium" | "high";
+  createdAt: Date;
+  updatedAt: Date;
+}[] = [];
+
+function nextMemorySavedJobId() {
+  return (memorySavedJobs.reduce((max, item) => Math.max(max, item.id), 0) || 0) + 1;
+}
+
 export async function saveJob(input: SaveJobInput) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) {
+    const existing = memorySavedJobs.find((item) =>
+      item.userId === input.userId && item.jobId === input.jobId
+    );
+    if (existing) {
+      existing.notes = input.notes ?? existing.notes;
+      existing.tags = input.tags ?? existing.tags;
+      existing.priority = input.priority ?? existing.priority;
+      existing.updatedAt = new Date();
+      return { id: existing.id, updated: true };
+    }
+
+    const record = {
+      id: nextMemorySavedJobId(),
+      userId: input.userId,
+      jobId: input.jobId,
+      notes: input.notes || null,
+      tags: input.tags || null,
+      priority: input.priority || "medium",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    memorySavedJobs.push(record);
+    return { id: record.id, updated: false };
+  }
 
   // Check if already saved
   const existing = await db
@@ -57,7 +141,15 @@ export async function saveJob(input: SaveJobInput) {
 
 export async function unsaveJob(userId: number, jobId: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) {
+    const index = memorySavedJobs.findIndex((item) =>
+      item.userId === userId && item.jobId === jobId
+    );
+    if (index >= 0) {
+      memorySavedJobs.splice(index, 1);
+    }
+    return { success: true };
+  }
 
   await db
     .delete(savedJobs)
@@ -68,7 +160,34 @@ export async function unsaveJob(userId: number, jobId: number) {
 
 export async function getSavedJobs(userId: number) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) {
+    return await Promise.all(
+      memorySavedJobs
+        .filter((item) => item.userId === userId)
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+        .map(async (item) => {
+          const job = await getJobById(item.jobId);
+          return {
+            id: item.id,
+            jobId: item.jobId,
+            notes: item.notes,
+            tags: item.tags,
+            priority: item.priority,
+            createdAt: item.createdAt,
+            job: job ? {
+              id: job.id,
+              title: job.title,
+              company: job.company,
+              location: job.location,
+              salaryMin: job.salaryMin,
+              salaryMax: job.salaryMax,
+              jobType: job.jobType,
+              applicationUrl: job.applicationUrl,
+            } : null,
+          };
+        })
+    );
+  }
 
   const result = await db
     .select({
@@ -105,7 +224,18 @@ export async function updateSavedJobNotes(
   priority?: "low" | "medium" | "high"
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) {
+    const existing = memorySavedJobs.find((item) =>
+      item.userId === userId && item.jobId === jobId
+    );
+    if (existing) {
+      existing.notes = notes;
+      existing.tags = tags ?? existing.tags;
+      existing.priority = priority ?? existing.priority;
+      existing.updatedAt = new Date();
+    }
+    return { success: true };
+  }
 
   const updateData: Record<string, unknown> = { notes };
   if (tags !== undefined) updateData.tags = tags;
@@ -127,9 +257,10 @@ export interface AddNoteInput {
   content: string;
 }
 
-export async function addApplicationNote(input: AddNoteInput) {
+export async function addApplicationNote(input: AddNoteInput, userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  await assertUserOwnsApplication(input.applicationId, userId);
 
   const result = await db.insert(applicationNotes).values({
     applicationId: input.applicationId,
@@ -140,9 +271,10 @@ export async function addApplicationNote(input: AddNoteInput) {
   return { id: Number(result[0].insertId) };
 }
 
-export async function getApplicationNotes(applicationId: number) {
+export async function getApplicationNotes(applicationId: number, userId: number) {
   const db = await getDb();
   if (!db) return [];
+  await assertUserOwnsApplication(applicationId, userId);
 
   return await db
     .select()
@@ -151,24 +283,620 @@ export async function getApplicationNotes(applicationId: number) {
     .orderBy(desc(applicationNotes.createdAt));
 }
 
-export async function updateApplicationNote(noteId: number, content: string) {
+export async function updateApplicationNote(noteId: number, content: string, userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
   await db
     .update(applicationNotes)
     .set({ content })
-    .where(eq(applicationNotes.id, noteId));
+    .where(
+      and(
+        eq(applicationNotes.id, noteId),
+        sql`EXISTS (
+          SELECT 1 FROM applications
+          WHERE applications.id = ${applicationNotes.applicationId}
+          AND applications.user_id = ${userId}
+        )`
+      )
+    );
 
   return { success: true };
 }
 
-export async function deleteApplicationNote(noteId: number) {
+export async function deleteApplicationNote(noteId: number, userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  await db.delete(applicationNotes).where(eq(applicationNotes.id, noteId));
+  await db
+    .delete(applicationNotes)
+    .where(
+      and(
+        eq(applicationNotes.id, noteId),
+        sql`EXISTS (
+          SELECT 1 FROM applications
+          WHERE applications.id = ${applicationNotes.applicationId}
+          AND applications.user_id = ${userId}
+        )`
+      )
+    );
   return { success: true };
+}
+
+// ==================== SUBMISSION CONFIRMATION ====================
+
+export interface ConfirmSubmissionInput extends SubmissionEvidenceInput {
+  applicationId: number;
+}
+
+export async function confirmApplicationSubmission(input: ConfirmSubmissionInput, userId: number) {
+  const db = await getDb();
+  const evidence = normalizeSubmissionEvidence(input);
+
+  if (!db) {
+    const applicationsForUser = await getUserApplications(userId);
+    const application = applicationsForUser.find((item) => item.id === input.applicationId);
+    if (!application) throw new Error("Application not found.");
+
+    const currentStatus = application.status || "pending";
+    if (!canTransitionApplicationStatus(currentStatus, "applied")) {
+      throw new Error(`Application cannot move from ${currentStatus} to applied.`);
+    }
+
+    const confirmedAt = new Date();
+    const submissionApproval = (await listUserApplicationApprovals(userId, "all")).find((approval) =>
+      approval.entityType === "application" &&
+      approval.entityId === input.applicationId &&
+      approval.approvalType === "application_submission"
+    );
+    let approvalId: number;
+    if (submissionApproval?.status === "rejected" || submissionApproval?.status === "cancelled") {
+      throw new Error("Application submission approval was rejected or cancelled.");
+    } else if (submissionApproval?.status === "pending") {
+      approvalId = submissionApproval.id;
+      await resolveApplicationApproval(
+        approvalId,
+        userId,
+        "approved",
+        "Approved through manual submission evidence confirmation.",
+        "user"
+      );
+    } else if (submissionApproval?.status === "approved") {
+      approvalId = submissionApproval.id;
+    } else {
+      const approval = await createApplicationApproval({
+        userId,
+        applicationId: input.applicationId,
+        entityType: "application",
+        entityId: input.applicationId,
+        approvalType: "application_submission",
+        status: "approved",
+        riskLevel: "high",
+        requestedBy: "user",
+        decidedBy: "user",
+        title: "Manual submission confirmed",
+        description: "User confirmed application submission with evidence.",
+        payload: JSON.stringify({
+          source: evidence.source,
+          confirmationUrl: evidence.confirmationUrl,
+        }),
+        decisionNote: "Manual submission evidence confirmed by user.",
+        requestedAt: confirmedAt,
+        decidedAt: confirmedAt,
+      });
+      approvalId = Number(approval.insertId);
+    }
+
+    if (currentStatus !== "applied") {
+      await updateApplicationStatus(input.applicationId, "applied", userId);
+    }
+
+    const attempt = await createApplicationAttempt({
+      applicationId: input.applicationId,
+      userId,
+      jobId: application.jobId,
+      attemptType: "manual_confirmation",
+      status: "submitted",
+      startedAt: confirmedAt,
+      finishedAt: confirmedAt,
+      confirmationText: evidence.noteContent,
+      confirmationUrl: evidence.confirmationUrl,
+      retryCount: 0,
+    });
+    const attemptId = Number(attempt.insertId);
+
+    await createAuditEvent({
+      userId,
+      entityType: "application",
+      entityId: input.applicationId,
+      action: "application_submission_confirmed",
+      actor: "user",
+      source: "applications.confirmSubmission",
+      beforeState: JSON.stringify({ status: currentStatus }),
+      afterState: JSON.stringify({
+        status: "applied",
+        evidenceSource: evidence.source,
+        confirmationUrl: evidence.confirmationUrl,
+        attemptId,
+      }),
+      riskLevel: "high",
+      approvalId,
+    });
+
+    return {
+      success: true,
+      status: "applied" as const,
+      evidenceAttemptId: attemptId,
+    };
+  }
+
+  return await db.transaction(async (tx) => {
+    const application = await tx
+      .select({ id: applications.id, userId: applications.userId, jobId: applications.jobId, status: applications.status })
+      .from(applications)
+      .where(and(eq(applications.id, input.applicationId), eq(applications.userId, userId)))
+      .limit(1);
+    if (!application[0]) throw new Error("Application not found.");
+
+    const currentStatus = application[0].status;
+    if (!canTransitionApplicationStatus(currentStatus, "applied")) {
+      throw new Error(`Application cannot move from ${currentStatus} to applied.`);
+    }
+
+    const confirmedAt = new Date();
+    const submissionApproval = await tx
+      .select({ id: applicationApprovals.id, status: applicationApprovals.status })
+      .from(applicationApprovals)
+      .where(and(
+        eq(applicationApprovals.userId, userId),
+        eq(applicationApprovals.entityType, "application"),
+        eq(applicationApprovals.entityId, input.applicationId),
+        eq(applicationApprovals.approvalType, "application_submission")
+      ))
+      .orderBy(desc(applicationApprovals.createdAt))
+      .limit(1);
+    let approvalId: number;
+    if (submissionApproval[0]?.status === "rejected" || submissionApproval[0]?.status === "cancelled") {
+      throw new Error("Application submission approval was rejected or cancelled.");
+    } else if (submissionApproval[0]?.status === "pending") {
+      approvalId = submissionApproval[0].id;
+      await tx
+        .update(applicationApprovals)
+        .set({
+          status: "approved",
+          decidedBy: "user",
+          decisionNote: "Approved through manual submission evidence confirmation.",
+          decidedAt: confirmedAt,
+        })
+        .where(eq(applicationApprovals.id, approvalId));
+    } else if (submissionApproval[0]?.status === "approved") {
+      approvalId = submissionApproval[0].id;
+    } else {
+      const approval = await tx.insert(applicationApprovals).values({
+        userId,
+        applicationId: input.applicationId,
+        entityType: "application",
+        entityId: input.applicationId,
+        approvalType: "application_submission",
+        status: "approved",
+        riskLevel: "high",
+        requestedBy: "user",
+        decidedBy: "user",
+        title: "Manual submission confirmed",
+        description: "User confirmed application submission with evidence.",
+        payload: JSON.stringify({
+          source: evidence.source,
+          confirmationUrl: evidence.confirmationUrl,
+        }),
+        decisionNote: "Manual submission evidence confirmed by user.",
+        requestedAt: confirmedAt,
+        decidedAt: confirmedAt,
+      });
+      approvalId = Number(approval[0].insertId);
+    }
+
+    if (currentStatus !== "applied") {
+      const result = await tx
+        .update(applications)
+        .set({
+          status: "applied",
+          appliedDate: confirmedAt,
+          lastActivity: confirmedAt,
+        })
+        .where(and(
+          eq(applications.id, input.applicationId),
+          eq(applications.userId, userId),
+          eq(applications.status, currentStatus)
+        ));
+      if (Number(result[0].affectedRows) === 0) {
+        throw new Error("Application status changed concurrently. Refresh and try again.");
+      }
+    }
+
+    const note = await tx.insert(applicationNotes).values({
+      applicationId: input.applicationId,
+      noteType: "general",
+      content: evidence.noteContent,
+    });
+
+    await tx.insert(applicationAttempts).values({
+      applicationId: input.applicationId,
+      userId: application[0].userId,
+      jobId: application[0].jobId,
+      attemptType: "manual_confirmation",
+      status: "submitted",
+      startedAt: confirmedAt,
+      finishedAt: confirmedAt,
+      confirmationText: evidence.noteContent,
+      confirmationUrl: evidence.confirmationUrl,
+      retryCount: 0,
+    });
+
+    await tx.insert(auditEvents).values({
+      userId,
+      entityType: "application",
+      entityId: input.applicationId,
+      action: "application_submission_confirmed",
+      actor: "user",
+      source: "applications.confirmSubmission",
+      beforeState: JSON.stringify({ status: currentStatus }),
+      afterState: JSON.stringify({
+        status: "applied",
+        evidenceSource: evidence.source,
+        confirmationUrl: evidence.confirmationUrl,
+      }),
+      riskLevel: "high",
+      approvalId,
+    });
+
+    return {
+      success: true,
+      status: "applied" as const,
+      evidenceNoteId: Number(note[0].insertId),
+    };
+  });
+}
+
+export interface RecordEmployerResponseInput extends EmployerResponseInput {
+  applicationId: number;
+}
+
+function shouldCancelUnsentFollowUpApprovals(responseType: EmployerResponseInput["responseType"]) {
+  return responseType !== "viewed";
+}
+
+function staleFollowUpCancellationNote(responseType: EmployerResponseInput["responseType"], responseId: number) {
+  return `Employer response ${responseId} (${responseType}) made the unsent follow-up draft stale.`;
+}
+
+export async function recordEmployerResponse(input: RecordEmployerResponseInput, userId: number) {
+  const db = await getDb();
+  if (!db) {
+    const applicationsForUser = await getUserApplications(userId);
+    const application = applicationsForUser.find((item) => item.id === input.applicationId);
+    if (!application) throw new Error("Application not found.");
+
+    const currentStatus = application.status || "pending";
+    const response = normalizeEmployerResponse(input, currentStatus);
+    if (response.nextStatus && !canTransitionApplicationStatus(currentStatus, response.nextStatus)) {
+      throw new Error(`Application cannot move from ${currentStatus} to ${response.nextStatus}.`);
+    }
+
+    const statusAfter = response.nextStatus || currentStatus;
+    const responseWrite = await createEmployerResponse({
+      applicationId: input.applicationId,
+      userId,
+      responseType: response.responseType,
+      source: response.source,
+      summary: response.summary,
+      receivedAt: response.receivedAt,
+      statusBefore: currentStatus,
+      statusAfter,
+      noteId: null,
+    });
+    const responseId = Number(responseWrite.insertId);
+
+    if (response.nextStatus && response.nextStatus !== currentStatus) {
+      await updateApplicationStatus(input.applicationId, response.nextStatus, userId);
+    }
+
+    const cancelledFollowUpApprovalIds: number[] = [];
+    if (shouldCancelUnsentFollowUpApprovals(response.responseType)) {
+      const unsentFollowUpApprovals = (await listUserApplicationApprovals(userId, "all")).filter((approval) =>
+        approval.applicationId === input.applicationId &&
+        approval.entityType === "follow_up" &&
+        approval.approvalType === "follow_up_send" &&
+        ["pending", "approved"].includes(approval.status) &&
+        memoryFollowUps.some((followUp) =>
+          followUp.id === approval.entityId &&
+          followUp.applicationId === input.applicationId &&
+          !followUp.sentDate
+        )
+      );
+      const cancelledFollowUpApprovalStatuses = unsentFollowUpApprovals.map((approval) => approval.status);
+      for (const approval of unsentFollowUpApprovals) {
+        const cancellationNote = staleFollowUpCancellationNote(response.responseType, responseId);
+        if (approval.status === "pending") {
+          await resolveApplicationApproval(
+            approval.id,
+            userId,
+            "cancelled",
+            cancellationNote,
+            "user"
+          );
+        } else {
+          approval.status = "cancelled";
+          approval.decidedBy = "user";
+          approval.decisionNote = cancellationNote;
+          approval.decidedAt = response.receivedAt;
+          approval.updatedAt = response.receivedAt;
+        }
+        cancelledFollowUpApprovalIds.push(approval.id);
+      }
+      if (cancelledFollowUpApprovalIds.length > 0) {
+        await createAuditEvent({
+          userId,
+          entityType: "application",
+          entityId: input.applicationId,
+          action: "stale_follow_up_approvals_cancelled",
+          actor: "system",
+          source: "applications.recordResponse",
+          afterState: JSON.stringify({
+            responseId,
+            responseType: response.responseType,
+            cancelledApprovalIds: cancelledFollowUpApprovalIds,
+            cancelledStatuses: cancelledFollowUpApprovalStatuses,
+          }),
+          riskLevel: "medium",
+        });
+      }
+    }
+
+    await createAuditEvent({
+      userId,
+      entityType: "application",
+      entityId: input.applicationId,
+      action: "employer_response_recorded",
+      actor: "user",
+      source: "applications.recordResponse",
+      beforeState: JSON.stringify({ status: currentStatus }),
+      afterState: JSON.stringify({
+        status: statusAfter,
+        responseId,
+        responseType: response.responseType,
+        receivedAt: response.receivedAt.toISOString(),
+      }),
+      riskLevel: response.responseType === "offer" ? "high" : response.responseType === "interview_invite" ? "medium" : "low",
+    });
+
+    if (response.responseType === "offer") {
+      const approvalPayload = JSON.stringify({
+        applicationId: input.applicationId,
+        responseId,
+        responseType: response.responseType,
+        receivedAt: response.receivedAt.toISOString(),
+        source: response.source,
+      });
+      await createApplicationApproval({
+        userId,
+        applicationId: input.applicationId,
+        entityType: "application",
+        entityId: input.applicationId,
+        approvalType: "offer_attribution",
+        status: "pending",
+        riskLevel: "high",
+        requestedBy: "system",
+        title: "Confirm offer attribution",
+        description: response.noteContent,
+        payload: approvalPayload,
+      });
+      await createAdminReviewItem({
+        userId,
+        entityType: "application",
+        entityId: input.applicationId,
+        category: "offer_attribution",
+        priority: "high",
+        title: "Offer response needs success-fee attribution review",
+        description: response.noteContent,
+      });
+    }
+
+    return {
+      success: true,
+      status: statusAfter,
+      responseType: response.responseType,
+      responseId,
+      cancelledFollowUpApprovalIds,
+    };
+  }
+
+  return await db.transaction(async (tx) => {
+    const application = await tx
+      .select({ id: applications.id, userId: applications.userId, status: applications.status })
+      .from(applications)
+      .where(and(eq(applications.id, input.applicationId), eq(applications.userId, userId)))
+      .limit(1);
+    if (!application[0]) throw new Error("Application not found.");
+
+    const response = normalizeEmployerResponse(input, application[0].status);
+    if (response.nextStatus && !canTransitionApplicationStatus(application[0].status, response.nextStatus)) {
+      throw new Error(`Application cannot move from ${application[0].status} to ${response.nextStatus}.`);
+    }
+
+    const note = await tx.insert(applicationNotes).values({
+      applicationId: input.applicationId,
+      noteType: "feedback",
+      content: response.noteContent,
+    });
+    const noteId = Number(note[0].insertId);
+    const statusAfter = response.nextStatus || application[0].status;
+
+    const responseWrite = await tx.insert(employerResponses).values({
+      applicationId: input.applicationId,
+      userId,
+      responseType: response.responseType,
+      source: response.source,
+      summary: response.summary,
+      receivedAt: response.receivedAt,
+      statusBefore: application[0].status,
+      statusAfter,
+      noteId,
+    });
+    const responseId = Number(responseWrite[0].insertId);
+    const cancelledFollowUpApprovalIds: number[] = [];
+
+    if (response.nextStatus && response.nextStatus !== application[0].status) {
+      const updateResult = await tx
+        .update(applications)
+        .set({
+          status: response.nextStatus,
+          lastActivity: response.receivedAt,
+        })
+        .where(and(
+          eq(applications.id, input.applicationId),
+          eq(applications.userId, userId),
+          eq(applications.status, application[0].status)
+        ));
+      if (Number(updateResult[0].affectedRows) === 0) {
+        throw new Error("Application status changed concurrently. Refresh and try again.");
+      }
+    } else {
+      await tx
+        .update(applications)
+        .set({ lastActivity: response.receivedAt })
+        .where(and(eq(applications.id, input.applicationId), eq(applications.userId, userId)));
+    }
+
+    if (shouldCancelUnsentFollowUpApprovals(response.responseType)) {
+      const staleApprovals = await tx
+        .select({ id: applicationApprovals.id, status: applicationApprovals.status })
+        .from(applicationApprovals)
+        .innerJoin(followUps, eq(applicationApprovals.entityId, followUps.id))
+        .where(and(
+          eq(applicationApprovals.userId, userId),
+          eq(applicationApprovals.applicationId, input.applicationId),
+          eq(applicationApprovals.entityType, "follow_up"),
+          eq(applicationApprovals.approvalType, "follow_up_send"),
+          inArray(applicationApprovals.status, ["pending", "approved"]),
+          eq(followUps.applicationId, input.applicationId),
+          isNull(followUps.sentDate)
+        ));
+      if (staleApprovals.length > 0) {
+        const cancellationNote = staleFollowUpCancellationNote(response.responseType, responseId);
+        await tx
+          .update(applicationApprovals)
+          .set({
+            status: "cancelled",
+            decidedBy: "user",
+            decisionNote: cancellationNote,
+            decidedAt: response.receivedAt,
+          })
+          .where(and(
+            eq(applicationApprovals.userId, userId),
+            eq(applicationApprovals.applicationId, input.applicationId),
+            eq(applicationApprovals.entityType, "follow_up"),
+            eq(applicationApprovals.approvalType, "follow_up_send"),
+            inArray(applicationApprovals.id, staleApprovals.map((approval) => approval.id)),
+            inArray(applicationApprovals.status, ["pending", "approved"])
+          ));
+        cancelledFollowUpApprovalIds.push(...staleApprovals.map((approval) => approval.id));
+        await tx.insert(auditEvents).values({
+          userId,
+          entityType: "application",
+          entityId: input.applicationId,
+          action: "stale_follow_up_approvals_cancelled",
+          actor: "system",
+          source: "applications.recordResponse",
+          afterState: JSON.stringify({
+            responseId,
+            responseType: response.responseType,
+            cancelledApprovalIds: cancelledFollowUpApprovalIds,
+            cancelledStatuses: staleApprovals.map((approval) => approval.status),
+          }),
+          riskLevel: "medium",
+        });
+      }
+    }
+
+    await tx.insert(auditEvents).values({
+      userId,
+      entityType: "application",
+      entityId: input.applicationId,
+      action: "employer_response_recorded",
+      actor: "user",
+      source: "applications.recordResponse",
+      beforeState: JSON.stringify({ status: application[0].status }),
+      afterState: JSON.stringify({
+        status: statusAfter,
+        responseId,
+        responseType: response.responseType,
+        receivedAt: response.receivedAt.toISOString(),
+      }),
+      riskLevel: response.responseType === "offer" ? "high" : response.responseType === "interview_invite" ? "medium" : "low",
+    });
+
+    if (response.responseType === "offer") {
+      const existingApproval = await tx
+        .select({ id: applicationApprovals.id })
+        .from(applicationApprovals)
+        .where(and(
+          eq(applicationApprovals.userId, application[0].userId),
+          eq(applicationApprovals.entityType, "application"),
+          eq(applicationApprovals.entityId, input.applicationId),
+          eq(applicationApprovals.approvalType, "offer_attribution"),
+          eq(applicationApprovals.status, "pending")
+        ))
+        .limit(1);
+      const approvalPayload = JSON.stringify({
+        applicationId: input.applicationId,
+        responseId,
+        responseType: response.responseType,
+        receivedAt: response.receivedAt.toISOString(),
+        source: response.source,
+      });
+      if (existingApproval[0]) {
+        await tx
+          .update(applicationApprovals)
+          .set({
+            title: "Confirm offer attribution",
+            description: response.noteContent,
+            payload: approvalPayload,
+          })
+          .where(eq(applicationApprovals.id, existingApproval[0].id));
+      } else {
+        await tx.insert(applicationApprovals).values({
+          userId: application[0].userId,
+          applicationId: input.applicationId,
+          entityType: "application",
+          entityId: input.applicationId,
+          approvalType: "offer_attribution",
+          status: "pending",
+          riskLevel: "high",
+          requestedBy: "system",
+          title: "Confirm offer attribution",
+          description: response.noteContent,
+          payload: approvalPayload,
+        });
+      }
+      await tx.insert(adminReviewItems).values({
+        userId: application[0].userId,
+        entityType: "application",
+        entityId: input.applicationId,
+        category: "offer_attribution",
+        priority: "high",
+        title: "Offer response needs success-fee attribution review",
+        description: response.noteContent,
+      });
+    }
+
+    return {
+      success: true,
+      status: statusAfter,
+      responseType: response.responseType,
+      responseId,
+      cancelledFollowUpApprovalIds,
+    };
+  });
 }
 
 // ==================== INTERVIEW SCHEDULING ====================
@@ -185,35 +913,208 @@ export interface ScheduleInterviewInput {
   notes?: string;
 }
 
-export async function scheduleInterview(input: ScheduleInterviewInput) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
+const memoryInterviewSchedules: (InterviewSchedule & { id: number; createdAt: Date; updatedAt: Date })[] = [];
 
-  const result = await db.insert(interviewSchedules).values({
-    applicationId: input.applicationId,
-    interviewType: input.interviewType,
-    scheduledAt: input.scheduledAt,
-    duration: input.duration || 60,
-    location: input.location || null,
-    meetingLink: input.meetingLink || null,
-    interviewerName: input.interviewerName || null,
-    interviewerTitle: input.interviewerTitle || null,
-    notes: input.notes || null,
-    status: "scheduled",
-  });
-
-  // Update application status
-  await db
-    .update(applications)
-    .set({ status: "interview" })
-    .where(eq(applications.id, input.applicationId));
-
-  return { id: Number(result[0].insertId) };
+function nextMemoryInterviewId() {
+  return (memoryInterviewSchedules.reduce((max, item) => Math.max(max, item.id), 0) || 0) + 1;
 }
 
-export async function getInterviewSchedules(applicationId: number) {
+async function getInterviewApplication(applicationId: number, userId: number) {
+  const applicationsForUser = await getUserApplications(userId);
+  const application = applicationsForUser.find((item) => item.id === applicationId);
+  if (!application) {
+    throw new Error("Application not found.");
+  }
+  return application;
+}
+
+async function findOwnedMemoryInterview(interviewId: number, userId: number) {
+  const applicationsForUser = await getUserApplications(userId);
+  const userApplicationIds = new Set(applicationsForUser.map((application) => application.id));
+  const interview = memoryInterviewSchedules.find((item) =>
+    item.id === interviewId && userApplicationIds.has(item.applicationId)
+  );
+  if (!interview) {
+    throw new Error("Interview not found.");
+  }
+  return interview;
+}
+
+export async function scheduleInterview(input: ScheduleInterviewInput, userId: number) {
   const db = await getDb();
-  if (!db) return [];
+  if (input.scheduledAt.getTime() <= Date.now()) {
+    throw new Error("Interview must be scheduled in the future.");
+  }
+
+  if (!db) {
+    const application = await getInterviewApplication(input.applicationId, userId);
+    const currentStatus = application.status || "pending";
+    if (!canTransitionApplicationStatus(currentStatus, "interview")) {
+      throw new Error(`Application cannot move from ${currentStatus} to interview.`);
+    }
+
+    const now = new Date();
+    const record = {
+      id: nextMemoryInterviewId(),
+      applicationId: input.applicationId,
+      interviewType: input.interviewType,
+      scheduledAt: input.scheduledAt,
+      duration: input.duration || 60,
+      location: input.location || null,
+      meetingLink: input.meetingLink || null,
+      interviewerName: input.interviewerName || null,
+      interviewerTitle: input.interviewerTitle || null,
+      notes: input.notes || null,
+      status: "scheduled" as const,
+      createdAt: now,
+      updatedAt: now,
+    };
+    memoryInterviewSchedules.push(record);
+
+    const approval = await createApplicationApproval({
+      userId,
+      applicationId: input.applicationId,
+      entityType: "application",
+      entityId: input.applicationId,
+      approvalType: "interview_schedule",
+      status: "approved",
+      riskLevel: "high",
+      requestedBy: "user",
+      decidedBy: "user",
+      title: "Interview time accepted",
+      description: `User scheduled a ${input.interviewType} interview for ${input.scheduledAt.toISOString()}.`,
+      payload: JSON.stringify({
+        interviewId: record.id,
+        interviewType: input.interviewType,
+        scheduledAt: input.scheduledAt.toISOString(),
+        duration: input.duration || 60,
+        location: input.location || null,
+        meetingLink: input.meetingLink || null,
+      }),
+      decisionNote: "User accepted this interview time.",
+      requestedAt: now,
+      decidedAt: now,
+    });
+    const approvalId = Number(approval.insertId);
+
+    if (currentStatus !== "interview") {
+      await updateApplicationStatus(input.applicationId, "interview", userId);
+    }
+
+    await createAuditEvent({
+      userId,
+      entityType: "application",
+      entityId: input.applicationId,
+      action: "interview_scheduled",
+      actor: "user",
+      source: "applications.scheduleInterview",
+      beforeState: JSON.stringify({ status: currentStatus }),
+      afterState: JSON.stringify({
+        status: "interview",
+        interviewId: record.id,
+        interviewType: input.interviewType,
+        scheduledAt: input.scheduledAt.toISOString(),
+      }),
+      riskLevel: "high",
+      approvalId,
+    });
+
+    return { id: record.id, approvalId };
+  }
+
+  return await db.transaction(async (tx) => {
+    const application = await tx
+      .select({ status: applications.status })
+      .from(applications)
+      .where(and(eq(applications.id, input.applicationId), eq(applications.userId, userId)))
+      .limit(1);
+    if (!application[0]) throw new Error("Application not found.");
+    if (!canTransitionApplicationStatus(application[0].status, "interview")) {
+      throw new Error(`Application cannot move from ${application[0].status} to interview.`);
+    }
+
+    const result = await tx.insert(interviewSchedules).values({
+      applicationId: input.applicationId,
+      interviewType: input.interviewType,
+      scheduledAt: input.scheduledAt,
+      duration: input.duration || 60,
+      location: input.location || null,
+      meetingLink: input.meetingLink || null,
+      interviewerName: input.interviewerName || null,
+      interviewerTitle: input.interviewerTitle || null,
+      notes: input.notes || null,
+      status: "scheduled",
+    });
+    const interviewId = Number(result[0].insertId);
+    const approval = await tx.insert(applicationApprovals).values({
+      userId,
+      applicationId: input.applicationId,
+      entityType: "application",
+      entityId: input.applicationId,
+      approvalType: "interview_schedule",
+      status: "approved",
+      riskLevel: "high",
+      requestedBy: "user",
+      decidedBy: "user",
+      title: "Interview time accepted",
+      description: `User scheduled a ${input.interviewType} interview for ${input.scheduledAt.toISOString()}.`,
+      payload: JSON.stringify({
+        interviewId,
+        interviewType: input.interviewType,
+        scheduledAt: input.scheduledAt.toISOString(),
+        duration: input.duration || 60,
+        location: input.location || null,
+        meetingLink: input.meetingLink || null,
+      }),
+      decisionNote: "User accepted this interview time.",
+      requestedAt: new Date(),
+      decidedAt: new Date(),
+    });
+    const approvalId = Number(approval[0].insertId);
+
+    const updateResult = await tx
+      .update(applications)
+      .set({ status: "interview", lastActivity: input.scheduledAt })
+      .where(and(
+        eq(applications.id, input.applicationId),
+        eq(applications.userId, userId),
+        eq(applications.status, application[0].status)
+      ));
+    if (Number(updateResult[0].affectedRows) === 0) {
+      throw new Error("Application status changed concurrently. Refresh and try again.");
+    }
+
+    await tx.insert(auditEvents).values({
+      userId,
+      entityType: "application",
+      entityId: input.applicationId,
+      action: "interview_scheduled",
+      actor: "user",
+      source: "applications.scheduleInterview",
+      beforeState: JSON.stringify({ status: application[0].status }),
+      afterState: JSON.stringify({
+        status: "interview",
+        interviewId,
+        interviewType: input.interviewType,
+        scheduledAt: input.scheduledAt.toISOString(),
+      }),
+      riskLevel: "high",
+      approvalId,
+    });
+
+    return { id: interviewId, approvalId };
+  });
+}
+
+export async function getInterviewSchedules(applicationId: number, userId: number) {
+  const db = await getDb();
+  if (!db) {
+    await getInterviewApplication(applicationId, userId);
+    return memoryInterviewSchedules
+      .filter((interview) => interview.applicationId === applicationId)
+      .sort((a, b) => a.scheduledAt.getTime() - b.scheduledAt.getTime());
+  }
+  await assertUserOwnsApplication(applicationId, userId);
 
   return await db
     .select()
@@ -224,9 +1125,36 @@ export async function getInterviewSchedules(applicationId: number) {
 
 export async function getUpcomingInterviews(userId: number) {
   const db = await getDb();
-  if (!db) return [];
-
   const now = new Date();
+  if (!db) {
+    const applicationsForUser = await getUserApplications(userId);
+    const applicationsById = new Map(applicationsForUser.map((application) => [application.id, application]));
+    const upcoming = memoryInterviewSchedules
+      .filter((interview) =>
+        (interview.status === "scheduled" || interview.status === "rescheduled") &&
+        interview.scheduledAt >= now &&
+        applicationsById.has(interview.applicationId)
+      )
+      .sort((a, b) => a.scheduledAt.getTime() - b.scheduledAt.getTime())
+      .slice(0, 10);
+
+    return await Promise.all(upcoming.map(async (interview) => {
+      const application = applicationsById.get(interview.applicationId)!;
+      const job = await getJobById(application.jobId);
+      return {
+        interview,
+        application: {
+          id: application.id,
+          jobId: application.jobId,
+        },
+        job: job ? {
+          id: job.id,
+          title: job.title,
+          company: job.company,
+        } : null,
+      };
+    }));
+  }
   
   const result = await db
     .select({
@@ -247,7 +1175,7 @@ export async function getUpcomingInterviews(userId: number) {
     .where(
       and(
         eq(applications.userId, userId),
-        eq(interviewSchedules.status, "scheduled"),
+        sql`${interviewSchedules.status} IN ('scheduled', 'rescheduled')`,
         sql`${interviewSchedules.scheduledAt} >= ${now}`
       )
     )
@@ -257,34 +1185,506 @@ export async function getUpcomingInterviews(userId: number) {
   return result;
 }
 
+function parsePreparationList(value?: string | null): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed)
+      ? parsed.map((item) => String(item).trim()).filter(Boolean)
+      : [];
+  } catch {
+    return value
+      .split(/\n+/)
+      .map((item) => item.replace(/^[-*\d.)\s]+/, "").trim())
+      .filter(Boolean);
+  }
+}
+
+function buildFallbackInterviewPreparation(job: {
+  title?: string | null;
+  company?: string | null;
+  description?: string | null;
+  requirements?: string | null;
+}) {
+  const role = job.title || "the role";
+  const company = job.company || "the company";
+  const roleContext = [job.description, job.requirements].filter(Boolean).join(" ").slice(0, 320);
+  return {
+    questions: [
+      `How would you explain your most relevant experience for ${role} at ${company}?`,
+      `Which project best demonstrates the skills this ${role} interview is likely to test?`,
+      `What questions should you ask about the team, success metrics, and remote collaboration model?`,
+      `How will you handle compensation, availability, and next-step questions if they come up?`,
+    ],
+    tips: [
+      "Anchor answers in verified resume evidence and avoid adding claims that are not in the profile ledger.",
+      "Prepare a concise opening summary, two STAR examples, and one thoughtful question for each interviewer.",
+      "Confirm interview logistics, timezone, channel, and follow-up owner before the call ends.",
+    ],
+    companyInsights: roleContext
+      ? `Use the job evidence to connect your examples to ${company}'s stated needs: ${roleContext}`
+      : `Review ${company}'s public role description and prepare evidence-backed examples for ${role}.`,
+  };
+}
+
+export async function generateInterviewPreparationForApplication(applicationId: number, userId: number) {
+  const applicationsForUser = await getUserApplications(userId);
+  const application = applicationsForUser.find((item) => item.id === applicationId);
+  if (!application) {
+    throw new Error("Application not found.");
+  }
+
+  const schedules = await getInterviewSchedules(applicationId, userId);
+  const now = new Date();
+  const activeInterview = schedules.find((interview) =>
+    ["scheduled", "rescheduled"].includes(interview.status || "scheduled") &&
+    interview.scheduledAt >= now
+  );
+  if (!activeInterview) {
+    throw new Error("Interview must be scheduled before preparation can be generated.");
+  }
+
+  const existing = await getInterviewPreparationForJob(userId, application.jobId);
+  if (existing) {
+    return {
+      preparationId: existing.id,
+      existing: true,
+      questions: parsePreparationList(existing.questions),
+      tips: parsePreparationList(existing.coachingTips),
+      companyInsights: existing.companyInsights || "",
+    };
+  }
+
+  const job = await getJobById(application.jobId);
+  if (!job) {
+    throw new Error("Job not found.");
+  }
+
+  const fallback = buildFallbackInterviewPreparation(job);
+  let generated = fallback;
+  if (process.env.OPENAI_API_KEY?.trim()) {
+    try {
+      const aiGenerated = await generateAiInterviewPreparation(job);
+      generated = {
+        questions: aiGenerated.questions.length > 0 ? aiGenerated.questions : fallback.questions,
+        tips: aiGenerated.tips.length > 0 ? aiGenerated.tips : fallback.tips,
+        companyInsights: aiGenerated.companyInsights &&
+          !aiGenerated.companyInsights.toLowerCase().startsWith("unable to generate insights")
+          ? aiGenerated.companyInsights
+          : fallback.companyInsights,
+      };
+    } catch {
+      generated = fallback;
+    }
+  }
+
+  const write = await upsertInterviewPreparation({
+    userId,
+    jobId: application.jobId,
+    questions: JSON.stringify(generated.questions),
+    coachingTips: JSON.stringify(generated.tips),
+    companyInsights: generated.companyInsights,
+  });
+
+  await createAuditEvent({
+    userId,
+    entityType: "application",
+    entityId: applicationId,
+    action: "interview_preparation_generated",
+    actor: "system",
+    source: "applications.generateInterviewPreparation",
+    beforeState: JSON.stringify({ preparationExists: false }),
+    afterState: JSON.stringify({
+      preparationId: Number(write.insertId),
+      jobId: application.jobId,
+      interviewId: activeInterview.id,
+      questionCount: generated.questions.length,
+      tipCount: generated.tips.length,
+    }),
+    riskLevel: "low",
+  });
+
+  return {
+    preparationId: Number(write.insertId),
+    existing: false,
+    questions: generated.questions,
+    tips: generated.tips,
+    companyInsights: generated.companyInsights,
+  };
+}
+
 export async function updateInterviewStatus(
   interviewId: number,
-  status: "scheduled" | "completed" | "cancelled" | "rescheduled"
+  status: "scheduled" | "completed" | "cancelled" | "rescheduled",
+  userId: number
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) {
+    const interview = await findOwnedMemoryInterview(interviewId, userId);
+    const currentStatus = interview.status || "scheduled";
+    if (!canTransitionInterviewStatus(currentStatus, status)) {
+      throw new Error(`Interview cannot move from ${currentStatus} to ${status}.`);
+    }
+    if (currentStatus === status) return { success: true };
 
-  await db
+    interview.status = status;
+    interview.updatedAt = new Date();
+    await createAuditEvent({
+      userId,
+      entityType: "application",
+      entityId: interview.applicationId,
+      action: "interview_status_updated",
+      actor: "user",
+      source: "applications.updateInterviewStatus",
+      beforeState: JSON.stringify({ status: currentStatus }),
+      afterState: JSON.stringify({ status, interviewId }),
+      riskLevel: status === "cancelled" ? "medium" : "low",
+    });
+
+    return { success: true };
+  }
+
+  const interview = await db
+    .select({
+      applicationId: interviewSchedules.applicationId,
+      status: interviewSchedules.status,
+    })
+    .from(interviewSchedules)
+    .innerJoin(applications, eq(interviewSchedules.applicationId, applications.id))
+    .where(and(
+      eq(interviewSchedules.id, interviewId),
+      eq(applications.userId, userId)
+    ))
+    .limit(1);
+  if (!interview[0]) throw new Error("Interview not found.");
+  const currentStatus = interview[0].status || "scheduled";
+  if (!canTransitionInterviewStatus(currentStatus, status)) {
+    throw new Error(`Interview cannot move from ${currentStatus} to ${status}.`);
+  }
+  if (currentStatus === status) return { success: true };
+
+  const result = await db
     .update(interviewSchedules)
     .set({ status })
-    .where(eq(interviewSchedules.id, interviewId));
+    .where(
+      and(
+        eq(interviewSchedules.id, interviewId),
+        eq(interviewSchedules.status, currentStatus),
+        sql`EXISTS (
+          SELECT 1 FROM applications
+          WHERE applications.id = ${interviewSchedules.applicationId}
+          AND applications.user_id = ${userId}
+        )`
+      )
+    );
+  if (Number(result[0].affectedRows) === 0) {
+    throw new Error("Interview status changed concurrently. Refresh and try again.");
+  }
+
+  if (status === "completed") {
+    await db
+      .update(applications)
+      .set({ lastActivity: new Date() })
+      .where(and(
+        eq(applications.id, interview[0].applicationId),
+        eq(applications.userId, userId)
+      ));
+  }
+
+  await db.insert(auditEvents).values({
+    userId,
+    entityType: "application",
+    entityId: interview[0].applicationId,
+    action: "interview_status_updated",
+    actor: "user",
+    source: "applications.updateInterviewStatus",
+    beforeState: JSON.stringify({ status: currentStatus }),
+    afterState: JSON.stringify({ status, interviewId }),
+    riskLevel: status === "cancelled" ? "medium" : "low",
+  });
 
   return { success: true };
 }
 
-export async function rescheduleInterview(interviewId: number, newDate: Date) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
+export type InterviewOutcomeType = "next_round" | "offer" | "rejection" | "no_response" | "other";
 
-  await db
+export interface RecordInterviewOutcomeInput {
+  interviewId: number;
+  outcome: InterviewOutcomeType;
+  source: EmployerResponseInput["source"];
+  summary: string;
+  receivedAt?: Date;
+}
+
+const INTERVIEW_OUTCOME_LABELS: Record<InterviewOutcomeType, string> = {
+  next_round: "next interview round",
+  offer: "offer",
+  rejection: "rejection",
+  no_response: "no employer response yet",
+  other: "other interview outcome",
+};
+
+function interviewOutcomeResponseType(outcome: InterviewOutcomeType): EmployerResponseInput["responseType"] {
+  switch (outcome) {
+    case "next_round":
+      return "interview_invite";
+    case "offer":
+      return "offer";
+    case "rejection":
+      return "rejection";
+    case "no_response":
+    case "other":
+      return "other";
+  }
+}
+
+function interviewOutcomeSummary(input: RecordInterviewOutcomeInput) {
+  return [
+    `Interview outcome recorded: ${INTERVIEW_OUTCOME_LABELS[input.outcome]}.`,
+    input.summary.trim(),
+  ].join("\n");
+}
+
+export async function recordInterviewOutcome(input: RecordInterviewOutcomeInput, userId: number) {
+  const db = await getDb();
+  const receivedAt = input.receivedAt || new Date();
+
+  if (!db) {
+    const interview = await findOwnedMemoryInterview(input.interviewId, userId);
+    const currentInterviewStatus = interview.status || "scheduled";
+    if (currentInterviewStatus === "cancelled") {
+      throw new Error("Cancelled interviews cannot receive outcomes.");
+    }
+
+    if (currentInterviewStatus !== "completed") {
+      await updateInterviewStatus(input.interviewId, "completed", userId);
+    }
+
+    const response = await recordEmployerResponse({
+      applicationId: interview.applicationId,
+      responseType: interviewOutcomeResponseType(input.outcome),
+      source: input.source,
+      summary: interviewOutcomeSummary(input),
+      receivedAt,
+    }, userId);
+
+    await createAuditEvent({
+      userId,
+      entityType: "application",
+      entityId: interview.applicationId,
+      action: "interview_outcome_recorded",
+      actor: "user",
+      source: "applications.recordInterviewOutcome",
+      beforeState: JSON.stringify({ interviewStatus: currentInterviewStatus }),
+      afterState: JSON.stringify({
+        interviewId: input.interviewId,
+        outcome: input.outcome,
+        responseId: response.responseId,
+        responseType: response.responseType,
+      }),
+      riskLevel: input.outcome === "offer" ? "high" : input.outcome === "rejection" ? "medium" : "low",
+    });
+
+    return { ...response, interviewStatus: "completed", outcome: input.outcome };
+  }
+
+  const interview = await db
+    .select({
+      applicationId: interviewSchedules.applicationId,
+      status: interviewSchedules.status,
+    })
+    .from(interviewSchedules)
+    .innerJoin(applications, eq(interviewSchedules.applicationId, applications.id))
+    .where(and(
+      eq(interviewSchedules.id, input.interviewId),
+      eq(applications.userId, userId)
+    ))
+    .limit(1);
+  if (!interview[0]) throw new Error("Interview not found.");
+
+  const currentInterviewStatus = interview[0].status || "scheduled";
+  if (currentInterviewStatus === "cancelled") {
+    throw new Error("Cancelled interviews cannot receive outcomes.");
+  }
+
+  if (currentInterviewStatus !== "completed") {
+    await updateInterviewStatus(input.interviewId, "completed", userId);
+  }
+
+  const response = await recordEmployerResponse({
+    applicationId: interview[0].applicationId,
+    responseType: interviewOutcomeResponseType(input.outcome),
+    source: input.source,
+    summary: interviewOutcomeSummary(input),
+    receivedAt,
+  }, userId);
+
+  await createAuditEvent({
+    userId,
+    entityType: "application",
+    entityId: interview[0].applicationId,
+    action: "interview_outcome_recorded",
+    actor: "user",
+    source: "applications.recordInterviewOutcome",
+    beforeState: JSON.stringify({ interviewStatus: currentInterviewStatus }),
+    afterState: JSON.stringify({
+      interviewId: input.interviewId,
+      outcome: input.outcome,
+      responseId: response.responseId,
+      responseType: response.responseType,
+    }),
+    riskLevel: input.outcome === "offer" ? "high" : input.outcome === "rejection" ? "medium" : "low",
+  });
+
+  return { ...response, interviewStatus: "completed", outcome: input.outcome };
+}
+
+export async function rescheduleInterview(interviewId: number, newDate: Date, userId: number) {
+  const db = await getDb();
+  if (newDate.getTime() <= Date.now()) {
+    throw new Error("Interview must be rescheduled in the future.");
+  }
+
+  if (!db) {
+    const interview = await findOwnedMemoryInterview(interviewId, userId);
+    const currentStatus = interview.status || "scheduled";
+    if (!canTransitionInterviewStatus(currentStatus, "rescheduled")) {
+      throw new Error(`Interview cannot move from ${currentStatus} to rescheduled.`);
+    }
+
+    interview.scheduledAt = newDate;
+    interview.status = "rescheduled";
+    interview.updatedAt = new Date();
+    const approval = await createApplicationApproval({
+      userId,
+      applicationId: interview.applicationId,
+      entityType: "application",
+      entityId: interview.applicationId,
+      approvalType: "interview_schedule",
+      status: "approved",
+      riskLevel: "high",
+      requestedBy: "user",
+      decidedBy: "user",
+      title: "Interview time rescheduled",
+      description: `User rescheduled interview #${interviewId} for ${newDate.toISOString()}.`,
+      payload: JSON.stringify({
+        interviewId,
+        previousStatus: currentStatus,
+        scheduledAt: newDate.toISOString(),
+      }),
+      decisionNote: "User accepted the new interview time.",
+      requestedAt: new Date(),
+      decidedAt: new Date(),
+    });
+    const approvalId = Number(approval.insertId);
+
+    await createAuditEvent({
+      userId,
+      entityType: "application",
+      entityId: interview.applicationId,
+      action: "interview_rescheduled",
+      actor: "user",
+      source: "applications.rescheduleInterview",
+      beforeState: JSON.stringify({ status: currentStatus }),
+      afterState: JSON.stringify({
+        status: "rescheduled",
+        interviewId,
+        scheduledAt: newDate.toISOString(),
+      }),
+      riskLevel: "high",
+      approvalId,
+    });
+
+    return { success: true, approvalId };
+  }
+
+  const interview = await db
+    .select({
+      applicationId: interviewSchedules.applicationId,
+      status: interviewSchedules.status,
+    })
+    .from(interviewSchedules)
+    .innerJoin(applications, eq(interviewSchedules.applicationId, applications.id))
+    .where(and(
+      eq(interviewSchedules.id, interviewId),
+      eq(applications.userId, userId)
+    ))
+    .limit(1);
+  if (!interview[0]) throw new Error("Interview not found.");
+  const currentStatus = interview[0].status || "scheduled";
+  if (!canTransitionInterviewStatus(currentStatus, "rescheduled")) {
+    throw new Error(`Interview cannot move from ${currentStatus} to rescheduled.`);
+  }
+
+  const result = await db
     .update(interviewSchedules)
     .set({
       scheduledAt: newDate,
       status: "rescheduled",
     })
-    .where(eq(interviewSchedules.id, interviewId));
+    .where(
+      and(
+        eq(interviewSchedules.id, interviewId),
+        eq(interviewSchedules.status, currentStatus),
+        sql`EXISTS (
+          SELECT 1 FROM applications
+          WHERE applications.id = ${interviewSchedules.applicationId}
+          AND applications.user_id = ${userId}
+        )`
+      )
+    );
+  if (Number(result[0].affectedRows) === 0) {
+    throw new Error("Interview status changed concurrently. Refresh and try again.");
+  }
+  const approval = await db.insert(applicationApprovals).values({
+    userId,
+    applicationId: interview[0].applicationId,
+    entityType: "application",
+    entityId: interview[0].applicationId,
+    approvalType: "interview_schedule",
+    status: "approved",
+    riskLevel: "high",
+    requestedBy: "user",
+    decidedBy: "user",
+    title: "Interview time rescheduled",
+    description: `User rescheduled interview #${interviewId} for ${newDate.toISOString()}.`,
+    payload: JSON.stringify({
+      interviewId,
+      previousStatus: currentStatus,
+      scheduledAt: newDate.toISOString(),
+    }),
+    decisionNote: "User accepted the new interview time.",
+    requestedAt: new Date(),
+    decidedAt: new Date(),
+  });
+  const approvalId = Number(approval[0].insertId);
 
-  return { success: true };
+  await db
+    .update(applications)
+    .set({ lastActivity: newDate })
+    .where(and(
+      eq(applications.id, interview[0].applicationId),
+      eq(applications.userId, userId)
+    ));
+
+  await db.insert(auditEvents).values({
+    userId,
+    entityType: "application",
+    entityId: interview[0].applicationId,
+    action: "interview_rescheduled",
+    actor: "user",
+    source: "applications.rescheduleInterview",
+    beforeState: JSON.stringify({ status: currentStatus }),
+    afterState: JSON.stringify({
+      status: "rescheduled",
+      interviewId,
+      scheduledAt: newDate.toISOString(),
+    }),
+    riskLevel: "high",
+    approvalId,
+  });
+
+  return { success: true, approvalId };
 }
 
 // ==================== FOLLOW-UP EMAILS ====================
@@ -293,25 +1693,218 @@ export interface FollowUpInput {
   applicationId: number;
   message: string;
   sendDate?: Date;
+  purpose?: "routine_follow_up" | "employer_reply";
+  sourceResponseId?: number;
 }
 
-export async function createFollowUp(input: FollowUpInput) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
+const memoryFollowUps: (FollowUp & { id: number; createdAt: Date })[] = [];
 
-  const result = await db.insert(followUps).values({
-    applicationId: input.applicationId,
-    message: input.message,
-    sentDate: input.sendDate || null,
-    responseReceived: 0,
+function nextMemoryFollowUpId() {
+  return (memoryFollowUps.reduce((max, item) => Math.max(max, item.id), 0) || 0) + 1;
+}
+
+async function getFollowUpApplication(applicationId: number, userId: number) {
+  const applicationsForUser = await getUserApplications(userId);
+  const application = applicationsForUser.find((item) => item.id === applicationId);
+  if (!application) {
+    throw new Error("Application not found.");
+  }
+  return application;
+}
+
+function assertFollowUpAllowed(status: string) {
+  if (!["applied", "viewed", "interview"].includes(status)) {
+    throw new Error("Follow-ups can only be created after an application has been submitted.");
+  }
+}
+
+async function findOwnedMemoryFollowUp(followUpId: number, userId: number) {
+  const applicationsForUser = await getUserApplications(userId);
+  const userApplicationIds = new Set(applicationsForUser.map((application) => application.id));
+  const followUp = memoryFollowUps.find((item) =>
+    item.id === followUpId && userApplicationIds.has(item.applicationId)
+  );
+  if (!followUp) {
+    throw new Error("Follow-up not found.");
+  }
+  return followUp;
+}
+
+async function getEmployerResponseForReply(applicationId: number, userId: number, responseId?: number) {
+  const responses = await getEmployerResponses(applicationId, userId);
+  const response = responseId
+    ? responses.find((item) => item.id === responseId)
+    : responses.find((item) => ["employer_question", "other"].includes(item.responseType));
+
+  if (!response) {
+    throw new Error("Employer response not found.");
+  }
+  if (!["employer_question", "other"].includes(response.responseType)) {
+    throw new Error("Reply drafts require an employer question or ambiguous response.");
+  }
+
+  return response;
+}
+
+function getFollowUpDraftMetadata(
+  input: FollowUpInput,
+  sourceResponse?: { id: number; responseType: string }
+): {
+  purpose: "routine_follow_up" | "employer_reply";
+  sourceResponseId: number | null;
+  responseType: string | null;
+} {
+  const purpose = input.purpose === "employer_reply" ? "employer_reply" : "routine_follow_up";
+  return {
+    purpose,
+    sourceResponseId: sourceResponse?.id ?? input.sourceResponseId ?? null,
+    responseType: sourceResponse?.responseType ?? null,
+  };
+}
+
+function getFollowUpApprovalCopy(purpose: "routine_follow_up" | "employer_reply") {
+  if (purpose === "employer_reply") {
+    return {
+      title: "Approve employer reply before sending",
+      description: "Review and approve this employer reply draft before any external message is sent.",
+      draftAction: "employer_reply_draft_created",
+      sentAction: "employer_reply_sent_with_user_confirmation",
+    };
+  }
+
+  return {
+    title: "Approve follow-up before sending",
+    description: "Review and approve this follow-up draft before any external message is sent.",
+    draftAction: "follow_up_draft_created",
+    sentAction: "follow_up_sent_with_user_confirmation",
+  };
+}
+
+export async function createFollowUp(input: FollowUpInput, userId: number) {
+  const db = await getDb();
+  const message = sanitizeFollowUpMessage(input.message);
+  const sourceResponse = input.purpose === "employer_reply"
+    ? await getEmployerResponseForReply(input.applicationId, userId, input.sourceResponseId)
+    : undefined;
+  const metadata = getFollowUpDraftMetadata(input, sourceResponse);
+  const approvalCopy = getFollowUpApprovalCopy(metadata.purpose);
+
+  if (!db) {
+    const application = await getFollowUpApplication(input.applicationId, userId);
+    assertFollowUpAllowed(application.status || "pending");
+    if (input.sendDate && input.sendDate.getTime() > Date.now()) {
+      throw new Error("Future follow-up delivery is not supported.");
+    }
+
+    const record = {
+      id: nextMemoryFollowUpId(),
+      applicationId: input.applicationId,
+      message,
+      sentDate: input.sendDate || null,
+      responseReceived: 0,
+      createdAt: new Date(),
+    };
+    memoryFollowUps.push(record);
+
+    await createApplicationApproval({
+      userId,
+      applicationId: input.applicationId,
+      entityType: "follow_up",
+      entityId: record.id,
+      approvalType: "follow_up_send",
+      status: input.sendDate ? "approved" : "pending",
+      riskLevel: "medium",
+      requestedBy: "system",
+      decidedBy: input.sendDate ? "user" : null,
+      title: approvalCopy.title,
+      description: approvalCopy.description,
+      payload: JSON.stringify({ message, ...metadata }),
+      decidedAt: input.sendDate || null,
+    });
+    await createAuditEvent({
+      userId,
+      entityType: "application",
+      entityId: input.applicationId,
+      action: input.sendDate ? approvalCopy.sentAction : approvalCopy.draftAction,
+      actor: "user",
+      source: "applications.createFollowUp",
+      afterState: JSON.stringify({
+        followUpId: record.id,
+        approvalStatus: input.sendDate ? "approved" : "pending",
+        ...metadata,
+      }),
+      riskLevel: "medium",
+    });
+
+    return { id: record.id };
+  }
+
+  const application = await assertUserOwnsApplication(input.applicationId, userId);
+  assertFollowUpAllowed(application.status);
+
+  if (input.sendDate && input.sendDate.getTime() > Date.now()) {
+    throw new Error("Future follow-up delivery is not supported.");
+  }
+
+  return await db.transaction(async (tx) => {
+    const result = await tx.insert(followUps).values({
+      applicationId: input.applicationId,
+      message,
+      sentDate: input.sendDate || null,
+      responseReceived: 0,
+    });
+
+    if (input.sendDate) {
+      await tx
+        .update(applications)
+        .set({ lastActivity: input.sendDate })
+        .where(and(eq(applications.id, input.applicationId), eq(applications.userId, userId)));
+    }
+
+    const followUpId = Number(result[0].insertId);
+    await tx.insert(applicationApprovals).values({
+      userId,
+      applicationId: input.applicationId,
+      entityType: "follow_up",
+      entityId: followUpId,
+      approvalType: "follow_up_send",
+      status: input.sendDate ? "approved" : "pending",
+      riskLevel: "medium",
+      requestedBy: "system",
+      decidedBy: input.sendDate ? "user" : null,
+      title: approvalCopy.title,
+      description: approvalCopy.description,
+      payload: JSON.stringify({ message, ...metadata }),
+      decidedAt: input.sendDate || null,
+    });
+    await tx.insert(auditEvents).values({
+      userId,
+      entityType: "application",
+      entityId: input.applicationId,
+      action: input.sendDate ? approvalCopy.sentAction : approvalCopy.draftAction,
+      actor: "user",
+      source: "applications.createFollowUp",
+      afterState: JSON.stringify({
+        followUpId,
+        approvalStatus: input.sendDate ? "approved" : "pending",
+        ...metadata,
+      }),
+      riskLevel: "medium",
+    });
+
+    return { id: followUpId };
   });
-
-  return { id: Number(result[0].insertId) };
 }
 
-export async function getFollowUps(applicationId: number) {
+export async function getFollowUps(applicationId: number, userId: number) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) {
+    await getFollowUpApplication(applicationId, userId);
+    return memoryFollowUps
+      .filter((followUp) => followUp.applicationId === applicationId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+  await assertUserOwnsApplication(applicationId, userId);
 
   return await db
     .select()
@@ -320,37 +1913,167 @@ export async function getFollowUps(applicationId: number) {
     .orderBy(desc(followUps.createdAt));
 }
 
-export async function markFollowUpSent(followUpId: number) {
+export async function markFollowUpSent(followUpId: number, userId: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) {
+    const followUp = await findOwnedMemoryFollowUp(followUpId, userId);
+    if (followUp.sentDate) return { success: true };
 
-  await db
-    .update(followUps)
-    .set({ sentDate: new Date() })
-    .where(eq(followUps.id, followUpId));
+    const approvals = await listUserApplicationApprovals(userId, "all");
+    const approval = approvals.find((item) =>
+      item.entityType === "follow_up" &&
+      item.entityId === followUpId &&
+      item.approvalType === "follow_up_send"
+    );
+    if (!approval) {
+      throw new Error("Follow-up must be approved before it can be marked sent.");
+    }
+    if (approval.status !== "approved") {
+      throw new Error("Follow-up approval is required before marking it sent.");
+    }
 
-  return { success: true };
+    const sentAt = new Date();
+    followUp.sentDate = sentAt;
+    await createAuditEvent({
+      userId,
+      entityType: "application",
+      entityId: followUp.applicationId,
+      action: "follow_up_marked_sent",
+      actor: "user",
+      source: "applications.markFollowUpSent",
+      afterState: JSON.stringify({ followUpId, sentAt: sentAt.toISOString() }),
+      riskLevel: "medium",
+      approvalId: approval.id,
+    });
+
+    return { success: true };
+  }
+
+  return await db.transaction(async (tx) => {
+    const followUp = await tx
+      .select({
+        id: followUps.id,
+        applicationId: followUps.applicationId,
+        sentDate: followUps.sentDate,
+      })
+      .from(followUps)
+      .innerJoin(applications, eq(followUps.applicationId, applications.id))
+      .where(and(eq(followUps.id, followUpId), eq(applications.userId, userId)))
+      .limit(1);
+    if (!followUp[0]) throw new Error("Follow-up not found.");
+    if (followUp[0].sentDate) return { success: true };
+
+    const approval = await tx
+      .select({ id: applicationApprovals.id, status: applicationApprovals.status })
+      .from(applicationApprovals)
+      .where(and(
+        eq(applicationApprovals.userId, userId),
+        eq(applicationApprovals.entityType, "follow_up"),
+        eq(applicationApprovals.entityId, followUpId),
+        eq(applicationApprovals.approvalType, "follow_up_send")
+      ))
+      .orderBy(desc(applicationApprovals.createdAt))
+      .limit(1);
+    if (!approval[0]) {
+      throw new Error("Follow-up must be approved before it can be marked sent.");
+    }
+    if (approval[0].status !== "approved") {
+      throw new Error("Follow-up approval is required before marking it sent.");
+    }
+
+    const sentAt = new Date();
+    await tx.update(followUps).set({ sentDate: sentAt }).where(eq(followUps.id, followUpId));
+    await tx
+      .update(applications)
+      .set({ lastActivity: sentAt })
+      .where(and(eq(applications.id, followUp[0].applicationId), eq(applications.userId, userId)));
+    await tx.insert(auditEvents).values({
+      userId,
+      entityType: "application",
+      entityId: followUp[0].applicationId,
+      action: "follow_up_marked_sent",
+      actor: "user",
+      source: "applications.markFollowUpSent",
+      afterState: JSON.stringify({ followUpId, sentAt: sentAt.toISOString() }),
+      riskLevel: "medium",
+      approvalId: approval[0].id,
+    });
+
+    return { success: true };
+  });
 }
 
-export async function markFollowUpResponseReceived(followUpId: number) {
+export async function markFollowUpResponseReceived(followUpId: number, userId: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) {
+    const followUp = await findOwnedMemoryFollowUp(followUpId, userId);
+    if (!followUp.sentDate) throw new Error("A draft cannot receive a response before it is sent.");
+    if (followUp.responseReceived === 1) return { success: true };
+    followUp.responseReceived = 1;
+    await createAuditEvent({
+      userId,
+      entityType: "application",
+      entityId: followUp.applicationId,
+      action: "follow_up_response_marked_received",
+      actor: "user",
+      source: "applications.markFollowUpResponse",
+      afterState: JSON.stringify({ followUpId }),
+      riskLevel: "low",
+    });
+    return { success: true };
+  }
 
-  await db
-    .update(followUps)
-    .set({ responseReceived: 1 })
-    .where(eq(followUps.id, followUpId));
+  return await db.transaction(async (tx) => {
+    const followUp = await tx
+      .select({
+        applicationId: followUps.applicationId,
+        sentDate: followUps.sentDate,
+        responseReceived: followUps.responseReceived,
+      })
+      .from(followUps)
+      .innerJoin(applications, eq(followUps.applicationId, applications.id))
+      .where(and(eq(followUps.id, followUpId), eq(applications.userId, userId)))
+      .limit(1);
+    if (!followUp[0]) throw new Error("Follow-up not found.");
+    if (!followUp[0].sentDate) throw new Error("A draft cannot receive a response before it is sent.");
+    if (followUp[0].responseReceived === 1) return { success: true };
 
-  return { success: true };
+    const receivedAt = new Date();
+    await tx.update(followUps).set({ responseReceived: 1 }).where(eq(followUps.id, followUpId));
+    await tx
+      .update(applications)
+      .set({ lastActivity: receivedAt })
+      .where(and(eq(applications.id, followUp[0].applicationId), eq(applications.userId, userId)));
+
+    return { success: true };
+  });
 }
 
 // AI-Generated Follow-Up Email
 export async function generateFollowUpEmail(
   applicationId: number,
-  followUpType: "initial" | "reminder" | "thank_you" | "status_check"
+  followUpType: "initial" | "reminder" | "thank_you" | "status_check",
+  userId: number
 ): Promise<string> {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) {
+    const application = await getFollowUpApplication(applicationId, userId);
+    assertFollowUpAllowed(application.status || "pending");
+    const job = await getJobById(application.jobId);
+    const title = job?.title || "the role";
+    const company = job?.company || "the company";
+    const intro = followUpType === "thank_you"
+      ? `Thank you again for taking the time to discuss the ${title} opportunity at ${company}.`
+      : `I wanted to follow up on my application for the ${title} role at ${company}.`;
+    return sanitizeFollowUpMessage([
+      "Hello,",
+      "",
+      intro,
+      "I remain interested in the opportunity and would appreciate any update you can share on the process.",
+      "",
+      "Best regards,",
+    ].join("\n"));
+  }
 
   // Get application and job details
   const appResult = await db
@@ -360,7 +2083,7 @@ export async function generateFollowUpEmail(
     })
     .from(applications)
     .innerJoin(jobs, eq(applications.jobId, jobs.id))
-    .where(eq(applications.id, applicationId))
+    .where(and(eq(applications.id, applicationId), eq(applications.userId, userId)))
     .limit(1);
 
   if (appResult.length === 0) {
@@ -368,11 +2091,14 @@ export async function generateFollowUpEmail(
   }
 
   const { application, job } = appResult[0];
+  if (!["applied", "viewed", "interview"].includes(application.status)) {
+    throw new Error("Follow-ups can only be generated after an application has been submitted.");
+  }
 
   const prompts: Record<string, string> = {
     initial: `Write a professional follow-up email for a job application. The candidate applied for ${job.title} at ${job.company}. This is the initial follow-up after submitting the application. Keep it brief, professional, and express continued interest.`,
     reminder: `Write a polite reminder email for a job application. The candidate applied for ${job.title} at ${job.company} and hasn't heard back. Keep it professional and not pushy.`,
-    thank_you: `Write a thank you email after an interview for the ${job.title} position at ${job.company}. Express gratitude, reiterate interest, and mention something specific about the conversation.`,
+    thank_you: `Write a thank-you email after an interview for the ${job.title} position at ${job.company}. Express gratitude and reiterate interest. Do not invent conversation details; use neutral wording because no interview notes were provided.`,
     status_check: `Write a professional email to check on the status of a job application for ${job.title} at ${job.company}. Be polite and express continued interest.`,
   };
 
@@ -380,7 +2106,7 @@ export async function generateFollowUpEmail(
     messages: [
       {
         role: "system",
-        content: "You are a professional career coach helping job seekers write effective follow-up emails. Write concise, professional emails that are personalized and impactful.",
+        content: "You are a professional career coach helping job seekers write concise follow-up emails. Never invent names, events, conversation details, qualifications, or contact information that were not provided.",
       },
       {
         role: "user",
@@ -390,7 +2116,42 @@ export async function generateFollowUpEmail(
   });
 
   const content = response.choices[0]?.message?.content;
-  return typeof content === "string" ? content : "Unable to generate email";
+  if (typeof content !== "string" || !content.trim()) {
+    throw new Error("Unable to generate a follow-up draft.");
+  }
+  return sanitizeFollowUpMessage(content);
+}
+
+export async function generateEmployerReplyEmail(
+  applicationId: number,
+  userId: number,
+  responseId?: number
+): Promise<{ email: string; responseId: number }> {
+  const application = await getFollowUpApplication(applicationId, userId);
+  assertFollowUpAllowed(application.status || "pending");
+  const response = await getEmployerResponseForReply(applicationId, userId, responseId);
+  const job = application.job || await getJobById(application.jobId);
+  const title = job?.title || "the role";
+  const company = job?.company || "the company";
+  const responseContext = response.summary.length > 700
+    ? `${response.summary.slice(0, 697)}...`
+    : response.summary;
+
+  const email = sanitizeFollowUpMessage([
+    "Hello,",
+    "",
+    `Thank you for reaching out about the ${title} role at ${company}.`,
+    "",
+    `I saw your note: "${responseContext}"`,
+    "",
+    "[Add your exact answer here. Keep availability, eligibility, salary, and experience claims aligned with your resume and profile evidence.]",
+    "",
+    "Please let me know if there is anything else I can clarify.",
+    "",
+    "Best regards,",
+  ].join("\n"));
+
+  return { email, responseId: response.id };
 }
 
 // ==================== JOB ALERTS ====================
@@ -437,6 +2198,7 @@ export async function getJobAlerts(userId: number) {
 }
 
 export async function updateJobAlert(
+  userId: number,
   alertId: number,
   updates: Partial<Omit<CreateAlertInput, "userId">>
 ) {
@@ -446,28 +2208,28 @@ export async function updateJobAlert(
   await db
     .update(jobAlerts)
     .set(updates)
-    .where(eq(jobAlerts.id, alertId));
+    .where(and(eq(jobAlerts.id, alertId), eq(jobAlerts.userId, userId)));
 
   return { success: true };
 }
 
-export async function toggleJobAlert(alertId: number, isActive: boolean) {
+export async function toggleJobAlert(userId: number, alertId: number, isActive: boolean) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
   await db
     .update(jobAlerts)
     .set({ isActive: isActive ? 1 : 0 })
-    .where(eq(jobAlerts.id, alertId));
+    .where(and(eq(jobAlerts.id, alertId), eq(jobAlerts.userId, userId)));
 
   return { success: true };
 }
 
-export async function deleteJobAlert(alertId: number) {
+export async function deleteJobAlert(userId: number, alertId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  await db.delete(jobAlerts).where(eq(jobAlerts.id, alertId));
+  await db.delete(jobAlerts).where(and(eq(jobAlerts.id, alertId), eq(jobAlerts.userId, userId)));
   return { success: true };
 }
 

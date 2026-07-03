@@ -949,53 +949,18 @@ export async function applyWithATS(
   captchaApiKey?: string
 ): Promise<ATSResult> {
   const atsType = detectATSType(applicationUrl);
-  const captchaHandler = new CAPTCHAHandler(captchaApiKey ? "2captcha" : "manual", captchaApiKey);
+  void data;
+  void credentials;
+  void captchaApiKey;
 
-  switch (atsType) {
-    case "workday": {
-      const workday = new WorkdayAutomation(captchaHandler);
-      try {
-        return await workday.apply(applicationUrl, data, credentials);
-      } finally {
-        await workday.close();
-      }
-    }
-    case "taleo": {
-      const taleo = new TaleoAutomation(captchaHandler);
-      try {
-        return await taleo.apply(applicationUrl, data, credentials);
-      } finally {
-        await taleo.close();
-      }
-    }
-    case "greenhouse":
-    case "lever": {
-      // Use existing browserAutomation.ts for these
-      const { automateApplication } = await import("./browserAutomation");
-      const result = await automateApplication(applicationUrl, {
-        firstName: data.firstName,
-        lastName: data.lastName,
-        email: data.email,
-        phone: data.phone,
-        resumeUrl: data.resume.url,
-        coverLetter: data.coverLetter,
-        linkedinUrl: data.linkedinUrl,
-        portfolioUrl: data.portfolioUrl,
-      });
-      return {
-        success: result.success,
-        status: result.success ? "submitted" : "failed",
-        message: result.error || "Application processed",
-        applicationId: result.applicationId,
-        errors: result.error ? [result.error] : undefined,
-      };
-    }
-    default:
-      return {
-        success: false,
-        status: "failed",
-        message: `Unsupported ATS type: ${atsType}. Manual application required.`,
-        nextSteps: ["Apply manually through the company's career page"],
-      };
-  }
+  return {
+    success: false,
+    status: "partial",
+    message: `${atsType} application data can be prepared, but final submission is disabled until a user reviews and submits externally.`,
+    nextSteps: [
+      "Review the prepared application material.",
+      "Submit manually through the employer portal.",
+      "Record deterministic confirmation evidence in Hire.AI.",
+    ],
+  };
 }

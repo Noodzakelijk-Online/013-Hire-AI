@@ -1,0 +1,65 @@
+import { COOKIE_NAME } from "@shared/const";
+import type { Express, Request, Response } from "express";
+import { seedDevAdminUser, seedDevReviewQueueUser } from "../devReviewQueueSeed";
+import { getSessionCookieOptions } from "./cookies";
+import { ENV } from "./env";
+import { sdk } from "./sdk";
+
+const DEV_SESSION_MS = 1000 * 60 * 60 * 6;
+const DEV_SESSION_SECRET = "hire-ai-review-queue-local-dev-secret";
+const DEV_APP_ID = "hire-ai-review-queue-local-dev";
+
+function ensureDevSessionConfig() {
+  if (!ENV.cookieSecret) {
+    ENV.cookieSecret = DEV_SESSION_SECRET;
+  }
+  if (!ENV.appId) {
+    ENV.appId = DEV_APP_ID;
+  }
+}
+
+export function registerDevAuthRoutes(app: Express) {
+  if (process.env.NODE_ENV !== "development") {
+    return;
+  }
+
+  app.get("/api/dev/login-review-queue", async (req: Request, res: Response) => {
+    try {
+      ensureDevSessionConfig();
+      const user = await seedDevReviewQueueUser();
+      const sessionToken = await sdk.createSessionToken(user.openId, {
+        name: user.name || "Review Queue QA",
+        expiresInMs: DEV_SESSION_MS,
+      });
+
+      res.cookie(COOKIE_NAME, sessionToken, {
+        ...getSessionCookieOptions(req),
+        maxAge: DEV_SESSION_MS,
+      });
+      res.redirect(302, "/review-queue");
+    } catch (error) {
+      console.error("[DevAuth] Failed to create review queue session", error);
+      res.status(500).json({ error: "Unable to create development review queue session" });
+    }
+  });
+
+  app.get("/api/dev/login-admin", async (req: Request, res: Response) => {
+    try {
+      ensureDevSessionConfig();
+      const user = await seedDevAdminUser();
+      const sessionToken = await sdk.createSessionToken(user.openId, {
+        name: user.name || "Admin QA",
+        expiresInMs: DEV_SESSION_MS,
+      });
+
+      res.cookie(COOKIE_NAME, sessionToken, {
+        ...getSessionCookieOptions(req),
+        maxAge: DEV_SESSION_MS,
+      });
+      res.redirect(302, "/admin");
+    } catch (error) {
+      console.error("[DevAuth] Failed to create admin session", error);
+      res.status(500).json({ error: "Unable to create development admin session" });
+    }
+  });
+}

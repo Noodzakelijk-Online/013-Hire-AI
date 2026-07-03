@@ -1,7 +1,7 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { adminProcedure, publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "./db";
@@ -25,11 +25,16 @@ import {
   getInterviewSchedules,
   getUpcomingInterviews,
   updateInterviewStatus,
+  recordInterviewOutcome,
   rescheduleInterview,
+  confirmApplicationSubmission,
+  recordEmployerResponse,
   createFollowUp,
   getFollowUps,
   markFollowUpSent,
   markFollowUpResponseReceived,
+  generateInterviewPreparationForApplication,
+  generateEmployerReplyEmail,
   generateFollowUpEmail,
   createJobAlert,
   getJobAlerts,
@@ -40,6 +45,85 @@ import {
   conductMockInterview,
   getVideoInterviewTips,
 } from "./applicationFeatures";
+import { MAX_FOLLOW_UP_MESSAGE_CHARS } from "./messageSanitization";
+
+const boundedPageSize = z.number().int().min(1).max(100);
+const boundedOffset = z.number().int().min(0).max(100_000);
+const boundedFilterText = z.string().trim().min(1).max(200);
+const auditEntityType = z.enum(["job", "application", "success_fee", "verification", "user", "admin_review"]);
+const connectorProvider = z.enum([
+  "gmail",
+  "google_drive",
+  "dropbox",
+  "outlook",
+  "linkedin",
+  "github",
+  "portfolio",
+]);
+const safeHttpUrl = z.string().trim().max(1000).url().refine((value) => {
+  const protocol = new URL(value).protocol;
+  return protocol === "https:" || protocol === "http:";
+}, "URL must use HTTP or HTTPS");
+
+function defaultConnectorScopes(provider: z.infer<typeof connectorProvider>) {
+  switch (provider) {
+    case "gmail":
+      return ["email.metadata.read", "email.messages.read_recruiting"];
+    case "outlook":
+      return ["mail.metadata.read", "mail.messages.read_recruiting"];
+    case "google_drive":
+      return ["files.metadata.read", "files.content.read_resume_candidates"];
+    case "dropbox":
+      return ["files.metadata.read", "files.content.read_resume_candidates"];
+    case "linkedin":
+      return ["profile.basic.read"];
+    case "github":
+      return ["profile.basic.read", "repositories.metadata.read"];
+    case "portfolio":
+      return ["profile.url.verify"];
+  }
+}
+
+function profileSnapshotForApplication(
+  user: { name?: string | null; email?: string | null },
+  profile?: {
+    skills?: string | null;
+    experience?: string | null;
+    education?: string | null;
+    preferences?: string | null;
+    desiredJobTypes?: string | null;
+    desiredLocations?: string | null;
+    salaryExpectationMin?: number | null;
+    salaryExpectationMax?: number | null;
+    resumeUrl?: string | null;
+    resumeFileKey?: string | null;
+    linkedinUrl?: string | null;
+    githubUrl?: string | null;
+    portfolioUrl?: string | null;
+  } | null
+) {
+  return JSON.stringify({
+    user: {
+      name: user.name || null,
+      email: user.email || null,
+    },
+    profile: profile ? {
+      skills: profile.skills || null,
+      experience: profile.experience || null,
+      education: profile.education || null,
+      preferences: profile.preferences || null,
+      desiredJobTypes: profile.desiredJobTypes || null,
+      desiredLocations: profile.desiredLocations || null,
+      salaryExpectationMin: profile.salaryExpectationMin ?? null,
+      salaryExpectationMax: profile.salaryExpectationMax ?? null,
+      resumeUrl: profile.resumeUrl || null,
+      resumeFileKey: profile.resumeFileKey || null,
+      linkedinUrl: profile.linkedinUrl || null,
+      githubUrl: profile.githubUrl || null,
+      portfolioUrl: profile.portfolioUrl || null,
+    } : null,
+  });
+}
 
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -61,6 +145,96 @@ export const appRouter = router({
     }),
   }),
 
+  audit: router({
+    getForUser: protectedProcedure
+      .input(z.object({
+        limit: boundedPageSize.optional().default(25),
+      }).optional())
+      .query(async ({ ctx, input }) => {
+        const { getAuditEventsForUser } = await import("./db");
+        return await getAuditEventsForUser(ctx.user.id, input?.limit ?? 25);
+      }),
+    getForEntity: protectedProcedure
+      .input(z.object({
+        entityType: auditEntityType,
+        entityId: z.number().int().positive(),
+      }))
+      .query(async ({ ctx, input }) => {
+        const { getAuditEventsForEntity } = await import("./db");
+        return await getAuditEventsForEntity(ctx.user.id, input.entityType, input.entityId);
+      }),
+  }),
+
+  connectors: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      const { listUserConnectorAccounts } = await import("./db");
+      return await listUserConnectorAccounts(ctx.user.id);
+    }),
+    requestConnection: protectedProcedure
+      .input(z.object({
+        provider: connectorProvider,
+        consentScopes: z.array(z.string().trim().min(1).max(120)).max(20).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { requestUserConnectorConnection, createAuditEvent } = await import("./db");
+        const consentScopes = input.consentScopes?.length
+          ? input.consentScopes
+          : defaultConnectorScopes(input.provider);
+        const account = await requestUserConnectorConnection({
+          userId: ctx.user.id,
+          provider: input.provider,
+          consentScopes,
+        });
+
+        await createAuditEvent({
+          userId: ctx.user.id,
+          entityType: "user",
+          entityId: ctx.user.id,
+          action: "connector_connection_requested",
+          actor: "user",
+          source: "connectors.requestConnection",
+          afterState: JSON.stringify({
+            provider: input.provider,
+            status: "connection_requested",
+            consentScopes,
+          }),
+          riskLevel: "medium",
+        });
+
+        return {
+          success: true,
+          requiresOAuth: true,
+          account,
+          message: "Connection request recorded. OAuth authorization is still required before Hire.AI can read external data.",
+        };
+      }),
+    disconnect: protectedProcedure
+      .input(z.object({ provider: connectorProvider }))
+      .mutation(async ({ ctx, input }) => {
+        const { disconnectUserConnectorAccount, createAuditEvent } = await import("./db");
+        const account = await disconnectUserConnectorAccount(ctx.user.id, input.provider);
+
+        await createAuditEvent({
+          userId: ctx.user.id,
+          entityType: "user",
+          entityId: ctx.user.id,
+          action: "connector_disconnected",
+          actor: "user",
+          source: "connectors.disconnect",
+          afterState: JSON.stringify({
+            provider: input.provider,
+            status: "disabled",
+          }),
+          riskLevel: "low",
+        });
+
+        return {
+          success: true,
+          account,
+        };
+      }),
+  }),
+
   // Job Platforms
   platforms: router({
     list: publicProcedure.query(async () => {
@@ -78,8 +252,8 @@ export const appRouter = router({
     list: publicProcedure
       .input(
         z.object({
-          limit: z.number().optional().default(50),
-          offset: z.number().optional().default(0),
+          limit: boundedPageSize.optional().default(50),
+          offset: boundedOffset.optional().default(0),
         })
       )
       .query(async ({ input }) => {
@@ -89,12 +263,12 @@ export const appRouter = router({
     search: publicProcedure
       .input(
         z.object({
-          title: z.string().optional(),
-          company: z.string().optional(),
-          location: z.string().optional(),
-          skills: z.string().optional(),
-          limit: z.number().optional().default(50),
-          offset: z.number().optional().default(0),
+          title: boundedFilterText.optional(),
+          company: boundedFilterText.optional(),
+          location: boundedFilterText.optional(),
+          skills: boundedFilterText.optional(),
+          limit: boundedPageSize.optional().default(50),
+          offset: boundedOffset.optional().default(0),
         })
       )
       .query(async ({ input }) => {
@@ -159,7 +333,62 @@ export const appRouter = router({
   profile: router({
     get: protectedProcedure.query(async ({ ctx }) => {
       const { getUserProfile } = await import("./db");
-      return await getUserProfile(ctx.user.id);
+      return await getUserProfile(ctx.user.id) ?? null;
+    }),
+    getReadiness: protectedProcedure.query(async ({ ctx }) => {
+      const {
+        getUserProfile,
+        getWorkExperiences,
+        getEducationEntries,
+        getUserSkills,
+      } = await import("./db");
+      const { calculateProfileReadiness } = await import("./profileReadiness");
+      const [profile, workExperiences, educationEntries, skills] = await Promise.all([
+        getUserProfile(ctx.user.id),
+        getWorkExperiences(ctx.user.id),
+        getEducationEntries(ctx.user.id),
+        getUserSkills(ctx.user.id),
+      ]);
+      return calculateProfileReadiness({
+        profile,
+        workExperiences,
+        educationEntries,
+        skills,
+      });
+    }),
+    getEvidenceReadiness: protectedProcedure.query(async ({ ctx }) => {
+      const {
+        getUserProfile,
+        getWorkExperiences,
+        getEducationEntries,
+        getUserSkills,
+        listUserConnectorAccounts,
+      } = await import("./db");
+      const { calculateProfileReadiness } = await import("./profileReadiness");
+      const { getProfileEvidenceControlSummary } = await import("@shared/profileEvidence");
+      const [profile, workExperiences, educationEntries, skills, connectorAccounts] = await Promise.all([
+        getUserProfile(ctx.user.id),
+        getWorkExperiences(ctx.user.id),
+        getEducationEntries(ctx.user.id),
+        getUserSkills(ctx.user.id),
+        listUserConnectorAccounts(ctx.user.id),
+      ]);
+      const readiness = calculateProfileReadiness({
+        profile,
+        workExperiences,
+        educationEntries,
+        skills,
+      });
+      return getProfileEvidenceControlSummary({
+        profile,
+        readiness,
+        connectorAccounts: connectorAccounts.map((account) => ({
+          provider: account.provider,
+          status: account.status,
+          externalAccountLabel: account.externalAccountLabel,
+          consentScopes: account.consentScopes,
+        })),
+      });
     }),
     update: protectedProcedure
       .input(
@@ -172,17 +401,28 @@ export const appRouter = router({
           desiredLocations: z.string().optional(),
           salaryExpectationMin: z.number().optional(),
           salaryExpectationMax: z.number().optional(),
-          resumeUrl: z.string().optional(),
-          resumeFileKey: z.string().optional(),
-          linkedinUrl: z.string().optional(),
-          githubUrl: z.string().optional(),
-          portfolioUrl: z.string().optional(),
+          resumeUrl: safeHttpUrl.optional(),
+          resumeFileKey: z.string().trim().max(500).optional(),
+          linkedinUrl: safeHttpUrl.optional(),
+          githubUrl: safeHttpUrl.optional(),
+          portfolioUrl: safeHttpUrl.optional(),
           diversityGroup: z.string().optional(),
           needsVisaSponsorship: z.number().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
+        const { validateLinkedInUrl, validateGitHubUrl, validatePortfolioUrl } = await import("./socialConnections");
         const { upsertUserProfile } = await import("./db");
+        const invalidConnection =
+          (input.linkedinUrl && !validateLinkedInUrl(input.linkedinUrl)) ||
+          (input.githubUrl && !validateGitHubUrl(input.githubUrl)) ||
+          (input.portfolioUrl && !validatePortfolioUrl(input.portfolioUrl));
+        if (invalidConnection) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "One or more social profile URLs are invalid.",
+          });
+        }
         await upsertUserProfile({
           userId: ctx.user.id,
           ...input,
@@ -375,17 +615,468 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const { createApplication } = await import("./db");
-        await createApplication({
+        const {
+          createApplication,
+          createApplicationMaterial,
+          createApplicationAttempt,
+          createAuditEvent,
+          createAdminReviewItem,
+          createApplicationApproval,
+        } = await import("./db");
+        const application = await createApplication({
           userId: ctx.user.id,
           jobId: input.jobId,
           coverLetter: input.coverLetter,
           customResume: input.customResume,
-          notes: input.notes,
+          notes: input.notes || "Application prepared and queued for review.",
           status: "pending",
-          appliedDate: new Date(),
         });
-        return { success: true };
+        const applicationId = Number(application.insertId);
+        await createApplicationMaterial({
+          applicationId,
+          coverLetter: input.coverLetter,
+          customResume: input.customResume,
+          sourceProfileSnapshot: profileSnapshotForApplication(ctx.user),
+        });
+        await createApplicationAttempt({
+          applicationId,
+          userId: ctx.user.id,
+          jobId: input.jobId,
+          attemptType: "prepare",
+          status: "review_required",
+          finishedAt: new Date(),
+          confirmationText: "Application materials were prepared and queued for user review.",
+          retryCount: 0,
+        });
+        await createAuditEvent({
+          userId: ctx.user.id,
+          entityType: "application",
+          entityId: applicationId,
+          action: "application_prepared",
+          actor: "user",
+          source: "applications.create",
+          afterState: JSON.stringify({ jobId: input.jobId, status: "pending", reviewRequired: true }),
+          riskLevel: "medium",
+        });
+        await createAdminReviewItem({
+          userId: ctx.user.id,
+          entityType: "application",
+          entityId: applicationId,
+          category: "application_review",
+          priority: "medium",
+          title: "Application prepared for review",
+          description: input.notes || "Application materials were prepared and require review before external submission.",
+        });
+        await createApplicationApproval({
+          userId: ctx.user.id,
+          applicationId,
+          entityType: "application",
+          entityId: applicationId,
+          approvalType: "application_submission",
+          status: "pending",
+          riskLevel: "high",
+          requestedBy: "system",
+          title: "Approve external application submission",
+          description: input.notes || "Prepared application materials require explicit approval before external submission is confirmed.",
+          payload: JSON.stringify({
+            jobId: input.jobId,
+            source: "applications.create",
+            status: "pending",
+          }),
+        });
+        return { success: true, applicationRecordId: applicationId };
+      }),
+    decide: protectedProcedure
+      .input(z.object({
+        jobId: z.number(),
+        decision: z.enum(["apply", "save", "ignore", "review", "manual_apply"]),
+        decisionReason: z.string().trim().min(1).max(5000),
+        matchScore: z.number().int().min(0).max(100).optional(),
+        riskLevel: z.enum(["low", "medium", "high"]).optional(),
+        reviewRequired: z.boolean().optional(),
+        reviewReason: z.string().trim().max(5000).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const {
+          createApplication,
+          createApplicationDecision,
+          createApplicationMaterial,
+          createApplicationAttempt,
+          createAuditEvent,
+          createAdminReviewItem,
+          createApplicationApproval,
+          getApplicationLedgerArtifacts,
+          getJobById,
+          getUserApplications,
+          listUserApplicationApprovals,
+          resolveApplicationApproval,
+          updateApplicationStatus,
+        } = await import("./db");
+        const job = await getJobById(input.jobId);
+        if (!job) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Job not found" });
+        }
+
+        const reviewRequired = input.reviewRequired ?? input.decision !== "ignore";
+        const result = await createApplicationDecision({
+          userId: ctx.user.id,
+          jobId: input.jobId,
+          decision: input.decision,
+          decisionReason: input.decisionReason,
+          matchScore: input.matchScore,
+          riskLevel: input.riskLevel || (reviewRequired ? "medium" : "low"),
+          reviewRequired: reviewRequired ? 1 : 0,
+          reviewReason: input.reviewReason,
+          decidedBy: "user",
+        });
+        await createAuditEvent({
+          userId: ctx.user.id,
+          entityType: "job",
+          entityId: input.jobId,
+          action: "application_decision_recorded",
+          actor: "user",
+          source: "applications.decide",
+          afterState: JSON.stringify({
+            decision: input.decision,
+            matchScore: input.matchScore ?? null,
+            riskLevel: input.riskLevel || (reviewRequired ? "medium" : "low"),
+            reviewRequired,
+            reviewReason: input.reviewReason || null,
+          }),
+          riskLevel: input.riskLevel === "high" ? "high" : reviewRequired ? "medium" : "low",
+        });
+
+        let applicationRecordId: number | null = null;
+        if (input.decision === "apply" || input.decision === "review" || input.decision === "manual_apply") {
+          const application = await createApplication({
+            userId: ctx.user.id,
+            jobId: input.jobId,
+            status: "pending",
+            notes: [
+              `User decision: ${input.decision}.`,
+              input.decisionReason,
+              input.reviewReason ? `Review reason: ${input.reviewReason}` : "",
+            ].filter(Boolean).join(" "),
+            isAutoApplied: 0,
+          });
+          applicationRecordId = Number(application.insertId);
+          const existingArtifacts = application.existing === true
+            ? await getApplicationLedgerArtifacts(applicationRecordId, ctx.user.id).catch(() => null)
+            : null;
+          const hasQueuedDecisionAttempt = existingArtifacts?.attempts.some((attempt) =>
+            attempt.attemptType === "prepare" &&
+            ["prepared", "review_required"].includes(attempt.status || "prepared") &&
+            (attempt.confirmationText || "").includes("Application queued from")
+          ) === true;
+          const shouldCreateQueuedArtifacts = application.existing !== true || !hasQueuedDecisionAttempt;
+          await createApplicationMaterial({
+            applicationId: applicationRecordId,
+            sourceProfileSnapshot: profileSnapshotForApplication(ctx.user),
+          });
+          if (shouldCreateQueuedArtifacts) {
+            await createApplicationAttempt({
+              applicationId: applicationRecordId,
+              userId: ctx.user.id,
+              jobId: input.jobId,
+              platformId: job.platformId,
+              attemptType: "prepare",
+              status: "review_required",
+              finishedAt: new Date(),
+              confirmationText: [
+                `Application queued from ${input.decision} decision.`,
+                input.reviewReason ? `Review reason: ${input.reviewReason}` : input.decisionReason,
+              ].filter(Boolean).join(" "),
+              retryCount: 0,
+            });
+            await createAuditEvent({
+              userId: ctx.user.id,
+              entityType: "application",
+              entityId: applicationRecordId,
+              action: "application_queued_for_review",
+              actor: "user",
+              source: "applications.decide",
+              afterState: JSON.stringify({
+                jobId: input.jobId,
+                decision: input.decision,
+                status: "pending",
+                reviewRequired: true,
+              }),
+              riskLevel: input.riskLevel === "high" ? "high" : "medium",
+            });
+          }
+          if (input.riskLevel === "high" || input.decision === "manual_apply" || reviewRequired) {
+            await createAdminReviewItem({
+              userId: ctx.user.id,
+              entityType: "application",
+              entityId: applicationRecordId,
+              category: "application_review",
+              priority: input.riskLevel === "high" ? "high" : "medium",
+              title: input.riskLevel === "high" ? "High-risk application needs review" : "Application needs review",
+              description: [
+                `Decision: ${input.decision}.`,
+                input.decisionReason,
+                input.reviewReason ? `Review reason: ${input.reviewReason}` : "",
+              ].filter(Boolean).join(" "),
+            });
+            await createApplicationApproval({
+              userId: ctx.user.id,
+              applicationId: applicationRecordId,
+              entityType: "application",
+              entityId: applicationRecordId,
+              approvalType: "application_submission",
+              status: "pending",
+              riskLevel: input.riskLevel === "high" || input.decision === "manual_apply" ? "high" : "medium",
+              requestedBy: "system",
+              title: input.decision === "manual_apply"
+                ? "Approve manual application handoff"
+                : "Approve external application submission",
+              description: [
+                `Decision: ${input.decision}.`,
+                input.decisionReason,
+                input.reviewReason ? `Review reason: ${input.reviewReason}` : "",
+              ].filter(Boolean).join(" "),
+              payload: JSON.stringify({
+                jobId: input.jobId,
+                decision: input.decision,
+                matchScore: input.matchScore ?? null,
+                source: "applications.decide",
+              }),
+            });
+          }
+        }
+
+        if (input.decision === "save") {
+          await saveJob({
+            userId: ctx.user.id,
+            jobId: input.jobId,
+            notes: input.decisionReason,
+            priority: input.riskLevel === "low" ? "medium" : "high",
+          });
+        }
+
+        if (input.decision === "save" || input.decision === "ignore") {
+          const userApplications = await getUserApplications(ctx.user.id);
+          const preparedApplication = userApplications.find((application) =>
+            application.jobId === input.jobId && (application.status || "pending") === "pending"
+          );
+
+          if (preparedApplication) {
+            applicationRecordId = preparedApplication.id;
+            const pendingApprovals = await listUserApplicationApprovals(ctx.user.id, "pending");
+            const submissionApproval = pendingApprovals.find((approval) =>
+              approval.approvalType === "application_submission" &&
+              (
+                approval.applicationId === preparedApplication.id ||
+                (approval.entityType === "application" && approval.entityId === preparedApplication.id)
+              )
+            );
+            let cancelledApprovalId: number | null = null;
+            let cancelledAttemptId: number | null = null;
+
+            if (submissionApproval) {
+              const {
+                getApplicationSubmissionGateAttemptStatus,
+                getApplicationSubmissionGateAttemptText,
+              } = await import("./applicationApprovalResolution");
+              const decisionNote = input.decision === "save"
+                ? "Saved from the review queue; prepared submission gate cancelled until the job is re-queued."
+                : "Ignored from the review queue; prepared submission gate cancelled.";
+              const resolved = await resolveApplicationApproval(
+                submissionApproval.id,
+                ctx.user.id,
+                "cancelled",
+                decisionNote,
+                "user"
+              );
+              cancelledApprovalId = resolved.approval.id;
+              const cancelledAttempt = await createApplicationAttempt({
+                applicationId: preparedApplication.id,
+                userId: ctx.user.id,
+                jobId: preparedApplication.jobId,
+                platformId: job.platformId,
+                attemptType: "external_handoff",
+                status: getApplicationSubmissionGateAttemptStatus("cancelled"),
+                startedAt: new Date(),
+                finishedAt: new Date(),
+                confirmationText: getApplicationSubmissionGateAttemptText(
+                  resolved.approval,
+                  "cancelled",
+                  decisionNote
+                ),
+                retryCount: 0,
+              });
+              cancelledAttemptId = Number(cancelledAttempt.insertId);
+            }
+
+            await updateApplicationStatus(preparedApplication.id, "withdrawn", ctx.user.id);
+            await createAuditEvent({
+              userId: ctx.user.id,
+              entityType: "application",
+              entityId: preparedApplication.id,
+              action: "application_review_closed",
+              actor: "user",
+              source: "applications.decide",
+              afterState: JSON.stringify({
+                jobId: input.jobId,
+                decision: input.decision,
+                status: "withdrawn",
+                cancelledApprovalId,
+                cancelledAttemptId,
+              }),
+              riskLevel: input.decision === "ignore" ? "medium" : "low",
+            });
+          }
+        }
+
+        return {
+          success: true,
+          decisionId: Number(result.insertId),
+          applicationRecordId,
+          existing: result.existing === true,
+        };
+      }),
+    listDecisions: protectedProcedure.query(async ({ ctx }) => {
+      const { getUserApplicationDecisions } = await import("./db");
+      return await getUserApplicationDecisions(ctx.user.id);
+    }),
+    getOperatingLedger: protectedProcedure.query(async ({ ctx }) => {
+      const { getUserOperatingLedger } = await import("./applicationCampaigns");
+      return await getUserOperatingLedger(ctx.user.id, {
+        includeAdminReviews: ctx.user.role === "admin",
+      });
+    }),
+    getLedgerArtifacts: protectedProcedure
+      .input(z.object({ applicationId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const { getApplicationLedgerArtifacts } = await import("./db");
+        try {
+          return await getApplicationLedgerArtifacts(input.applicationId, ctx.user.id);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unable to load application ledger.";
+          throw new TRPCError({
+            code: message === "Application not found." ? "NOT_FOUND" : "INTERNAL_SERVER_ERROR",
+            message,
+          });
+        }
+      }),
+    generateInterviewPreparation: protectedProcedure
+      .input(z.object({ applicationId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await generateInterviewPreparationForApplication(input.applicationId, ctx.user.id);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unable to generate interview preparation.";
+          throw new TRPCError({
+            code: message.includes("not found") ? "NOT_FOUND" : "BAD_REQUEST",
+            message,
+          });
+        }
+      }),
+    getEmployerResponses: protectedProcedure
+      .input(z.object({ applicationId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const { getEmployerResponses } = await import("./db");
+        try {
+          return await getEmployerResponses(input.applicationId, ctx.user.id);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unable to load employer responses.";
+          throw new TRPCError({
+            code: message === "Application not found." ? "NOT_FOUND" : "INTERNAL_SERVER_ERROR",
+            message,
+          });
+        }
+      }),
+    listApprovals: protectedProcedure
+      .input(z.object({
+        status: z.enum(["all", "pending", "approved", "rejected", "cancelled"]).optional().default("pending"),
+      }).optional())
+      .query(async ({ ctx, input }) => {
+        const { listUserApplicationApprovals } = await import("./db");
+        return await listUserApplicationApprovals(ctx.user.id, input?.status ?? "pending");
+      }),
+    resolveApproval: protectedProcedure
+      .input(z.object({
+        approvalId: z.number(),
+        status: z.enum(["approved", "rejected", "cancelled"]),
+        decisionNote: z.string().trim().max(5000).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const {
+          resolveApplicationApproval,
+          createAuditEvent,
+          createApplicationAttempt,
+          getJobById,
+          getUserApplications,
+        } = await import("./db");
+        const {
+          getApplicationSubmissionGateAttemptStatus,
+          getApplicationSubmissionGateAttemptText,
+          shouldRecordApplicationSubmissionGateAttempt,
+        } = await import("./applicationApprovalResolution");
+        try {
+          const result = await resolveApplicationApproval(
+            input.approvalId,
+            ctx.user.id,
+            input.status,
+            input.decisionNote,
+            "user"
+          );
+          let approvalAttemptId: number | null = null;
+          let approvalAttemptWarning: string | null = null;
+          if (shouldRecordApplicationSubmissionGateAttempt(result.approval)) {
+            const applicationId = result.approval.applicationId as number;
+            const userApplications = await getUserApplications(ctx.user.id);
+            const application = userApplications.find((item) => item.id === applicationId);
+            if (application) {
+              const job = await getJobById(application.jobId);
+              const attempt = await createApplicationAttempt({
+                applicationId,
+                userId: ctx.user.id,
+                jobId: application.jobId,
+                platformId: job?.platformId,
+                attemptType: "external_handoff",
+                status: getApplicationSubmissionGateAttemptStatus(input.status),
+                startedAt: new Date(),
+                finishedAt: new Date(),
+                confirmationText: getApplicationSubmissionGateAttemptText(
+                  result.approval,
+                  input.status,
+                  input.decisionNote
+                ),
+                retryCount: 0,
+              });
+              approvalAttemptId = Number(attempt.insertId);
+            } else {
+              approvalAttemptWarning = "Linked application was not found; approval was resolved without a handoff attempt.";
+            }
+          }
+          await createAuditEvent({
+            userId: ctx.user.id,
+            entityType: result.approval.applicationId ? "application" : "user",
+            entityId: result.approval.applicationId ?? ctx.user.id,
+            action: "approval_resolved",
+            actor: "user",
+            source: "applications.resolveApproval",
+            approvalId: input.approvalId,
+            afterState: JSON.stringify({
+              status: input.status,
+              approvalType: result.approval.approvalType,
+              entityType: result.approval.entityType,
+              entityId: result.approval.entityId,
+              decisionNote: input.decisionNote ?? null,
+              handoffAttemptId: approvalAttemptId,
+              warning: approvalAttemptWarning,
+            }),
+            riskLevel: result.approval.riskLevel,
+          });
+          return { success: true };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unable to resolve approval.";
+          throw new TRPCError({
+            code: message === "Approval not found." ? "NOT_FOUND" : "CONFLICT",
+            message,
+          });
+        }
       }),
     updateStatus: protectedProcedure
       .input(
@@ -394,10 +1085,72 @@ export const appRouter = router({
           status: z.enum(["pending", "applied", "viewed", "interview", "offer", "rejected", "accepted", "withdrawn"]),
         })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        if (input.status === "applied") {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Confirm submission with evidence instead of directly marking it applied.",
+          });
+        }
         const { updateApplicationStatus } = await import("./db");
-        await updateApplicationStatus(input.applicationId, input.status);
+        try {
+          await updateApplicationStatus(input.applicationId, input.status, ctx.user.id);
+          const { createAuditEvent } = await import("./db");
+          await createAuditEvent({
+            userId: ctx.user.id,
+            entityType: "application",
+            entityId: input.applicationId,
+            action: "application_status_updated",
+            actor: "user",
+            source: "applications.updateStatus",
+            afterState: JSON.stringify({ status: input.status }),
+            riskLevel: input.status === "withdrawn" ? "medium" : "low",
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unable to update application.";
+          throw new TRPCError({
+            code: message === "Application not found." ? "NOT_FOUND" : "CONFLICT",
+            message,
+          });
+        }
         return { success: true };
+      }),
+    confirmSubmission: protectedProcedure
+      .input(z.object({
+        applicationId: z.number(),
+        source: z.enum(["manual", "employer_portal", "email_confirmation", "ats_confirmation"]),
+        evidence: z.string().trim().min(8).max(5000),
+        confirmationUrl: safeHttpUrl.optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await confirmApplicationSubmission(input, ctx.user.id);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unable to confirm submission.";
+          throw new TRPCError({
+            code: message === "Application not found." ? "NOT_FOUND" : "CONFLICT",
+            message,
+          });
+        }
+      }),
+    recordResponse: protectedProcedure
+      .input(z.object({
+        applicationId: z.number(),
+        responseType: z.enum(["viewed", "rejection", "interview_invite", "offer", "employer_question", "other"]),
+        source: z.enum(["email", "employer_portal", "linkedin", "phone", "other"]),
+        summary: z.string().trim().min(8).max(5000),
+        receivedAt: z.string().datetime().transform((s) => new Date(s)).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await recordEmployerResponse(input, ctx.user.id);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unable to record employer response.";
+          throw new TRPCError({
+            code: message === "Application not found." ? "NOT_FOUND" : "CONFLICT",
+            message,
+          });
+        }
       }),
 
     // Application Notes
@@ -407,26 +1160,26 @@ export const appRouter = router({
         noteType: z.enum(["general", "interview", "followup", "research", "feedback"]),
         content: z.string(),
       }))
-      .mutation(async ({ input }) => {
-        return await addApplicationNote(input);
+      .mutation(async ({ ctx, input }) => {
+        return await addApplicationNote(input, ctx.user.id);
       }),
 
     getNotes: protectedProcedure
       .input(z.object({ applicationId: z.number() }))
-      .query(async ({ input }) => {
-        return await getApplicationNotes(input.applicationId);
+      .query(async ({ ctx, input }) => {
+        return await getApplicationNotes(input.applicationId, ctx.user.id);
       }),
 
     updateNote: protectedProcedure
       .input(z.object({ noteId: z.number(), content: z.string() }))
-      .mutation(async ({ input }) => {
-        return await updateApplicationNote(input.noteId, input.content);
+      .mutation(async ({ ctx, input }) => {
+        return await updateApplicationNote(input.noteId, input.content, ctx.user.id);
       }),
 
     deleteNote: protectedProcedure
       .input(z.object({ noteId: z.number() }))
-      .mutation(async ({ input }) => {
-        return await deleteApplicationNote(input.noteId);
+      .mutation(async ({ ctx, input }) => {
+        return await deleteApplicationNote(input.noteId, ctx.user.id);
       }),
 
     // Interview Scheduling
@@ -434,22 +1187,30 @@ export const appRouter = router({
       .input(z.object({
         applicationId: z.number(),
         interviewType: z.enum(["phone", "video", "onsite", "technical", "behavioral", "panel"]),
-        scheduledAt: z.string().transform((s) => new Date(s)),
-        duration: z.number().optional(),
-        location: z.string().optional(),
-        meetingLink: z.string().optional(),
-        interviewerName: z.string().optional(),
-        interviewerTitle: z.string().optional(),
-        notes: z.string().optional(),
+        scheduledAt: z.string().datetime().transform((s) => new Date(s)),
+        duration: z.number().int().min(5).max(480).optional(),
+        location: z.string().trim().max(500).optional(),
+        meetingLink: safeHttpUrl.optional(),
+        interviewerName: z.string().trim().max(255).optional(),
+        interviewerTitle: z.string().trim().max(255).optional(),
+        notes: z.string().max(10_000).optional(),
       }))
-      .mutation(async ({ input }) => {
-        return await scheduleInterview(input);
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await scheduleInterview(input, ctx.user.id);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unable to schedule interview.";
+          throw new TRPCError({
+            code: message === "Application not found." ? "NOT_FOUND" : "CONFLICT",
+            message,
+          });
+        }
       }),
 
     getInterviews: protectedProcedure
       .input(z.object({ applicationId: z.number() }))
-      .query(async ({ input }) => {
-        return await getInterviewSchedules(input.applicationId);
+      .query(async ({ ctx, input }) => {
+        return await getInterviewSchedules(input.applicationId, ctx.user.id);
       }),
 
     getUpcomingInterviews: protectedProcedure
@@ -462,46 +1223,105 @@ export const appRouter = router({
         interviewId: z.number(),
         status: z.enum(["scheduled", "completed", "cancelled", "rescheduled"]),
       }))
-      .mutation(async ({ input }) => {
-        return await updateInterviewStatus(input.interviewId, input.status);
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await updateInterviewStatus(input.interviewId, input.status, ctx.user.id);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unable to update interview.";
+          throw new TRPCError({
+            code: message === "Interview not found." ? "NOT_FOUND" : "CONFLICT",
+            message,
+          });
+        }
+      }),
+
+    recordInterviewOutcome: protectedProcedure
+      .input(z.object({
+        interviewId: z.number(),
+        outcome: z.enum(["next_round", "offer", "rejection", "no_response", "other"]),
+        source: z.enum(["email", "employer_portal", "linkedin", "phone", "other"]),
+        summary: z.string().trim().min(8).max(5000),
+        receivedAt: z.string().datetime().transform((s) => new Date(s)).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await recordInterviewOutcome(input, ctx.user.id);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unable to record interview outcome.";
+          throw new TRPCError({
+            code: message === "Interview not found." ? "NOT_FOUND" : "CONFLICT",
+            message,
+          });
+        }
       }),
 
     rescheduleInterview: protectedProcedure
       .input(z.object({
         interviewId: z.number(),
-        newDate: z.string().transform((s) => new Date(s)),
+        newDate: z.string().datetime().transform((s) => new Date(s)),
       }))
-      .mutation(async ({ input }) => {
-        return await rescheduleInterview(input.interviewId, input.newDate);
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await rescheduleInterview(input.interviewId, input.newDate, ctx.user.id);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unable to reschedule interview.";
+          throw new TRPCError({
+            code: message === "Interview not found." ? "NOT_FOUND" : "CONFLICT",
+            message,
+          });
+        }
       }),
 
     // Follow-ups
     createFollowUp: protectedProcedure
       .input(z.object({
         applicationId: z.number(),
-        message: z.string(),
-        sendDate: z.string().transform((s) => new Date(s)).optional(),
+        message: z.string().trim().min(1).max(MAX_FOLLOW_UP_MESSAGE_CHARS),
+        sendDate: z.string().datetime().transform((s) => new Date(s)).optional(),
+        purpose: z.enum(["routine_follow_up", "employer_reply"]).optional(),
+        sourceResponseId: z.number().optional(),
       }))
-      .mutation(async ({ input }) => {
-        return await createFollowUp(input);
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await createFollowUp(input, ctx.user.id);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unable to save follow-up.";
+          throw new TRPCError({ code: "CONFLICT", message });
+        }
       }),
 
     getFollowUps: protectedProcedure
       .input(z.object({ applicationId: z.number() }))
-      .query(async ({ input }) => {
-        return await getFollowUps(input.applicationId);
+      .query(async ({ ctx, input }) => {
+        return await getFollowUps(input.applicationId, ctx.user.id);
       }),
 
     markFollowUpSent: protectedProcedure
       .input(z.object({ followUpId: z.number() }))
-      .mutation(async ({ input }) => {
-        return await markFollowUpSent(input.followUpId);
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await markFollowUpSent(input.followUpId, ctx.user.id);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unable to update follow-up.";
+          throw new TRPCError({
+            code: message === "Follow-up not found." ? "NOT_FOUND" : "CONFLICT",
+            message,
+          });
+        }
       }),
 
     markFollowUpResponse: protectedProcedure
       .input(z.object({ followUpId: z.number() }))
-      .mutation(async ({ input }) => {
-        return await markFollowUpResponseReceived(input.followUpId);
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await markFollowUpResponseReceived(input.followUpId, ctx.user.id);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unable to update follow-up.";
+          throw new TRPCError({
+            code: message === "Follow-up not found." ? "NOT_FOUND" : "CONFLICT",
+            message,
+          });
+        }
       }),
 
     generateFollowUpEmail: protectedProcedure
@@ -509,9 +1329,28 @@ export const appRouter = router({
         applicationId: z.number(),
         type: z.enum(["initial", "reminder", "thank_you", "status_check"]),
       }))
-      .mutation(async ({ input }) => {
-        const email = await generateFollowUpEmail(input.applicationId, input.type);
+      .mutation(async ({ ctx, input }) => {
+        const email = await generateFollowUpEmail(input.applicationId, input.type, ctx.user.id);
         return { email };
+      }),
+
+    generateEmployerReplyEmail: protectedProcedure
+      .input(z.object({
+        applicationId: z.number(),
+        responseId: z.number().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await generateEmployerReplyEmail(input.applicationId, ctx.user.id, input.responseId);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unable to generate employer reply.";
+          throw new TRPCError({
+            code: message === "Application not found." || message === "Employer response not found."
+              ? "NOT_FOUND"
+              : "CONFLICT",
+            message,
+          });
+        }
       }),
   }),
 
@@ -654,14 +1493,21 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         const { parseResumeFromFile, uploadResumeToS3, resumeToProfileData } = await import("./resumeParser");
         const { upsertUserProfile } = await import("./db");
+        const { RESUME_MIME_TYPES, validateUploadedFile } = await import("./uploadValidation");
         
         // Decode base64 to buffer
         const buffer = Buffer.from(input.fileData, "base64");
+        const validation = validateUploadedFile({
+          data: buffer,
+          fileName: input.filename,
+          mimeType: input.mimeType,
+          allowedMimeTypes: RESUME_MIME_TYPES,
+        });
         
         // Upload to S3
         const { url, key } = await uploadResumeToS3(
           buffer,
-          input.filename,
+          validation.fileName,
           ctx.user.id,
           input.mimeType
         );
@@ -740,12 +1586,45 @@ export const appRouter = router({
 
   // Job Scraping (Admin only)
   scraping: router({
-    runScrape: protectedProcedure
+    listScrapers: adminProcedure.query(async () => {
+      const { getSupportedPlatforms } = await import("./scrapers/index");
+      return getSupportedPlatforms();
+    }),
+    scrapePlatform: adminProcedure
+      .input(z.object({
+        platform: z.string(),
+        keywords: z.string().optional(),
+        location: z.string().optional(),
+        limit: z.number().int().min(1).max(1000).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { getScraperManager } = await import("./scrapers/scraperManager");
+        const manager = await getScraperManager();
+        const result = await manager.scrapePlatform(input.platform, {
+          keywords: input.keywords,
+          location: input.location,
+          limit: input.limit,
+        });
+        const saveResult = await manager.saveJobs(result.jobs);
+        return { ...result, saved: saveResult.saved, duplicates: saveResult.duplicates };
+      }),
+    scrapeAll: adminProcedure
+      .input(z.object({
+        keywords: z.string().optional(),
+        location: z.string().optional(),
+        limit: z.number().int().min(1).max(1000).optional(),
+      }).optional())
+      .mutation(async ({ input }) => {
+        const { getScraperManager } = await import("./scrapers/scraperManager");
+        const manager = await getScraperManager();
+        return await manager.runScrapingCycle(input);
+      }),
+    runScrape: adminProcedure
       .input(
         z.object({
           platform: z.string().optional(),
           keywords: z.string().optional(),
-          limit: z.number().optional(),
+          limit: z.number().int().min(1).max(1000).optional(),
         })
       )
       .mutation(async ({ input }) => {
@@ -798,7 +1677,7 @@ export const appRouter = router({
     }),
 
     // Start the scheduler
-    startScheduler: protectedProcedure
+    startScheduler: adminProcedure
       .input(z.object({
         intervalMinutes: z.number().min(5).max(1440).optional(),
         maxJobsPerRun: z.number().min(10).max(1000).optional(),
@@ -815,7 +1694,7 @@ export const appRouter = router({
       }),
 
     // Stop the scheduler
-    stopScheduler: protectedProcedure.mutation(async () => {
+    stopScheduler: adminProcedure.mutation(async () => {
       const { getScheduler } = await import("./scrapers/scheduler");
       const scheduler = getScheduler();
       scheduler.stop();
@@ -823,7 +1702,7 @@ export const appRouter = router({
     }),
 
     // Run scraping manually
-    runNow: protectedProcedure.mutation(async () => {
+    runNow: adminProcedure.mutation(async () => {
       const { getScheduler } = await import("./scrapers/scheduler");
       const scheduler = getScheduler();
       await scheduler.runScraping();
@@ -1007,7 +1886,7 @@ export const appRouter = router({
   social: router({
     validateUrl: publicProcedure
       .input(z.object({
-        url: z.string(),
+        url: z.string().trim().min(1).max(1000),
         type: z.enum(["linkedin", "github", "portfolio"]),
       }))
       .query(async ({ input }) => {
@@ -1031,13 +1910,25 @@ export const appRouter = router({
 
     connect: protectedProcedure
       .input(z.object({
-        linkedinUrl: z.string().optional(),
-        githubUrl: z.string().optional(),
-        portfolioUrl: z.string().optional(),
+        linkedinUrl: safeHttpUrl.optional(),
+        githubUrl: safeHttpUrl.optional(),
+        portfolioUrl: safeHttpUrl.optional(),
       }))
       .mutation(async ({ ctx, input }) => {
+        const { validateLinkedInUrl, validateGitHubUrl, validatePortfolioUrl } = await import("./socialConnections");
         const { upsertUserProfile } = await import("./db");
-        
+
+        const invalidConnection =
+          (input.linkedinUrl && !validateLinkedInUrl(input.linkedinUrl)) ||
+          (input.githubUrl && !validateGitHubUrl(input.githubUrl)) ||
+          (input.portfolioUrl && !validatePortfolioUrl(input.portfolioUrl));
+        if (invalidConnection) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "One or more social profile URLs are invalid.",
+          });
+        }
+
         await upsertUserProfile({
           userId: ctx.user.id,
           linkedinUrl: input.linkedinUrl,
@@ -1047,6 +1938,30 @@ export const appRouter = router({
         
         return { success: true };
       }),
+    disconnect: protectedProcedure
+      .input(z.object({
+        type: z.enum(["linkedin", "github", "portfolio"]),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { getUserProfile, upsertUserProfile } = await import("./db");
+        const profile = await getUserProfile(ctx.user.id);
+        await upsertUserProfile({
+          userId: ctx.user.id,
+          linkedinUrl: input.type === "linkedin" ? null : profile?.linkedinUrl,
+          githubUrl: input.type === "github" ? null : profile?.githubUrl,
+          portfolioUrl: input.type === "portfolio" ? null : profile?.portfolioUrl,
+        });
+        return { success: true };
+      }),
+    getConnections: protectedProcedure.query(async ({ ctx }) => {
+      const { getUserProfile } = await import("./db");
+      const profile = await getUserProfile(ctx.user.id);
+      return [
+        { type: "linkedin", url: profile?.linkedinUrl || null, connected: Boolean(profile?.linkedinUrl) },
+        { type: "github", url: profile?.githubUrl || null, connected: Boolean(profile?.githubUrl) },
+        { type: "portfolio", url: profile?.portfolioUrl || null, connected: Boolean(profile?.portfolioUrl) },
+      ];
+    }),
 
     analyzeLinkedIn: protectedProcedure
       .input(z.object({ profileText: z.string() }))
@@ -1073,22 +1988,115 @@ export const appRouter = router({
   // Automated Application
   automation: router({
     detectATS: publicProcedure
-      .input(z.object({ url: z.string() }))
+      .input(z.object({ url: z.string().trim().min(1).max(1000) }))
       .query(async ({ input }) => {
         const { isAutomationSupported } = await import("./applicationAutomation");
         const support = isAutomationSupported(input.url);
 
         return support;
       }),
+    getATSSupport: publicProcedure.query(async () => {
+      return {
+        submissionSupported: [],
+        preparationSupported: ["greenhouse", "lever"],
+        guarded: ["workday", "taleo", "smartrecruiters"],
+        manualReviewRequired: ["unknown"],
+        notes: "No ATS is currently enabled for unattended final submission. Greenhouse and Lever forms can be prepared for review.",
+      };
+    }),
+    plan: protectedProcedure
+      .input(z.object({
+        mode: z.enum(["review_first", "auto_apply"]).optional(),
+        minMatchScore: z.number().min(0).max(100).optional(),
+        dailyApplicationLimit: z.number().min(1).max(25).optional(),
+        remoteOnly: z.boolean().optional(),
+        requireHumanReview: z.boolean().optional(),
+        allowUnsupportedATS: z.boolean().optional(),
+        createFollowUps: z.boolean().optional(),
+      }).optional())
+      .query(async ({ ctx, input }) => {
+        const { getActiveJobs, getUserProfile, getUserApplications } = await import("./db");
+        const { buildAutonomousPlan, parseAutonomousPreferences } = await import("./autonomousOrchestrator");
+        const { getAutonomousEvidenceContext } = await import("./autonomousEvidence");
+        const [jobList, profile, applications] = await Promise.all([
+          getActiveJobs(250, 0),
+          getUserProfile(ctx.user.id),
+          getUserApplications(ctx.user.id),
+        ]);
+        const resolvedPreferences = {
+          ...parseAutonomousPreferences(profile?.preferences),
+          ...(input || {}),
+        };
+
+        const plan = buildAutonomousPlan(jobList, profile, applications as any, resolvedPreferences);
+        const evidenceContext = await getAutonomousEvidenceContext(ctx.user.id, {
+          profile,
+          applications,
+        });
+
+        return {
+          ...plan,
+          profileEvidence: evidenceContext.profileEvidence,
+          connectorReadiness: evidenceContext.connectorReadiness,
+          evidenceGates: evidenceContext.evidenceGates,
+        };
+      }),
+    run: protectedProcedure
+      .input(z.object({
+        mode: z.enum(["review_first", "auto_apply"]).optional(),
+        minMatchScore: z.number().min(0).max(100).optional(),
+        dailyApplicationLimit: z.number().min(1).max(25).optional(),
+        remoteOnly: z.boolean().optional(),
+        requireHumanReview: z.boolean().optional(),
+        allowUnsupportedATS: z.boolean().optional(),
+        createFollowUps: z.boolean().optional(),
+      }).optional())
+      .mutation(async ({ ctx, input }) => {
+        const { runAutonomousForUser } = await import("./autonomousService");
+        return await runAutonomousForUser(ctx.user.id, input || {});
+      }),
+    schedulerStatus: protectedProcedure.query(async ({ ctx }) => {
+      const { getAutonomousScheduler } = await import("./autonomousScheduler");
+      const { getUserProfile } = await import("./db");
+      const { parseAutonomousPreferences } = await import("./autonomousOrchestrator");
+      const scheduler = getAutonomousScheduler();
+      const status = scheduler.getStatus();
+      const userStatus = scheduler.getUserStatus(ctx.user.id);
+      const profile = await getUserProfile(ctx.user.id);
+      const preferences = parseAutonomousPreferences(profile?.preferences);
+      return {
+        isStarted: status.isStarted,
+        isRunning: status.isRunning,
+        userEnabled: preferences.autonomousEnabled === true,
+        lastCycleAt: userStatus?.lastRunAt || null,
+        nextCycleAt: status.nextCycleAt,
+        usersRun: userStatus ? 1 : 0,
+        jobsQueued: userStatus?.jobsQueued || 0,
+        followUpDraftsQueued: userStatus?.followUpDraftsQueued || 0,
+        duplicateFollowUpsSkipped: userStatus?.duplicateFollowUpsSkipped || 0,
+        evidenceGatedActions: userStatus?.evidenceGatedActions || 0,
+        failedActions: userStatus?.failedActions || 0,
+        errorCount: userStatus?.errorCount || 0,
+      };
+    }),
     applyToJob: protectedProcedure
       .input(
         z.object({
           jobId: z.number(),
-          coverLetter: z.string().optional(),
+          coverLetter: z.string().trim().max(50_000).optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const { getJobById, getUserProfile, createApplication } = await import("./db");
+        const {
+          getJobById,
+          getUserProfile,
+          createApplication,
+          createApplicationMaterial,
+          createApplicationAttempt,
+          createAuditEvent,
+          createAdminReviewItem,
+          createApplicationApproval,
+        } = await import("./db");
         const { applyToJob, prepareApplicationData, validateApplicationData } = await import(
           "./applicationAutomation"
         );
@@ -1125,43 +2133,124 @@ export const appRouter = router({
         const result = await applyToJob(job.applicationUrl, applicationData);
 
         // Create application record
-        await createApplication({
+        const applicationRecord = await createApplication({
           userId: ctx.user.id,
           jobId: input.jobId,
           status: result.success ? "applied" : "pending",
           appliedDate: result.success ? new Date() : undefined,
           coverLetter: input.coverLetter,
           notes: result.message,
+          isAutoApplied: result.success ? 1 : 0,
         });
+        const applicationRecordId = Number(applicationRecord.insertId);
+        await createApplicationMaterial({
+          applicationId: applicationRecordId,
+          coverLetter: input.coverLetter,
+          customAnswers: applicationData.answers ? JSON.stringify(applicationData.answers) : undefined,
+          sourceProfileSnapshot: profileSnapshotForApplication(ctx.user, profile),
+        });
+        await createApplicationAttempt({
+          applicationId: applicationRecordId,
+          userId: ctx.user.id,
+          jobId: input.jobId,
+          platformId: job.platformId,
+          attemptType: "prepare",
+          status: result.success
+            ? "submitted"
+            : result.reviewRequired
+              ? "review_required"
+              : result.prepared
+                ? "prepared"
+                : "failed",
+          startedAt: new Date(),
+          finishedAt: new Date(),
+          errorMessage: result.error,
+          confirmationText: result.confirmationId
+            ? `${result.message} Confirmation: ${result.confirmationId}`
+            : result.message,
+          confirmationUrl: result.success ? job.applicationUrl : undefined,
+          retryCount: 0,
+        });
+        await createAuditEvent({
+          userId: ctx.user.id,
+          entityType: "application",
+          entityId: applicationRecordId,
+          action: result.success ? "application_submitted_by_automation" : "application_prepared_by_automation",
+          actor: "system",
+          source: "automation.applyToJob",
+          afterState: JSON.stringify({
+            jobId: input.jobId,
+            atsType: result.atsType,
+            prepared: result.prepared,
+            submissionAttempted: result.submissionAttempted,
+            reviewRequired: result.reviewRequired,
+            status: result.success ? "applied" : "pending",
+          }),
+          riskLevel: result.success ? "high" : result.reviewRequired ? "medium" : "low",
+        });
+        if (result.reviewRequired || !result.success) {
+          await createAdminReviewItem({
+            userId: ctx.user.id,
+            entityType: "application",
+            entityId: applicationRecordId,
+            category: "application_review",
+            priority: result.reviewRequired ? "high" : "medium",
+            title: "Automation prepared application for review",
+            description: result.message,
+          });
+          await createApplicationApproval({
+            userId: ctx.user.id,
+            applicationId: applicationRecordId,
+            entityType: "application",
+            entityId: applicationRecordId,
+            approvalType: "application_submission",
+            status: "pending",
+            riskLevel: result.reviewRequired ? "high" : "medium",
+            requestedBy: "system",
+            title: "Approve automation-prepared submission",
+            description: result.message,
+            payload: JSON.stringify({
+              jobId: input.jobId,
+              atsType: result.atsType,
+              prepared: result.prepared,
+              submissionAttempted: result.submissionAttempted,
+              source: "automation.applyToJob",
+            }),
+          });
+        }
 
-        return result;
+        return {
+          ...result,
+          applicationRecordId,
+          applicationUrl: job.applicationUrl,
+        };
       }),
   }),
 
   // Job Normalization
   normalization: router({
     normalizeSalary: publicProcedure
-      .input(z.object({ salary: z.string() }))
+      .input(z.object({ salary: z.string().max(500) }))
       .query(({ input }) => normalizeSalary(input.salary)),
 
     normalizeLocation: publicProcedure
-      .input(z.object({ location: z.string() }))
+      .input(z.object({ location: z.string().max(500) }))
       .query(({ input }) => normalizeLocation(input.location)),
 
     normalizeJobType: publicProcedure
-      .input(z.object({ jobType: z.string() }))
+      .input(z.object({ jobType: z.string().max(200) }))
       .query(({ input }) => normalizeJobType(input.jobType)),
 
     normalizeExperienceLevel: publicProcedure
-      .input(z.object({ text: z.string() }))
+      .input(z.object({ text: z.string().max(5000) }))
       .query(({ input }) => normalizeExperienceLevel(input.text)),
 
     extractSkills: publicProcedure
-      .input(z.object({ description: z.string() }))
+      .input(z.object({ description: z.string().max(50_000) }))
       .query(({ input }) => extractSkills(input.description)),
 
     extractBenefits: publicProcedure
-      .input(z.object({ description: z.string() }))
+      .input(z.object({ description: z.string().max(50_000) }))
       .query(({ input }) => extractBenefits(input.description)),
 
     checkDuplicate: protectedProcedure
@@ -1184,20 +2273,20 @@ export const appRouter = router({
   discovery: router({
     getRecentJobs: publicProcedure
       .input(z.object({
-        limit: z.number().optional(),
-        offset: z.number().optional(),
-        keywords: z.array(z.string()).optional(),
-        locations: z.array(z.string()).optional(),
-        platformIds: z.array(z.number()).optional(),
-        minSalary: z.number().optional(),
+        limit: boundedPageSize.optional(),
+        offset: boundedOffset.optional(),
+        keywords: z.array(boundedFilterText).max(20).optional(),
+        locations: z.array(boundedFilterText).max(20).optional(),
+        platformIds: z.array(z.number().int().positive()).max(100).optional(),
+        minSalary: z.number().int().min(0).max(10_000_000).optional(),
       }))
       .query(async ({ input }) => getRecentJobs(input)),
 
     searchJobs: publicProcedure
       .input(z.object({
-        query: z.string(),
-        limit: z.number().optional(),
-        offset: z.number().optional(),
+        query: z.string().trim().min(1).max(500),
+        limit: boundedPageSize.optional(),
+        offset: boundedOffset.optional(),
       }))
       .query(async ({ input }) => searchJobs(input.query, { limit: input.limit, offset: input.offset })),
 
@@ -1271,21 +2360,21 @@ export const appRouter = router({
         jobTypes: z.string().optional(),
         frequency: z.enum(["instant", "daily", "weekly"]).optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
         const { alertId, ...updates } = input;
-        return await updateJobAlert(alertId, updates);
+        return await updateJobAlert(ctx.user.id, alertId, updates);
       }),
 
     toggle: protectedProcedure
       .input(z.object({ alertId: z.number(), isActive: z.boolean() }))
-      .mutation(async ({ input }) => {
-        return await toggleJobAlert(input.alertId, input.isActive);
+      .mutation(async ({ ctx, input }) => {
+        return await toggleJobAlert(ctx.user.id, input.alertId, input.isActive);
       }),
 
     delete: protectedProcedure
       .input(z.object({ alertId: z.number() }))
-      .mutation(async ({ input }) => {
-        return await deleteJobAlert(input.alertId);
+      .mutation(async ({ ctx, input }) => {
+        return await deleteJobAlert(ctx.user.id, input.alertId);
       }),
   }),
 

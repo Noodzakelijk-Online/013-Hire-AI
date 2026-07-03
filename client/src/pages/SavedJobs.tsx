@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
+import { getSafeExternalUrl, openExternalUrl } from "@/lib/externalUrl";
 import AppHeader from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -40,11 +41,11 @@ export default function SavedJobs() {
 
   const applyMutation = trpc.applications.create.useMutation({
     onSuccess: () => {
-      toast.success("Application submitted!");
+      toast.success("Application queued for review");
       refetch();
     },
     onError: () => {
-      toast.error("Failed to submit application");
+      toast.error("Failed to queue application");
     },
   });
 
@@ -194,11 +195,11 @@ export default function SavedJobs() {
                           <Send className="w-4 h-4 mr-2" />
                           Apply
                         </Button>
-                        {job.applicationUrl && (
+                        {getSafeExternalUrl(job.applicationUrl) && (
                           <Button
                             variant="outline"
                             className="border-slate-700"
-                            onClick={() => window.open(job.applicationUrl, "_blank")}
+                            onClick={() => openExternalUrl(job.applicationUrl)}
                           >
                             <ExternalLink className="w-4 h-4 mr-2" />
                             View Job

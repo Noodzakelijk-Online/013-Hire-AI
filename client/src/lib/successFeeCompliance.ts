@@ -1,0 +1,209 @@
+export interface SuccessFeeLike {
+  status?: string | null;
+  nextVerificationDue?: Date | string | null;
+  monthlyFeeAmount?: number | null;
+}
+
+export interface OfferAttributionReviewLike {
+  approval?: unknown;
+}
+
+export type SuccessFeeComplianceStatus = "none" | "clear" | "due_soon" | "needs_attention";
+export type SuccessFeeComplianceRisk = "low" | "medium" | "high" | "critical";
+export type SuccessFeeComplianceActionId =
+  | "review_offer_attribution"
+  | "submit_verification"
+  | "prepare_verification"
+  | "monitor"
+  | "report_hire";
+
+export interface SuccessFeeComplianceSummary {
+  status: SuccessFeeComplianceStatus;
+  activeFees: number;
+  pendingVerification: number;
+  overdueVerifications: number;
+  dueSoonVerifications: number;
+  pendingOfferAttributions: number;
+  monthlyFeeCents: number;
+  nextVerificationDue: Date | null;
+  daysUntilNextVerification: number | null;
+  label: string;
+  nextAction: string;
+}
+
+export interface SuccessFeeComplianceAction {
+  id: SuccessFeeComplianceActionId;
+  label: string;
+  detail: string;
+  cta: string;
+  route: string;
+  risk: SuccessFeeComplianceRisk;
+  proofRequired: boolean;
+  approvalGated: boolean;
+}
+
+const ACTIVE_FEE_STATUSES = new Set(["active", "pending_verification"]);
+const DUE_SOON_DAYS = 14;
+
+function coerceDate(value: Date | string | null | undefined): Date | null {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+export function getSuccessFeeComplianceSummary(
+  fees: SuccessFeeLike[] = [],
+  offerAttributionReviews: OfferAttributionReviewLike[] = [],
+  now = new Date()
+): SuccessFeeComplianceSummary {
+  const activeFees = fees.filter((fee) => ACTIVE_FEE_STATUSES.has(fee.status || ""));
+  const verificationDeadlines = activeFees
+    .map((fee) => coerceDate(fee.nextVerificationDue))
+    .filter((date): date is Date => Boolean(date))
+    .sort((a, b) => a.getTime() - b.getTime());
+  const overdueVerifications = verificationDeadlines.filter((date) => date.getTime() < now.getTime()).length;
+  const dueSoonVerifications = verificationDeadlines.filter((date) => {
+    const daysUntil = Math.ceil((date.getTime() - now.getTime()) / 86_400_000);
+    return daysUntil >= 0 && daysUntil <= DUE_SOON_DAYS;
+  }).length;
+  const pendingVerification = activeFees.filter((fee) => fee.status === "pending_verification").length;
+  const pendingOfferAttributions = offerAttributionReviews.length;
+  const monthlyFeeCents = activeFees.reduce((sum, fee) => sum + (fee.monthlyFeeAmount || 0), 0);
+  const nextVerificationDue = verificationDeadlines[0] || null;
+  const daysUntilNextVerification = nextVerificationDue
+    ? Math.ceil((nextVerificationDue.getTime() - now.getTime()) / 86_400_000)
+    : null;
+
+  if (pendingOfferAttributions > 0 || overdueVerifications > 0) {
+    return {
+      status: "needs_attention",
+      activeFees: activeFees.length,
+      pendingVerification,
+      overdueVerifications,
+      dueSoonVerifications,
+      pendingOfferAttributions,
+      monthlyFeeCents,
+      nextVerificationDue,
+      daysUntilNextVerification,
+      label: "Needs attention",
+      nextAction: pendingOfferAttributions > 0
+        ? "Review offer attribution and report hires that came through Hire.AI."
+        : "Submit overdue employment verification proof.",
+    };
+  }
+
+  if (pendingVerification > 0 || dueSoonVerifications > 0) {
+    return {
+      status: "due_soon",
+      activeFees: activeFees.length,
+      pendingVerification,
+      overdueVerifications,
+      dueSoonVerifications,
+      pendingOfferAttributions,
+      monthlyFeeCents,
+      nextVerificationDue,
+      daysUntilNextVerification,
+      label: "Verification pending",
+      nextAction: "Keep offer proof and verification documents ready for review.",
+    };
+  }
+
+  if (activeFees.length > 0) {
+    return {
+      status: "clear",
+      activeFees: activeFees.length,
+      pendingVerification,
+      overdueVerifications,
+      dueSoonVerifications,
+      pendingOfferAttributions,
+      monthlyFeeCents,
+      nextVerificationDue,
+      daysUntilNextVerification,
+      label: "Current",
+      nextAction: "No success-fee compliance action is due right now.",
+    };
+  }
+
+  return {
+    status: "none",
+    activeFees: 0,
+    pendingVerification: 0,
+    overdueVerifications: 0,
+    dueSoonVerifications: 0,
+    pendingOfferAttributions,
+    monthlyFeeCents: 0,
+    nextVerificationDue: null,
+    daysUntilNextVerification: null,
+    label: pendingOfferAttributions > 0 ? "Needs attention" : "No active fees",
+    nextAction: pendingOfferAttributions > 0
+      ? "Review offer attribution and report hires that came through Hire.AI."
+      : "Report a hire only after an offer is accepted.",
+  };
+}
+
+export function getSuccessFeeComplianceAction(
+  summary: SuccessFeeComplianceSummary
+): SuccessFeeComplianceAction {
+  if (summary.pendingOfferAttributions > 0) {
+    return {
+      id: "review_offer_attribution",
+      label: "Offer attribution review",
+      detail: "Confirm whether the offer came from Hire.AI activity before reporting the hire or allowing billing setup to proceed.",
+      cta: "Open review queue",
+      route: "/review-queue",
+      risk: "high",
+      proofRequired: true,
+      approvalGated: true,
+    };
+  }
+
+  if (summary.overdueVerifications > 0) {
+    return {
+      id: "submit_verification",
+      label: "Verification overdue",
+      detail: "Upload current employment proof so the success-fee ledger can stay compliant before suspension or admin review escalates.",
+      cta: "Submit verification",
+      route: "/billing",
+      risk: "critical",
+      proofRequired: true,
+      approvalGated: true,
+    };
+  }
+
+  if (summary.pendingVerification > 0 || summary.dueSoonVerifications > 0) {
+    return {
+      id: "prepare_verification",
+      label: "Verification pending",
+      detail: "Keep offer and employment proof ready; submit verification when the current proof window opens.",
+      cta: "Review fees",
+      route: "/billing",
+      risk: "medium",
+      proofRequired: true,
+      approvalGated: false,
+    };
+  }
+
+  if (summary.activeFees > 0) {
+    return {
+      id: "monitor",
+      label: "Compliance current",
+      detail: "Success-fee records are current. Keep quarterly verification and payment records up to date.",
+      cta: "View fees",
+      route: "/billing",
+      risk: "low",
+      proofRequired: false,
+      approvalGated: false,
+    };
+  }
+
+  return {
+    id: "report_hire",
+    label: "No active success fee",
+    detail: "Report a hire only after accepting an offer and having proof ready for attribution and billing review.",
+    cta: "Report accepted hire",
+    route: "/billing",
+    risk: "high",
+    proofRequired: true,
+    approvalGated: true,
+  };
+}

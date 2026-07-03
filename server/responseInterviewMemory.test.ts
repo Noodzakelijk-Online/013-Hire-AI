@@ -1,0 +1,308 @@
+import { describe, expect, it } from "vitest";
+import {
+  createFollowUp,
+  getInterviewSchedules,
+  getUpcomingInterviews,
+  markFollowUpSent,
+  recordEmployerResponse,
+  recordInterviewOutcome,
+  rescheduleInterview,
+  scheduleInterview,
+  updateInterviewStatus,
+} from "./applicationFeatures";
+import { getUserOperatingLedger } from "./applicationCampaigns";
+import {
+  createApplication,
+  getApplicationLedgerArtifacts,
+  getUserApplications,
+  getUserOfferAttributionReviews,
+  listAdminReviewItems,
+  listUserApplicationApprovals,
+} from "./db";
+
+describe("response and interview memory fallback", () => {
+  it("records employer responses, status transitions, offer attribution approvals, and admin review work", async () => {
+    const userId = 98201;
+    const application = await createApplication({
+      userId,
+      jobId: 2,
+      status: "applied",
+      notes: "Submitted application awaiting employer response.",
+    });
+    const applicationId = Number(application.insertId);
+
+    const interviewResponse = await recordEmployerResponse({
+      applicationId,
+      responseType: "interview_invite",
+      source: "email",
+      summary: "Recruiter emailed asking for interview availability next week.",
+      receivedAt: new Date(),
+    }, userId);
+
+    expect(interviewResponse.status).toBe("interview");
+    let userApplications = await getUserApplications(userId);
+    expect(userApplications.find((item) => item.id === applicationId)?.status).toBe("interview");
+
+    const offerResponse = await recordEmployerResponse({
+      applicationId,
+      responseType: "offer",
+      source: "email",
+      summary: "Employer sent a written offer for the linked role.",
+      receivedAt: new Date(),
+    }, userId);
+
+    expect(offerResponse.status).toBe("offer");
+    userApplications = await getUserApplications(userId);
+    expect(userApplications.find((item) => item.id === applicationId)?.status).toBe("offer");
+
+    const artifacts = await getApplicationLedgerArtifacts(applicationId, userId);
+    expect(artifacts.employerResponses).toHaveLength(2);
+    expect(artifacts.employerResponses[0].responseType).toBe("offer");
+    expect(artifacts.auditEvents.some((event) =>
+      event.action === "employer_response_recorded" &&
+      event.afterState?.includes('"responseType":"offer"')
+    )).toBe(true);
+
+    const pendingApprovals = await listUserApplicationApprovals(userId, "pending");
+    expect(pendingApprovals.some((approval) =>
+      approval.approvalType === "offer_attribution" &&
+      approval.entityId === applicationId &&
+      approval.payload?.includes(String(offerResponse.responseId))
+    )).toBe(true);
+
+    const attributionReviews = await getUserOfferAttributionReviews(userId);
+    expect(attributionReviews).toHaveLength(1);
+    expect(attributionReviews[0].application?.id).toBe(applicationId);
+    expect(attributionReviews[0].latestEmployerResponse?.summary).toContain("written offer");
+
+    const adminReviews = await listAdminReviewItems("open");
+    expect(adminReviews.some((review) =>
+      review.userId === userId &&
+      review.entityType === "application" &&
+      review.entityId === applicationId &&
+      review.category === "offer_attribution"
+    )).toBe(true);
+  });
+
+  it("cancels stale pending follow-up send approvals when an employer response arrives", async () => {
+    const userId = 98204;
+    const application = await createApplication({
+      userId,
+      jobId: 2,
+      status: "applied",
+      notes: "Submitted application with a pending follow-up draft.",
+    });
+    const applicationId = Number(application.insertId);
+
+    const followUp = await createFollowUp({
+      applicationId,
+      message: "Hello, I wanted to check whether there is an update on my application.",
+    }, userId);
+    const beforeApprovals = await listUserApplicationApprovals(userId, "pending");
+    const followUpApproval = beforeApprovals.find((approval) =>
+      approval.entityType === "follow_up" &&
+      approval.entityId === followUp.id &&
+      approval.approvalType === "follow_up_send"
+    );
+    expect(followUpApproval).toBeTruthy();
+
+    const response = await recordEmployerResponse({
+      applicationId,
+      responseType: "interview_invite",
+      source: "email",
+      summary: "Recruiter replied with an interview invitation for next week.",
+      receivedAt: new Date(),
+    }, userId);
+
+    expect(response.cancelledFollowUpApprovalIds).toContain(followUpApproval!.id);
+    const pendingAfterResponse = await listUserApplicationApprovals(userId, "pending");
+    expect(pendingAfterResponse.some((approval) =>
+      approval.entityType === "follow_up" &&
+      approval.entityId === followUp.id &&
+      approval.approvalType === "follow_up_send"
+    )).toBe(false);
+
+    const allApprovals = await listUserApplicationApprovals(userId, "all");
+    const cancelledApproval = allApprovals.find((approval) => approval.id === followUpApproval!.id);
+    expect(cancelledApproval?.status).toBe("cancelled");
+    expect(cancelledApproval?.decisionNote).toContain("made the unsent follow-up draft stale");
+
+    await expect(markFollowUpSent(followUp.id, userId)).rejects.toThrow(
+      "Follow-up approval is required before marking it sent."
+    );
+
+    const artifacts = await getApplicationLedgerArtifacts(applicationId, userId);
+    expect(artifacts.auditEvents.some((event) =>
+      event.action === "stale_follow_up_approvals_cancelled" &&
+      event.afterState?.includes(String(followUpApproval!.id))
+    )).toBe(true);
+
+    const ledger = await getUserOperatingLedger(userId);
+    expect(ledger.metrics.pendingApprovals).toBe(0);
+    expect(ledger.metrics.employerResponses).toBe(1);
+  });
+
+  it("keeps pending follow-up approval when only a view signal is recorded", async () => {
+    const userId = 98205;
+    const application = await createApplication({
+      userId,
+      jobId: 2,
+      status: "applied",
+      notes: "Submitted application with only a view signal.",
+    });
+    const applicationId = Number(application.insertId);
+
+    const followUp = await createFollowUp({
+      applicationId,
+      message: "Hello, I wanted to check whether there is an update on my application.",
+    }, userId);
+    const beforeApprovals = await listUserApplicationApprovals(userId, "pending");
+    const followUpApproval = beforeApprovals.find((approval) =>
+      approval.entityType === "follow_up" &&
+      approval.entityId === followUp.id &&
+      approval.approvalType === "follow_up_send"
+    );
+    expect(followUpApproval).toBeTruthy();
+
+    const response = await recordEmployerResponse({
+      applicationId,
+      responseType: "viewed",
+      source: "employer_portal",
+      summary: "The employer portal indicates that the application was viewed.",
+      receivedAt: new Date(),
+    }, userId);
+
+    expect(response.cancelledFollowUpApprovalIds).toEqual([]);
+    const pendingAfterView = await listUserApplicationApprovals(userId, "pending");
+    expect(pendingAfterView.some((approval) => approval.id === followUpApproval!.id)).toBe(true);
+  });
+
+  it("blocks employer responses before submission evidence status exists", async () => {
+    const userId = 98202;
+    const application = await createApplication({
+      userId,
+      jobId: 1,
+      status: "pending",
+      notes: "Prepared but not submitted.",
+    });
+
+    await expect(recordEmployerResponse({
+      applicationId: Number(application.insertId),
+      responseType: "offer",
+      source: "email",
+      summary: "Employer sent an offer even though the app was not submitted.",
+    }, userId)).rejects.toThrow("after submission is confirmed");
+  });
+
+  it("records interview scheduling, rescheduling, upcoming queue state, and outcome audit events", async () => {
+    const userId = 98203;
+    const application = await createApplication({
+      userId,
+      jobId: 2,
+      status: "viewed",
+      notes: "Employer viewed the application.",
+    });
+    const applicationId = Number(application.insertId);
+    const scheduledAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+
+    const scheduled = await scheduleInterview({
+      applicationId,
+      interviewType: "video",
+      scheduledAt,
+      duration: 45,
+      meetingLink: "https://meet.example.local/designhub",
+      interviewerName: "Hiring Manager",
+      notes: "First-round screen.",
+    }, userId);
+
+    expect(scheduled.id).toBeTruthy();
+    expect(scheduled.approvalId).toBeTruthy();
+
+    let interviews = await getInterviewSchedules(applicationId, userId);
+    expect(interviews).toHaveLength(1);
+    expect(interviews[0].status).toBe("scheduled");
+    expect(interviews[0].meetingLink).toContain("meet.example");
+
+    let userApplications = await getUserApplications(userId);
+    expect(userApplications.find((item) => item.id === applicationId)?.status).toBe("interview");
+
+    let upcoming = await getUpcomingInterviews(userId);
+    expect(upcoming.some((item) => item.interview.id === scheduled.id)).toBe(true);
+    expect(upcoming.find((item) => item.interview.id === scheduled.id)?.job?.title).toBe("Frontend Engineer");
+
+    const rescheduledAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
+    const rescheduled = await rescheduleInterview(scheduled.id, rescheduledAt, userId);
+    expect(rescheduled.approvalId).toBeTruthy();
+    interviews = await getInterviewSchedules(applicationId, userId);
+    expect(interviews[0].status).toBe("rescheduled");
+    expect(interviews[0].scheduledAt.toISOString()).toBe(rescheduledAt.toISOString());
+
+    await updateInterviewStatus(scheduled.id, "completed", userId);
+    interviews = await getInterviewSchedules(applicationId, userId);
+    expect(interviews[0].status).toBe("completed");
+    upcoming = await getUpcomingInterviews(userId);
+    expect(upcoming.some((item) => item.interview.id === scheduled.id)).toBe(false);
+
+    const approvals = await listUserApplicationApprovals(userId, "all");
+    expect(approvals.filter((approval) => approval.approvalType === "interview_schedule")).toHaveLength(2);
+
+    const artifacts = await getApplicationLedgerArtifacts(applicationId, userId);
+    expect(artifacts.auditEvents.some((event) => event.action === "interview_scheduled")).toBe(true);
+    expect(artifacts.auditEvents.some((event) => event.action === "interview_rescheduled")).toBe(true);
+    expect(artifacts.auditEvents.some((event) => event.action === "interview_status_updated")).toBe(true);
+
+    await expect(rescheduleInterview(
+      scheduled.id,
+      new Date(Date.now() + 6 * 24 * 60 * 60 * 1000),
+      userId
+    )).rejects.toThrow("Interview cannot move from completed to rescheduled");
+  });
+
+  it("records interview outcomes as employer responses and application ledger state", async () => {
+    const userId = 98204;
+    const application = await createApplication({
+      userId,
+      jobId: 2,
+      status: "viewed",
+      notes: "Employer invited the candidate to interview.",
+    });
+    const applicationId = Number(application.insertId);
+    const scheduled = await scheduleInterview({
+      applicationId,
+      interviewType: "video",
+      scheduledAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
+      duration: 45,
+      meetingLink: "https://meet.example.local/designhub-outcome",
+      interviewerName: "Hiring Manager",
+    }, userId);
+
+    const outcome = await recordInterviewOutcome({
+      interviewId: scheduled.id,
+      outcome: "rejection",
+      source: "email",
+      summary: "Recruiter emailed after the interview that the team chose another candidate.",
+    }, userId);
+
+    expect(outcome.success).toBe(true);
+    expect(outcome.interviewStatus).toBe("completed");
+    expect(outcome.responseType).toBe("rejection");
+    expect(outcome.status).toBe("rejected");
+
+    const interviews = await getInterviewSchedules(applicationId, userId);
+    expect(interviews[0].status).toBe("completed");
+    const userApplications = await getUserApplications(userId);
+    expect(userApplications.find((item) => item.id === applicationId)?.status).toBe("rejected");
+
+    const artifacts = await getApplicationLedgerArtifacts(applicationId, userId);
+    expect(artifacts.employerResponses[0]).toMatchObject({
+      id: outcome.responseId,
+      responseType: "rejection",
+      statusAfter: "rejected",
+    });
+    expect(artifacts.employerResponses[0].summary).toContain("Interview outcome recorded: rejection.");
+    expect(artifacts.auditEvents.some((event) =>
+      event.action === "interview_outcome_recorded" &&
+      event.afterState?.includes(`"responseId":${outcome.responseId}`)
+    )).toBe(true);
+  });
+});

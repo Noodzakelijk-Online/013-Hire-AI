@@ -112,7 +112,7 @@ Express 4 Server (Node.js 22 ESM)
 - **Resume Parsing** — Upload PDF or DOCX; AI extracts and populates the profile automatically
 - **Unified Dashboard** — Single view of all metrics: applications sent, response rate, interview conversion, recent activity, and full application history
 - **Saved Jobs** — Bookmark interesting listings for manual review
-- **AI Preferences** — Configure auto-apply toggle, max applications per day, scan frequency, and job preferences
+- **AI Preferences** — Configure application preparation, daily review limits, scan frequency, and job preferences
 - **Job Alerts** — Email/notification alerts for new high-match listings
 - **Career Intelligence** — Salary benchmarking, skill gap analysis, and market insights
 

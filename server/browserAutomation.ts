@@ -29,6 +29,7 @@ export interface ApplicationData {
 
 export interface AutomationResult {
   success: boolean;
+  prepared?: boolean;
   applicationId?: string;
   confirmationNumber?: string;
   error?: string;
@@ -71,13 +72,12 @@ export function detectATSType(url: string): ATSType {
 }
 
 /**
- * Check if automation is supported for this ATS
+ * Check whether a form can be filled for a user to review.
+ * Final submission is deliberately disabled.
  */
-export function isAutomationSupported(atsType: ATSType): boolean {
-  // Currently supporting Greenhouse and Lever with full automation
-  // Others have partial support
-  const supportedATS: ATSType[] = ["greenhouse", "lever", "smartrecruiters"];
-  return supportedATS.includes(atsType);
+export function isPreparationSupported(atsType: ATSType): boolean {
+  const preparationSupportedATS: ATSType[] = ["greenhouse", "lever"];
+  return preparationSupportedATS.includes(atsType);
 }
 
 /**
@@ -306,7 +306,7 @@ export class BrowserAutomation {
       // Note: Actual submission is commented out for safety
       // await this.clickButton('button[type="submit"], input[type="submit"]');
 
-      result.success = true;
+      result.prepared = true;
       result.logs = this.getLogs();
       this.log("Application form filled successfully (submission disabled for safety)");
 
@@ -344,8 +344,9 @@ export class BrowserAutomation {
       if (data.coverLetter) await this.fillField(mappings.coverLetter, data.coverLetter);
 
       result.screenshot = await this.takeScreenshot() || undefined;
-      result.success = true;
+      result.prepared = true;
       result.logs = this.getLogs();
+      this.log("Application form filled successfully (submission disabled for safety)");
 
     } catch (error) {
       result.error = `${error}`;
@@ -365,10 +366,10 @@ export async function automateApplication(
 ): Promise<AutomationResult> {
   const atsType = detectATSType(url);
   
-  if (!isAutomationSupported(atsType)) {
+  if (!isPreparationSupported(atsType)) {
     return {
       success: false,
-      error: `Automation not supported for ATS type: ${atsType}`,
+      error: `Form preparation is not supported for ATS type: ${atsType}`,
       logs: [`Detected ATS: ${atsType}`, "This ATS requires manual application"],
     };
   }

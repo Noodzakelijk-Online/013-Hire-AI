@@ -2,7 +2,9 @@ import type { BaseScraper, ScrapeResult } from "./baseScraper";
 import { getScraperForPlatform, getSupportedPlatforms, hasScraper } from "./index";
 import { getDb } from "../db";
 import { jobs, jobPlatforms } from "../../drizzle/schema";
-import { eq } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
+import { samplePlatforms } from "../sampleData";
+import { compareJobsForDeduplication } from "../jobDeduplication";
 
 /**
  * Scraper Manager
@@ -17,15 +19,10 @@ export class ScraperManager {
    */
   async initialize(): Promise<void> {
     const db = await getDb();
-    if (!db) {
-      throw new Error("Database not available");
-    }
-
-    // Get all active platforms
-    const platforms = await db
-      .select()
-      .from(jobPlatforms)
-      .where(eq(jobPlatforms.isActive, 1));
+    const supportedPlatformNames = getSupportedPlatforms();
+    const platforms = db
+      ? await db.select().from(jobPlatforms).where(eq(jobPlatforms.isActive, 1))
+      : samplePlatforms.filter((platform) => platform.isActive === 1);
 
     console.log(`[ScraperManager] Initializing scrapers for ${platforms.length} platforms`);
 
@@ -40,6 +37,15 @@ export class ScraperManager {
       } catch (error) {
         console.error(`[ScraperManager] Failed to initialize scraper for ${platform.name}:`, error);
       }
+    }
+
+    if (this.scrapers.size === 0) {
+      supportedPlatformNames.forEach((platformName, index) => {
+        const scraper = this.createScraper(platformName, index + 1);
+        if (scraper) {
+          this.scrapers.set(platformName, scraper);
+        }
+      });
     }
 
     console.log(`[ScraperManager] Initialized ${this.scrapers.size} scrapers`);
@@ -145,7 +151,7 @@ export class ScraperManager {
   }> {
     const db = await getDb();
     if (!db) {
-      throw new Error("Database not available");
+      return { saved: 0, duplicates: scrapedJobs.length, errors: 0 };
     }
 
     let saved = 0;
@@ -159,13 +165,37 @@ export class ScraperManager {
           const existing = await db
             .select()
             .from(jobs)
-            .where(eq(jobs.externalId, job.externalId))
+            .where(and(eq(jobs.externalId, job.externalId), eq(jobs.platformId, job.platformId)))
             .limit(1);
 
           if (existing.length > 0) {
             duplicates++;
             continue;
           }
+        }
+
+        const duplicateCandidates = job.company && job.title
+          ? await db
+              .select({
+                applicationUrl: jobs.applicationUrl,
+                sourceUrl: jobs.sourceUrl,
+                title: jobs.title,
+                company: jobs.company,
+                description: jobs.description,
+              })
+              .from(jobs)
+              .where(or(
+                eq(jobs.company, job.company),
+                eq(jobs.title, job.title)
+              ))
+              .limit(100)
+          : [];
+        const crossPlatformDuplicate = duplicateCandidates.some((existing) =>
+          compareJobsForDeduplication(job, existing).isDuplicate
+        );
+        if (crossPlatformDuplicate) {
+          duplicates++;
+          continue;
         }
 
         // Insert new job

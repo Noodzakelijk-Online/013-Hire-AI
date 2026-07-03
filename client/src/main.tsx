@@ -10,30 +10,55 @@ import "./index.css";
 
 const queryClient = new QueryClient();
 
+const loadAnalytics = () => {
+  const endpoint = import.meta.env.VITE_ANALYTICS_ENDPOINT;
+  const websiteId = import.meta.env.VITE_ANALYTICS_WEBSITE_ID;
+  if (!endpoint || !websiteId) return;
+
+  let scriptUrl: URL;
+  try {
+    scriptUrl = new URL("/umami", endpoint);
+  } catch {
+    return;
+  }
+
+  const script = document.createElement("script");
+  script.defer = true;
+  script.src = scriptUrl.toString();
+  script.dataset.websiteId = websiteId;
+  document.head.appendChild(script);
+};
+
 const redirectToLoginIfUnauthorized = (error: unknown) => {
-  if (!(error instanceof TRPCClientError)) return;
-  if (typeof window === "undefined") return;
+  if (!(error instanceof TRPCClientError)) return false;
+  if (typeof window === "undefined") return false;
 
   const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
 
-  if (!isUnauthorized) return;
+  if (!isUnauthorized) return false;
 
-  window.location.href = getLoginUrl();
+  const loginUrl = getLoginUrl();
+  if (loginUrl !== "#") {
+    window.location.href = loginUrl;
+  }
+  return true;
 };
 
 queryClient.getQueryCache().subscribe(event => {
   if (event.type === "updated" && event.action.type === "error") {
     const error = event.query.state.error;
-    redirectToLoginIfUnauthorized(error);
-    console.error("[API Query Error]", error);
+    if (!redirectToLoginIfUnauthorized(error)) {
+      console.error(`[API Query Error] ${JSON.stringify(event.query.queryKey)}`, error);
+    }
   }
 });
 
 queryClient.getMutationCache().subscribe(event => {
   if (event.type === "updated" && event.action.type === "error") {
     const error = event.mutation.state.error;
-    redirectToLoginIfUnauthorized(error);
-    console.error("[API Mutation Error]", error);
+    if (!redirectToLoginIfUnauthorized(error)) {
+      console.error("[API Mutation Error]", error);
+    }
   }
 });
 
@@ -51,6 +76,8 @@ const trpcClient = trpc.createClient({
     }),
   ],
 });
+
+loadAnalytics();
 
 createRoot(document.getElementById("root")!).render(
   <trpc.Provider client={trpcClient} queryClient={queryClient}>

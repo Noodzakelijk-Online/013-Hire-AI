@@ -20,6 +20,9 @@ export interface ApplicationData {
 
 export interface ApplicationResult {
   success: boolean;
+  prepared: boolean;
+  submissionAttempted: boolean;
+  reviewRequired: boolean;
   atsType: ATSType;
   message: string;
   confirmationId?: string;
@@ -56,12 +59,8 @@ export function detectATSType(url: string): ATSType {
 }
 
 /**
- * Apply to a job automatically
- * Note: This is a conceptual implementation. Real automation would require:
- * 1. Browser automation (Puppeteer/Playwright)
- * 2. CAPTCHA solving services
- * 3. Rate limiting and anti-bot detection avoidance
- * 4. Legal compliance and terms of service adherence
+ * Prepare an application for a guarded user-review handoff.
+ * Final submission is intentionally not attempted by this service.
  */
 export async function applyToJob(
   applicationUrl: string,
@@ -72,72 +71,15 @@ export async function applyToJob(
   console.log(`[ApplicationAutomation] Detected ATS: ${atsType}`);
   console.log(`[ApplicationAutomation] Application URL: ${applicationUrl}`);
 
-  // For now, we'll return a simulated result
-  // In production, this would use browser automation
+  // Final submission remains disabled until a reviewable browser handoff exists.
   return {
     success: false,
+    prepared: true,
+    submissionAttempted: false,
+    reviewRequired: true,
     atsType,
-    message: `Automated application to ${atsType} ATS is not yet implemented. This feature requires browser automation and CAPTCHA solving capabilities.`,
-    error: "Feature not implemented",
-  };
-}
-
-/**
- * Apply to Greenhouse ATS
- * Greenhouse is one of the most common ATS systems
- */
-async function applyToGreenhouse(
-  url: string,
-  data: ApplicationData
-): Promise<ApplicationResult> {
-  // This would use Puppeteer/Playwright to:
-  // 1. Navigate to the application page
-  // 2. Fill in the form fields
-  // 3. Upload resume
-  // 4. Submit the application
-  // 5. Handle any CAPTCHAs or verification steps
-
-  return {
-    success: false,
-    atsType: "greenhouse",
-    message: "Greenhouse automation not yet implemented",
-    error: "Feature not implemented",
-  };
-}
-
-/**
- * Apply to Lever ATS
- */
-async function applyToLever(url: string, data: ApplicationData): Promise<ApplicationResult> {
-  return {
-    success: false,
-    atsType: "lever",
-    message: "Lever automation not yet implemented",
-    error: "Feature not implemented",
-  };
-}
-
-/**
- * Apply to Workday ATS
- */
-async function applyToWorkday(url: string, data: ApplicationData): Promise<ApplicationResult> {
-  return {
-    success: false,
-    atsType: "workday",
-    message: "Workday automation not yet implemented",
-    error: "Feature not implemented",
-  };
-}
-
-/**
- * Apply to Taleo ATS
- */
-async function applyToTaleo(url: string, data: ApplicationData): Promise<ApplicationResult> {
-  return {
-    success: false,
-    atsType: "taleo",
-    message: "Taleo automation not yet implemented",
-    error: "Feature not implemented",
+    message: `Application data is ready, but ${atsType} submission requires user review and manual confirmation.`,
+    error: "Final submission is disabled",
   };
 }
 
@@ -211,22 +153,19 @@ export function prepareApplicationData(
  */
 export function isAutomationSupported(url: string): {
   supported: boolean;
+  preparationSupported: boolean;
   atsType: ATSType;
   message: string;
 } {
   const atsType = detectATSType(url);
-
-  // For now, none are supported
-  // In the future, we'd check which ATS types we've implemented
-  const supportedATS: ATSType[] = []; // ["greenhouse", "lever"]
-
-  const supported = supportedATS.includes(atsType);
+  const preparationSupported = ["greenhouse", "lever"].includes(atsType);
 
   return {
-    supported,
+    supported: false,
+    preparationSupported,
     atsType,
-    message: supported
-      ? `Automated application supported for ${atsType}`
-      : `Automated application not yet supported for ${atsType}. Manual application required.`,
+    message: preparationSupported
+      ? `${atsType} forms can be prepared, but a person must review and submit them.`
+      : `Automated application requires review for ${atsType}. Manual application may be required.`,
   };
 }

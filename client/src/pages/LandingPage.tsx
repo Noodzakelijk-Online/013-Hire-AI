@@ -375,7 +375,7 @@ export default function LandingPage() {
             </div>
             <Quote className="h-6 w-6 text-green-400/50 mb-2" />
             <p className="text-slate-300">
-              "The auto-apply feature is a game changer. I went from 2 interviews a month to 6 in my first week! The AI matching is scary accurate."
+              "The application preparation workflow saves me hours. I can review strong matches and tailored drafts from one place."
             </p>
           </div>
           
@@ -447,9 +447,9 @@ export default function LandingPage() {
               <div className="h-16 w-16 rounded-2xl bg-purple-500/10 flex items-center justify-center mb-6">
                 <Send className="h-8 w-8 text-purple-400" />
               </div>
-              <h3 className="text-xl font-semibold text-white mb-3">Auto-Apply While You Sleep</h3>
+              <h3 className="text-xl font-semibold text-white mb-3">Review Prepared Applications</h3>
               <p className="text-slate-400">
-                Hire.AI automatically applies with tailored resumes and cover letters. Wake up to interview invites!
+                Hire.AI prepares matched opportunities and application materials so you can verify and submit each application.
               </p>
             </div>
           </div>
@@ -480,16 +480,16 @@ export default function LandingPage() {
               answer: "No. Applications are submitted just like you would do manually—through the company's official application portal. Each application is personalized with your unique cover letter and tailored resume. There's no indication that automation was used."
             },
             {
-              question: "How many jobs can Hire.AI apply to per day?",
-              answer: "We apply at a human-like pace to avoid detection and ensure quality. Typically, this means 10-20 applications per day depending on your preferences. You can set limits and prioritize certain types of jobs or companies."
+              question: "How many applications can Hire.AI prepare per day?",
+              answer: "You control the daily preparation limit. Hire.AI prioritizes high-fit roles and adds them to a review queue before any final submission."
             },
             {
               question: "What job platforms do you support?",
-              answer: "We scan and apply to jobs from 50+ platforms including LinkedIn, Indeed, FlexJobs, We Work Remotely, Remote.co, Greenhouse, Lever, and many more. Our list is constantly growing as we add new integrations."
+              answer: "We aggregate opportunities from supported sources and prepare review workflows for common ATS platforms such as Greenhouse and Lever. Final submission remains under your control."
             },
             {
               question: "Can I review applications before they're sent?",
-              answer: "Yes! You can enable review mode where you approve each application before it's submitted. You can also set up auto-apply for jobs that match your criteria perfectly while reviewing others manually."
+              answer: "Yes. Every prepared application remains in a review queue until you verify the details and submit it."
             },
           ].map((faq, index) => (
             <details 

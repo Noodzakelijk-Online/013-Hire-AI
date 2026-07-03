@@ -1,19 +1,21 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure } from "../_core/trpc";
-import { getDb } from "../db";
-import { successFees, employmentVerifications, feePayments, users } from "../../drizzle/schema";
+import { createAdminReviewItem, createAuditEvent, getDb, getUserOfferAttributionReviews, getUserSuccessFees } from "../db";
+import { applicationApprovals, successFees, employmentVerifications, feePayments, users } from "../../drizzle/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { storagePut } from "../storage";
+import { validateUploadedFile, VERIFICATION_MIME_TYPES } from "../uploadValidation";
 import Stripe from "stripe";
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+import { getStripeClient } from "../stripeClient";
+import { calculateNextVerificationDue } from "../successFeeDates";
 
 const MIN_MONTHLY_SALARY = 300; // USD
 const FEE_PERCENT = 5;
 
 // Helper: get or create Stripe customer for user
 async function getOrCreateStripeCustomer(userId: number, email: string, name: string | null) {
+  const stripe = getStripeClient();
   const db = await getDb();
   if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
   const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
@@ -53,6 +55,7 @@ export const successFeesRouter = router({
       termsAccepted: z.boolean().refine(v => v === true, "You must accept the terms"),
     }))
     .mutation(async ({ ctx, input }) => {
+      const stripe = getStripeClient();
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const userId = ctx.user.id;
@@ -79,16 +82,21 @@ export const successFeesRouter = router({
 
       // Upload offer letter to S3
       const fileBuffer = Buffer.from(input.offerLetterBase64, "base64");
-      const fileKey = `offer-letters/${userId}-${Date.now()}-${input.offerLetterFileName}`;
+      const validation = validateUploadedFile({
+        data: fileBuffer,
+        fileName: input.offerLetterFileName,
+        mimeType: input.offerLetterMimeType,
+        allowedMimeTypes: VERIFICATION_MIME_TYPES,
+      });
+      const fileKey = `offer-letters/${userId}-${Date.now()}-${validation.fileName}`;
       const { url: offerLetterUrl } = await storagePut(fileKey, fileBuffer, input.offerLetterMimeType);
 
       // Calculate fee
       const monthlyFeeAmount = calculateMonthlyFee(input.monthlySalary);
       const startDate = new Date(input.startDate);
 
-      // Set next verification due date (90 days from start)
-      const nextVerificationDue = new Date(startDate);
-      nextVerificationDue.setDate(nextVerificationDue.getDate() + 90);
+      // Set next verification due date (90 UTC days from start)
+      const nextVerificationDue = calculateNextVerificationDue(startDate);
 
       // Create success fee record
       const [fee] = await db.insert(successFees).values({
@@ -118,6 +126,156 @@ export const successFeesRouter = router({
         documentType: "offer_letter",
         status: "pending",
         submittedAt: new Date(),
+      });
+
+      const approvalDecidedAt = new Date();
+      let offerAttributionApprovalId: number;
+      if (input.applicationId) {
+        const existingOfferApproval = await db
+          .select({ id: applicationApprovals.id, status: applicationApprovals.status })
+          .from(applicationApprovals)
+          .where(and(
+            eq(applicationApprovals.userId, userId),
+            eq(applicationApprovals.entityType, "application"),
+            eq(applicationApprovals.entityId, input.applicationId),
+            eq(applicationApprovals.approvalType, "offer_attribution")
+          ))
+          .orderBy(desc(applicationApprovals.createdAt))
+          .limit(1);
+        if (existingOfferApproval[0]?.status === "rejected" || existingOfferApproval[0]?.status === "cancelled") {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Offer attribution approval was rejected or cancelled for this application.",
+          });
+        }
+        if (existingOfferApproval[0]) {
+          offerAttributionApprovalId = existingOfferApproval[0].id;
+          if (existingOfferApproval[0].status === "pending") {
+            await db
+              .update(applicationApprovals)
+              .set({
+                status: "approved",
+                decidedBy: "user",
+                decisionNote: "Approved through report-hire success fee flow.",
+                decidedAt: approvalDecidedAt,
+              })
+              .where(eq(applicationApprovals.id, existingOfferApproval[0].id));
+          }
+        } else {
+          const attributionApproval = await db.insert(applicationApprovals).values({
+            userId,
+            applicationId: input.applicationId,
+            entityType: "application",
+            entityId: input.applicationId,
+            approvalType: "offer_attribution",
+            status: "approved",
+            riskLevel: "high",
+            requestedBy: "user",
+            decidedBy: "user",
+            title: "Offer attribution confirmed",
+            description: `User reported hire at ${input.employerName} for ${input.jobTitle}.`,
+            payload: JSON.stringify({
+              successFeeId: fee.id,
+              employerName: input.employerName,
+              jobTitle: input.jobTitle,
+              monthlySalary: input.monthlySalary,
+            }),
+            decisionNote: "Approved through report-hire success fee flow.",
+            requestedAt: approvalDecidedAt,
+            decidedAt: approvalDecidedAt,
+          });
+          offerAttributionApprovalId = Number(attributionApproval[0].insertId);
+        }
+      } else {
+        const attributionApproval = await db.insert(applicationApprovals).values({
+          userId,
+          applicationId: null,
+          entityType: "success_fee",
+          entityId: fee.id,
+          approvalType: "offer_attribution",
+          status: "approved",
+          riskLevel: "high",
+          requestedBy: "user",
+          decidedBy: "user",
+          title: "Offer attribution reported without linked application",
+          description: `User reported hire at ${input.employerName} for ${input.jobTitle}.`,
+          payload: JSON.stringify({
+            successFeeId: fee.id,
+            employerName: input.employerName,
+            jobTitle: input.jobTitle,
+            monthlySalary: input.monthlySalary,
+          }),
+          decisionNote: "User reported hire without an application link.",
+          requestedAt: approvalDecidedAt,
+          decidedAt: approvalDecidedAt,
+        });
+        offerAttributionApprovalId = Number(attributionApproval[0].insertId);
+      }
+
+      const billingApproval = await db.insert(applicationApprovals).values({
+        userId,
+        applicationId: input.applicationId ?? null,
+        entityType: "billing",
+        entityId: fee.id,
+        approvalType: "billing_action",
+        status: "approved",
+        riskLevel: "critical",
+        requestedBy: "user",
+        decidedBy: "user",
+        title: "Success fee subscription setup approved",
+        description: `User accepted success-fee terms for ${input.employerName}.`,
+        payload: JSON.stringify({
+          successFeeId: fee.id,
+          employerName: input.employerName,
+          monthlyFeeAmount,
+          feePercent: FEE_PERCENT,
+        }),
+        decisionNote: "User accepted success-fee terms before Stripe subscription setup.",
+        requestedAt: approvalDecidedAt,
+        decidedAt: approvalDecidedAt,
+      });
+      const billingApprovalId = Number(billingApproval[0].insertId);
+
+      await createAuditEvent({
+        userId,
+        entityType: "success_fee",
+        entityId: fee.id,
+        action: "hire_reported",
+        actor: "user",
+        source: "successFees.reportHire",
+        afterState: JSON.stringify({
+          applicationId: input.applicationId ?? null,
+          employerName: input.employerName,
+          jobTitle: input.jobTitle,
+          monthlySalary: input.monthlySalary,
+          status: "pending_verification",
+        }),
+        riskLevel: "high",
+        approvalId: offerAttributionApprovalId,
+      });
+      await createAuditEvent({
+        userId,
+        entityType: "success_fee",
+        entityId: fee.id,
+        action: "billing_action_approved",
+        actor: "user",
+        source: "successFees.reportHire",
+        afterState: JSON.stringify({
+          monthlyFeeAmount,
+          feePercent: FEE_PERCENT,
+          stripeSubscriptionSetup: "approved",
+        }),
+        riskLevel: "critical",
+        approvalId: billingApprovalId,
+      });
+      await createAdminReviewItem({
+        userId,
+        entityType: "success_fee",
+        entityId: fee.id,
+        category: "offer_attribution",
+        priority: "high",
+        title: "Reported hire needs offer attribution review",
+        description: `Reported hire at ${input.employerName} for ${input.jobTitle}.`,
       });
 
       // Get or create Stripe customer
@@ -178,20 +336,28 @@ export const successFeesRouter = router({
         stripeSubscriptionId: subscription.id,
         clientSecret: paymentIntent?.client_secret,
         subscriptionStatus: subscription.status,
+        ledger: {
+          offerProofStatus: "stored" as const,
+          offerAttributionStatus: "admin_review_open" as const,
+          verificationStatus: "pending_review" as const,
+          billingSetupStatus: paymentIntent?.client_secret
+            ? "payment_setup_required" as const
+            : "subscription_created" as const,
+          adminReviewRequired: true,
+          offerAttributionApprovalId,
+          billingApprovalId,
+        },
       };
     }),
 
   // Get user's success fees
   getMyFees: protectedProcedure.query(async ({ ctx }) => {
-    const db = await getDb();
-    if (!db) return [];
-    const fees = await db
-      .select()
-      .from(successFees)
-      .where(eq(successFees.userId, ctx.user.id))
-      .orderBy(desc(successFees.createdAt));
+    return await getUserSuccessFees(ctx.user.id);
+  }),
 
-    return fees;
+  // Show offer responses/approvals that should be converted into reported hires.
+  getOfferAttributionReviews: protectedProcedure.query(async ({ ctx }) => {
+    return await getUserOfferAttributionReviews(ctx.user.id);
   }),
 
   // Get fee payments history
@@ -234,11 +400,18 @@ export const successFeesRouter = router({
 
       // Upload document
       const fileBuffer = Buffer.from(input.documentBase64, "base64");
-      const fileKey = `verifications/${userId}-${Date.now()}-${input.documentFileName}`;
+      const validation = validateUploadedFile({
+        data: fileBuffer,
+        fileName: input.documentFileName,
+        mimeType: input.documentMimeType,
+        allowedMimeTypes: VERIFICATION_MIME_TYPES,
+      });
+      const fileKey = `verifications/${userId}-${Date.now()}-${validation.fileName}`;
       const { url: documentUrl } = await storagePut(fileKey, fileBuffer, input.documentMimeType);
 
-      // Create verification record
-      await db.insert(employmentVerifications).values({
+      // Create verification record. Do not extend the next verification due date here.
+      // The deadline should only move after an admin approves the submitted document.
+      const verificationResult = await db.insert(employmentVerifications).values({
         successFeeId: input.successFeeId,
         userId,
         verificationType: "quarterly",
@@ -248,18 +421,34 @@ export const successFeesRouter = router({
         status: "pending",
         submittedAt: new Date(),
       });
+      const verificationId = Number(verificationResult[0].insertId);
 
-      // Update next verification due date (90 days from now)
-      const nextDue = new Date();
-      nextDue.setDate(nextDue.getDate() + 90);
-      const graceExpiry = new Date(nextDue);
-      graceExpiry.setDate(graceExpiry.getDate() + 14);
+      await createAuditEvent({
+        userId,
+        entityType: "verification",
+        entityId: verificationId,
+        action: "employment_verification_submitted",
+        actor: "user",
+        source: "successFees.submitVerification",
+        afterState: JSON.stringify({
+          successFeeId: input.successFeeId,
+          documentType: input.documentType,
+          status: "pending",
+          nextVerificationDue: fee.nextVerificationDue ?? null,
+        }),
+        riskLevel: "high",
+      });
+      await createAdminReviewItem({
+        userId,
+        entityType: "verification",
+        entityId: verificationId,
+        category: "verification_overdue",
+        priority: "high",
+        title: "Quarterly employment verification submitted",
+        description: `User submitted ${input.documentType.replace(/_/g, " ")} proof for ${fee.employerName}. Admin approval is required before the next verification deadline moves.`,
+      });
 
-      await db.update(successFees)
-        .set({ nextVerificationDue: nextDue, verificationGraceExpiry: graceExpiry })
-        .where(eq(successFees.id, input.successFeeId));
-
-      return { success: true };
+      return { success: true, status: "pending_review" as const, verificationId };
     }),
 
   // Report employment ended (user left job)
@@ -283,17 +472,88 @@ export const successFeesRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "Success fee not found." });
       }
 
+      const endDate = new Date(input.endDate);
+      const decidedAt = new Date();
+      const previousState = {
+        status: fee.status,
+        endDate: fee.endDate ?? null,
+        stripeSubscriptionId: fee.stripeSubscriptionId ?? null,
+        employerName: fee.employerName,
+        jobTitle: fee.jobTitle,
+      };
+
+      const billingApproval = await db.insert(applicationApprovals).values({
+        userId,
+        applicationId: fee.applicationId ?? null,
+        entityType: "billing",
+        entityId: input.successFeeId,
+        approvalType: "billing_action",
+        status: "approved",
+        riskLevel: "high",
+        requestedBy: "user",
+        decidedBy: "user",
+        title: "Employment end reported",
+        description: `User reported employment ended at ${fee.employerName}.`,
+        payload: JSON.stringify({
+          successFeeId: input.successFeeId,
+          employerName: fee.employerName,
+          jobTitle: fee.jobTitle,
+          endDate,
+          previousStatus: fee.status,
+          stripeSubscriptionId: fee.stripeSubscriptionId ?? null,
+        }),
+        decisionNote: "User reported employment ended; final billing and verification require admin review.",
+        requestedAt: decidedAt,
+        decidedAt,
+      });
+      const billingApprovalId = Number(billingApproval[0].insertId);
+
       // Cancel Stripe subscription
+      let stripeSubscriptionCancelled = false;
       if (fee.stripeSubscriptionId) {
-        await stripe.subscriptions.cancel(fee.stripeSubscriptionId);
+        await getStripeClient().subscriptions.cancel(fee.stripeSubscriptionId);
+        stripeSubscriptionCancelled = true;
       }
 
       // Update fee status
       await db.update(successFees)
-        .set({ status: "ended", endDate: new Date(input.endDate) })
+        .set({ status: "ended", endDate })
         .where(eq(successFees.id, input.successFeeId));
 
-      return { success: true };
+      await createAuditEvent({
+        userId,
+        entityType: "success_fee",
+        entityId: input.successFeeId,
+        action: "employment_ended_reported",
+        actor: "user",
+        source: "successFees.reportEmploymentEnded",
+        beforeState: JSON.stringify(previousState),
+        afterState: JSON.stringify({
+          status: "ended",
+          endDate,
+          stripeSubscriptionCancelled,
+          adminReviewRequired: true,
+        }),
+        riskLevel: "high",
+        approvalId: billingApprovalId,
+      });
+      await createAdminReviewItem({
+        userId,
+        entityType: "success_fee",
+        entityId: input.successFeeId,
+        category: "employment_ended",
+        priority: "high",
+        title: "Employment ended report needs review",
+        description: `Employment at ${fee.employerName} for ${fee.jobTitle} was reported ended on ${input.endDate}. Review final billing, subscription cancellation, and verification context.`,
+      });
+
+      return {
+        success: true,
+        status: "pending_admin_review" as const,
+        endedAt: endDate,
+        stripeSubscriptionCancelled,
+        approvalId: billingApprovalId,
+      };
     }),
 
   // Get verifications for a fee
@@ -318,6 +578,7 @@ export const successFeesRouter = router({
 
   // Get Stripe billing portal URL
   getBillingPortalUrl: protectedProcedure.mutation(async ({ ctx }) => {
+    const stripe = getStripeClient();
     const db = await getDb();
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
     const [user] = await db.select().from(users).where(eq(users.id, ctx.user.id)).limit(1);

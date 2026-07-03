@@ -1,9 +1,9 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { Progress } from "@/components/ui/progress";
 import { 
   Upload, 
   Loader2, 
@@ -16,12 +16,22 @@ import {
   GraduationCap,
   Code,
   FolderGit2,
-  Globe
+  Globe,
+  ShieldCheck,
+  LockKeyhole,
+  AlertTriangle,
+  CheckCircle2
 } from "lucide-react";
-import { useLocation } from "wouter";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
+import {
+  getProfileEvidenceControlSummary,
+  type ProfileEvidenceControlStatus,
+  type ProfileEvidenceProvider,
+  type ProfileEvidenceProviderId,
+  type ProfileEvidenceProviderStatus,
+} from "@/lib/profileEvidenceControl";
 import { toast } from "sonner";
 import AppHeader from "@/components/AppHeader";
 import {
@@ -32,17 +42,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 export default function Profile() {
-  const { user, loading, isAuthenticated } = useAuth();
-  const [, setLocation] = useLocation();
+  const { loading, isAuthenticated } = useAuth();
   const [isUploading, setIsUploading] = useState(false);
   
   // Dialog states
@@ -56,8 +58,17 @@ export default function Profile() {
   const [editingEducation, setEditingEducation] = useState<any>(null);
   const [editingSkill, setEditingSkill] = useState<any>(null);
   const [editingProject, setEditingProject] = useState<any>(null);
+  const [linkedinUrl, setLinkedinUrl] = useState("");
+  const [githubUrl, setGithubUrl] = useState("");
+  const [portfolioUrl, setPortfolioUrl] = useState("");
 
   // Queries
+  const profileQuery = trpc.profile.get.useQuery(undefined, {
+    enabled: isAuthenticated,
+  });
+  const evidenceReadinessQuery = trpc.profile.getEvidenceReadiness.useQuery(undefined, {
+    enabled: isAuthenticated,
+  });
   const workExperiencesQuery = trpc.profile.getWorkExperiences.useQuery(undefined, {
     enabled: isAuthenticated,
   });
@@ -70,12 +81,45 @@ export default function Profile() {
   const projectsQuery = trpc.profile.getProjects.useQuery(undefined, {
     enabled: isAuthenticated,
   });
+  const updateProfile = trpc.profile.update.useMutation({
+    onSuccess: () => {
+      toast.success("Profile evidence saved");
+      profileQuery.refetch();
+      evidenceReadinessQuery.refetch();
+    },
+    onError: (error) => toast.error(error.message || "Failed to save profile evidence"),
+  });
+  const requestConnectorConnection = trpc.connectors.requestConnection.useMutation({
+    onSuccess: (result) => {
+      toast.success(result.message);
+      evidenceReadinessQuery.refetch();
+    },
+    onError: (error) => toast.error(error.message || "Failed to record connector request"),
+  });
+  const evidenceControl = useMemo(
+    () => evidenceReadinessQuery.data ?? getProfileEvidenceControlSummary({
+      profile: profileQuery.data,
+    }),
+    [evidenceReadinessQuery.data, profileQuery.data]
+  );
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
       window.location.href = getLoginUrl();
     }
   }, [loading, isAuthenticated]);
+
+  useEffect(() => {
+    setLinkedinUrl(profileQuery.data?.linkedinUrl || "");
+    setGithubUrl(profileQuery.data?.githubUrl || "");
+    setPortfolioUrl(profileQuery.data?.portfolioUrl || "");
+  }, [profileQuery.data?.linkedinUrl, profileQuery.data?.githubUrl, profileQuery.data?.portfolioUrl]);
+
+  const scrollToProfileSection = (section: string) => {
+    document
+      .getElementById(`profile-section-${section}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   const handleResumeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -86,12 +130,20 @@ export default function Profile() {
     setIsUploading(false);
   };
 
-  const handleLinkedInConnect = () => {
-    toast.info("LinkedIn integration coming soon!");
+  const handleRequestConnectorConnection = (provider: ConnectorProviderId) => {
+    requestConnectorConnection.mutate({ provider });
   };
 
-  const handleGitHubConnect = () => {
-    toast.info("GitHub integration coming soon!");
+  const handleLinkedInConnect = () => handleRequestConnectorConnection("linkedin");
+
+  const handleGitHubConnect = () => handleRequestConnectorConnection("github");
+
+  const handleSaveSocialLinks = () => {
+    updateProfile.mutate({
+      linkedinUrl: linkedinUrl.trim() || undefined,
+      githubUrl: githubUrl.trim() || undefined,
+      portfolioUrl: portfolioUrl.trim() || undefined,
+    });
   };
 
   if (loading) {
@@ -118,8 +170,75 @@ export default function Profile() {
           </p>
         </div>
 
+        {/* Evidence Control */}
+        <Card data-testid="profile-evidence-control" className="mb-6 bg-slate-900/60 border-slate-700/60">
+          <CardHeader>
+            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <CardTitle className="text-white flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-cyan-400" />
+                  Profile Evidence Control
+                </CardTitle>
+                <CardDescription className="mt-2">
+                  {evidenceControl.headline}
+                </CardDescription>
+              </div>
+              <Badge className={getEvidenceStatusClass(evidenceControl.status)}>
+                {evidenceControl.label}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-sm text-slate-300">Readiness score</span>
+                  <span className="text-sm font-semibold text-white">{evidenceControl.score}%</span>
+                </div>
+                <Progress value={evidenceControl.score} className="h-2" />
+                <p className="text-sm text-slate-400">{evidenceControl.detail}</p>
+              </div>
+              <Button
+                data-testid="profile-evidence-primary"
+                onClick={() => scrollToProfileSection(evidenceControl.primarySection)}
+                className="bg-gradient-to-r from-cyan-500 to-blue-600"
+              >
+                {evidenceControl.cta}
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <EvidenceMetric label="Connected" value={evidenceControl.connectedCount} />
+              <EvidenceMetric label="Missing" value={evidenceControl.missingCount} />
+              <EvidenceMetric label="Consent gated" value={evidenceControl.consentRequiredCount} />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {evidenceControl.providers.map((provider) => (
+                <EvidenceProviderRow
+                  key={provider.id}
+                  provider={provider}
+                  isRequesting={requestConnectorConnection.isPending}
+                  onRequestConnection={
+                    canRequestProviderConnector(provider)
+                      ? handleRequestConnectorConnection
+                      : undefined
+                  }
+                />
+              ))}
+            </div>
+
+            <div className="flex items-start gap-2 rounded-md border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-100">
+              <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>
+                External inbox and cloud access requires explicit consent. Hire.AI should not read Gmail, Drive, Dropbox, or Outlook data until a real connector is approved.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Import Profile Card */}
-        <Card className="mb-6 bg-slate-900/50 border-slate-700/50">
+        <Card id="profile-section-import" data-testid="profile-section-import" className="mb-6 bg-slate-900/50 border-slate-700/50 scroll-mt-24">
           <CardHeader>
             <CardTitle className="text-white flex items-center gap-2">
               <Upload className="w-5 h-5 text-cyan-400" />
@@ -135,6 +254,7 @@ export default function Profile() {
                 variant="outline"
                 className="h-24 flex-col gap-2 border-slate-700 hover:border-cyan-500 hover:bg-cyan-500/10"
                 onClick={handleLinkedInConnect}
+                disabled={requestConnectorConnection.isPending}
               >
                 <Linkedin className="w-6 h-6 text-blue-500" />
                 <span className="text-white">Connect LinkedIn</span>
@@ -144,6 +264,7 @@ export default function Profile() {
                 variant="outline"
                 className="h-24 flex-col gap-2 border-slate-700 hover:border-cyan-500 hover:bg-cyan-500/10"
                 onClick={handleGitHubConnect}
+                disabled={requestConnectorConnection.isPending}
               >
                 <Github className="w-6 h-6 text-white" />
                 <span className="text-white">Connect GitHub</span>
@@ -178,7 +299,7 @@ export default function Profile() {
         </Card>
 
         {/* Social Media & Portfolio Links */}
-        <Card className="mb-6 bg-slate-900/50 border-slate-700/50">
+        <Card id="profile-section-social" data-testid="profile-section-social" className="mb-6 bg-slate-900/50 border-slate-700/50 scroll-mt-24">
           <CardHeader>
             <CardTitle className="text-white flex items-center gap-2">
               <Globe className="w-5 h-5 text-cyan-400" />
@@ -195,6 +316,8 @@ export default function Profile() {
                   LinkedIn URL
                 </label>
                 <Input
+                  value={linkedinUrl}
+                  onChange={(event) => setLinkedinUrl(event.target.value)}
                   placeholder="https://linkedin.com/in/yourprofile"
                   className="bg-slate-800 border-slate-700 text-white"
                 />
@@ -204,6 +327,8 @@ export default function Profile() {
                   GitHub URL
                 </label>
                 <Input
+                  value={githubUrl}
+                  onChange={(event) => setGithubUrl(event.target.value)}
                   placeholder="https://github.com/yourusername"
                   className="bg-slate-800 border-slate-700 text-white"
                 />
@@ -213,25 +338,26 @@ export default function Profile() {
                   Portfolio URL
                 </label>
                 <Input
+                  value={portfolioUrl}
+                  onChange={(event) => setPortfolioUrl(event.target.value)}
                   placeholder="https://yourportfolio.com"
                   className="bg-slate-800 border-slate-700 text-white"
                 />
               </div>
-              <div>
-                <label className="text-sm font-medium text-slate-300 mb-2 block">
-                  Twitter/X URL
-                </label>
-                <Input
-                  placeholder="https://twitter.com/yourusername"
-                  className="bg-slate-800 border-slate-700 text-white"
-                />
+              <div className="rounded-md border border-slate-700/60 bg-slate-950/40 p-3">
+                <p className="text-sm font-medium text-slate-300">Additional social connectors</p>
+                <p className="mt-2 text-sm text-slate-400">
+                  Other social media sources should be added through explicit consent-based connectors before Hire.AI imports or analyzes them.
+                </p>
               </div>
             </div>
             <div className="mt-4 flex justify-end">
               <Button
-                onClick={() => toast.success("Social links saved!")}
+                onClick={handleSaveSocialLinks}
+                disabled={updateProfile.isPending}
                 className="bg-gradient-to-r from-cyan-500 to-blue-600"
               >
+                {updateProfile.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Save Links
               </Button>
             </div>
@@ -239,7 +365,7 @@ export default function Profile() {
         </Card>
 
         {/* Work Experience Section */}
-        <Card className="mb-6 bg-slate-900/50 border-slate-700/50">
+        <Card id="profile-section-work-experience" data-testid="profile-section-work-experience" className="mb-6 bg-slate-900/50 border-slate-700/50 scroll-mt-24">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -360,7 +486,7 @@ export default function Profile() {
         </Card>
 
         {/* Skills Section */}
-        <Card className="mb-6 bg-slate-900/50 border-slate-700/50">
+        <Card id="profile-section-skills" data-testid="profile-section-skills" className="mb-6 bg-slate-900/50 border-slate-700/50 scroll-mt-24">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -472,6 +598,112 @@ export default function Profile() {
             )}
           </CardContent>
         </Card>
+      </div>
+    </div>
+  );
+}
+
+function getEvidenceStatusClass(status: ProfileEvidenceControlStatus) {
+  switch (status) {
+    case "blocked":
+      return "bg-red-500/15 text-red-200 border-red-500/30";
+    case "limited":
+      return "bg-amber-500/15 text-amber-200 border-amber-500/30";
+    case "ready":
+      return "bg-emerald-500/15 text-emerald-200 border-emerald-500/30";
+  }
+}
+
+function getProviderStatusClass(status: ProfileEvidenceProviderStatus) {
+  switch (status) {
+    case "connected":
+      return "text-emerald-300";
+    case "missing":
+      return "text-red-300";
+    case "consent_required":
+      return "text-amber-300";
+  }
+}
+
+function getProviderStatusLabel(status: ProfileEvidenceProviderStatus) {
+  switch (status) {
+    case "connected":
+      return "Connected";
+    case "missing":
+      return "Missing";
+    case "consent_required":
+      return "Consent required";
+  }
+}
+
+type ConnectorProviderId = Exclude<ProfileEvidenceProviderId, "resume">;
+
+function canRequestProviderConnector(provider: ProfileEvidenceProvider): provider is ProfileEvidenceProvider & { id: ConnectorProviderId } {
+  return provider.id !== "resume";
+}
+
+function EvidenceMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-md border border-slate-700/60 bg-slate-950/40 p-3">
+      <p className="text-xl font-semibold text-white">{value}</p>
+      <p className="text-xs text-slate-400">{label}</p>
+    </div>
+  );
+}
+
+function EvidenceProviderRow({
+  provider,
+  isRequesting = false,
+  onRequestConnection,
+}: {
+  provider: ProfileEvidenceProvider;
+  isRequesting?: boolean;
+  onRequestConnection?: (provider: ConnectorProviderId) => void;
+}) {
+  const Icon = provider.status === "connected"
+    ? CheckCircle2
+    : provider.status === "missing"
+      ? AlertTriangle
+      : LockKeyhole;
+  const connectorAlreadyRequested = provider.connectionStatus === "connection_requested";
+  const connectorActionAvailable = onRequestConnection && provider.status !== "connected";
+
+  return (
+    <div
+      data-testid={`profile-evidence-provider-${provider.id}`}
+      className="rounded-md border border-slate-700/60 bg-slate-950/40 p-3"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <Icon className={`h-4 w-4 shrink-0 ${getProviderStatusClass(provider.status)}`} />
+            <p className="truncate text-sm font-medium text-white">{provider.label}</p>
+          </div>
+          <p className="mt-1 text-xs leading-5 text-slate-400">{provider.detail}</p>
+          {provider.consentScopes && provider.consentScopes.length > 0 ? (
+            <p className="mt-2 text-[11px] leading-4 text-slate-500">
+              Scopes: {provider.consentScopes.join(", ")}
+            </p>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <span className={`text-xs font-medium ${getProviderStatusClass(provider.status)}`}>
+            {getProviderStatusLabel(provider.status)}
+          </span>
+          {connectorActionAvailable ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              data-testid={`profile-evidence-request-${provider.id}`}
+              className="h-7 border-slate-700 px-2 text-xs text-slate-100 hover:border-cyan-500 hover:bg-cyan-500/10"
+              disabled={isRequesting || connectorAlreadyRequested}
+              onClick={() => onRequestConnection(provider.id as ConnectorProviderId)}
+            >
+              {connectorAlreadyRequested ? "Requested" : "Request"}
+            </Button>
+          ) : null}
+        </div>
       </div>
     </div>
   );

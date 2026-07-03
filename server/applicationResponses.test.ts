@@ -1,0 +1,48 @@
+import { describe, expect, it } from "vitest";
+import {
+  normalizeEmployerResponse,
+  resolveEmployerResponseStatus,
+} from "./applicationResponses";
+
+describe("application employer response classification", () => {
+  it("maps consequential employer replies to lifecycle statuses", () => {
+    expect(resolveEmployerResponseStatus("applied", "viewed")).toBe("viewed");
+    expect(resolveEmployerResponseStatus("applied", "interview_invite")).toBe("interview");
+    expect(resolveEmployerResponseStatus("interview", "offer")).toBe("offer");
+    expect(resolveEmployerResponseStatus("applied", "rejection")).toBe("rejected");
+  });
+
+  it("records a traceable response note", () => {
+    const receivedAt = new Date("2026-06-28T12:00:00.000Z");
+    const response = normalizeEmployerResponse(
+      {
+        responseType: "interview_invite",
+        source: "email",
+        summary: "Recruiter asked for interview availability next week.",
+        receivedAt,
+      },
+      "applied",
+      receivedAt
+    );
+
+    expect(response.nextStatus).toBe("interview");
+    expect(response.noteContent).toContain("interview invite via email");
+    expect(response.noteContent).toContain("Recruiter asked");
+  });
+
+  it("rejects vague responses before they enter the ledger", () => {
+    expect(() =>
+      normalizeEmployerResponse(
+        { responseType: "other", source: "other", summary: "ok" },
+        "applied"
+      )
+    ).toThrow(/summary/i);
+
+    expect(() =>
+      normalizeEmployerResponse(
+        { responseType: "offer", source: "email", summary: "Offer received by email." },
+        "pending"
+      )
+    ).toThrow(/submission/i);
+  });
+});

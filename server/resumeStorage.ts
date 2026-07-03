@@ -8,6 +8,7 @@ import { getDb } from "./db";
 import { userResumes } from "../drizzle/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { RESUME_MIME_TYPES, validateUploadedFile } from "./uploadValidation";
 
 // ============================================================================
 // TYPES
@@ -102,6 +103,13 @@ export async function uploadResume(
     throw new Error(`Unsupported file type: ${detectedMimeType}. Supported types: PDF, DOCX, DOC, TXT, RTF`);
   }
 
+  const validation = validateUploadedFile({
+    data: fileData,
+    fileName,
+    mimeType: detectedMimeType,
+    allowedMimeTypes: RESUME_MIME_TYPES,
+  });
+
   // Get current version count for this user
   const existingResumes = await db
     .select({ version: userResumes.version })
@@ -115,7 +123,7 @@ export async function uploadResume(
   // Generate unique file key
   const fileId = nanoid(12);
   const ext = getFileExtension(detectedMimeType);
-  const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, "_");
+  const sanitizedFileName = validation.fileName;
   const fileKey = `resumes/${userId}/${fileId}-v${newVersion}-${sanitizedFileName}`;
 
   // Upload to S3

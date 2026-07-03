@@ -1,0 +1,566 @@
+import { describe, expect, it } from "vitest";
+import { getUserOperatingLedger } from "./applicationCampaigns";
+import { createFollowUp, markFollowUpSent, recordEmployerResponse, scheduleInterview } from "./applicationFeatures";
+import {
+  createAdminReviewItem,
+  createApplication,
+  createApplicationApproval,
+  createApplicationDecision,
+  createEmployerResponse,
+  createSuccessFee,
+  getAuditEventsForEntity,
+  getApplicationCampaign,
+  listUserApplicationApprovals,
+  requestUserConnectorConnection,
+  resolveApplicationApproval,
+  upsertInterviewPreparation,
+  upsertUserProfile,
+} from "./db";
+
+describe("application campaign operating ledger", () => {
+  it("syncs durable campaign state from current operating queues", async () => {
+    const userId = 99001;
+    const oldDate = new Date(Date.now() - 8 * 86400000);
+
+    await upsertUserProfile({
+      userId,
+      skills: "React, TypeScript, Node.js",
+      experience: "Five years building production web applications.",
+      desiredJobTypes: "Frontend Engineer",
+      desiredLocations: "Remote",
+      salaryExpectationMin: 100000,
+      resumeUrl: "https://example.com/resume.pdf",
+      preferences: JSON.stringify({
+        createFollowUps: true,
+        dailyApplicationLimit: 4,
+        minMatchScore: 60,
+        mode: "review_first",
+      }),
+    });
+    const preparedApplication = await createApplication({
+      userId,
+      jobId: 1,
+      status: "pending",
+      notes: "Prepared for review.",
+    });
+    const preparedApplicationId = Number(preparedApplication.insertId);
+    const staleApplication = await createApplication({
+      userId,
+      jobId: 2,
+      status: "applied",
+      appliedDate: oldDate,
+      lastActivity: oldDate,
+      notes: "Submission confirmed.",
+    });
+    const questionApplication = await createApplication({
+      userId,
+      jobId: 4,
+      status: "viewed",
+      appliedDate: oldDate,
+      lastActivity: oldDate,
+      notes: "Employer asked a follow-up question.",
+    });
+    await createEmployerResponse({
+      applicationId: Number(questionApplication.insertId),
+      userId,
+      responseType: "employer_question",
+      source: "email",
+      summary: "Recruiter asked for availability and clarification on remote collaboration experience.",
+      receivedAt: new Date(),
+      statusBefore: "applied",
+      statusAfter: "viewed",
+    });
+    await createApplicationApproval({
+      userId,
+      applicationId: preparedApplicationId,
+      entityType: "application",
+      entityId: preparedApplicationId,
+      approvalType: "application_submission",
+      status: "pending",
+      riskLevel: "high",
+      requestedBy: "system",
+      title: "Approve external submission",
+      description: "External submission requires explicit approval.",
+    });
+    await createAdminReviewItem({
+      userId,
+      entityType: "application",
+      entityId: preparedApplicationId,
+      category: "application_review",
+      priority: "high",
+      title: "Review prepared application",
+      description: "Prepared application needs review before submission.",
+    });
+    await createApplicationDecision({
+      userId,
+      jobId: 1,
+      decision: "review",
+      decisionReason: "Human review required before applying.",
+      matchScore: 84,
+      riskLevel: "medium",
+      reviewRequired: 1,
+      reviewReason: "Needs custom answer.",
+      decidedBy: "system",
+    });
+
+    const ledger = await getUserOperatingLedger(userId);
+    const adminLedger = await getUserOperatingLedger(userId, { includeAdminReviews: true });
+    const syncedCampaign = await getApplicationCampaign(userId);
+    const ledgerAfterResync = await getUserOperatingLedger(userId);
+
+    expect(ledger.campaign.title).toBe("Frontend Engineer campaign");
+    expect(ledger.metrics.preparedApplications).toBe(1);
+    expect(ledger.metrics.submittedApplications).toBe(2);
+    expect(ledger.metrics.employerResponsesNeedingReply).toBe(1);
+    expect(ledger.metrics.connectorReadiness).toBe(1);
+    expect(ledger.metrics.evidenceGates).toBeGreaterThan(0);
+    expect(ledger.queues.evidenceGates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: expect.stringContaining("connector-inbox-response-monitoring"),
+          blocks: expect.arrayContaining(["reply_monitoring", "follow_up_send"]),
+        }),
+      ])
+    );
+    expect(ledger.queues.connectorReadiness).toHaveLength(1);
+    expect(ledger.queues.connectorReadiness[0]).toMatchObject({
+      id: "inbox-response-monitoring",
+      providerIds: ["gmail", "outlook"],
+      affectedApplications: 2,
+    });
+    expect(ledger.metrics.pendingApprovals).toBe(1);
+    expect(ledger.metrics.openAdminReviews).toBe(0);
+    expect(ledger.queues.adminReviews).toHaveLength(0);
+    expect(ledger.canReviewAdminItems).toBe(false);
+    expect(adminLedger.metrics.openAdminReviews).toBe(1);
+    expect(adminLedger.queues.adminReviews).toHaveLength(1);
+    expect(adminLedger.canReviewAdminItems).toBe(true);
+    expect(ledger.metrics.reviewRequiredDecisions).toBe(1);
+    expect(ledger.queues.reviewDecisions[0]).toMatchObject({
+      jobId: 1,
+      applicationId: preparedApplicationId,
+      application: {
+        id: preparedApplicationId,
+        status: "pending",
+      },
+      job: {
+        id: 1,
+      },
+    });
+    expect(ledger.metrics.followUpsDue).toBe(1);
+    expect(ledger.queues.followUpsDue).toHaveLength(1);
+    expect(ledger.queues.followUpsDue[0]).toMatchObject({
+      applicationId: Number(staleApplication.insertId),
+      jobId: 2,
+      messageType: "reminder",
+    });
+    expect(ledger.queues.employerResponsesNeedingReply).toHaveLength(1);
+    expect(ledger.queues.employerResponsesNeedingReply[0]).toMatchObject({
+      applicationId: Number(questionApplication.insertId),
+      jobId: 4,
+      responseType: "employer_question",
+    });
+    expect(ledger.readiness.autoApplyEligible).toBe(true);
+    expect(syncedCampaign?.readinessScore).toBe(ledger.readiness.score);
+    expect(syncedCampaign?.autoApplyEligible).toBe(1);
+    expect(ledger.nextActions.some((action) => action.includes("pending user approval"))).toBe(true);
+    expect(ledger.nextActions.some((action) => action.includes("Reply to 1 employer question"))).toBe(true);
+    expect(ledger.nextActions.some((action) => action.includes("connector setup"))).toBe(true);
+    expect(ledger.nextActions.some((action) => action.includes("autonomous evidence gate"))).toBe(true);
+    expect(ledgerAfterResync.campaign.id).toBe(ledger.campaign.id);
+  });
+
+  it("surfaces requested connector OAuth completion without claiming external access", async () => {
+    const userId = 99009;
+    await upsertUserProfile({
+      userId,
+      skills: "TypeScript, React, Node.js",
+      experience: "Five years building production web applications.",
+      desiredJobTypes: "Frontend Engineer",
+      desiredLocations: "Remote",
+      resumeUrl: "https://example.com/resume.pdf",
+    });
+    await requestUserConnectorConnection({
+      userId,
+      provider: "gmail",
+      consentScopes: ["email.metadata.read", "email.messages.read_recruiting"],
+    });
+    await requestUserConnectorConnection({
+      userId,
+      provider: "linkedin",
+      consentScopes: ["profile.basic.read"],
+    });
+
+    const ledger = await getUserOperatingLedger(userId);
+
+    expect(ledger.metrics.connectorReadiness).toBe(1);
+    expect(ledger.metrics.evidenceGates).toBeGreaterThan(0);
+    expect(ledger.queues.evidenceGates.map((gate) => gate.id)).toContain("connector-gmail");
+    expect(ledger.queues.connectorReadiness[0]).toMatchObject({
+      id: "gmail",
+      label: "Gmail setup",
+      status: "connection_requested",
+      providerIds: ["gmail"],
+    });
+    expect(ledger.profileEvidence.providers.find((provider) => provider.id === "linkedin")).toMatchObject({
+      status: "consent_required",
+      connectionStatus: "connection_requested",
+      consentScopes: ["profile.basic.read"],
+    });
+    expect(JSON.stringify(ledger)).not.toContain("accessToken");
+  });
+
+  it("surfaces success-fee compliance obligations in the operating ledger", async () => {
+    const userId = 99008;
+    const overdueDate = new Date(Date.now() - 2 * 86400000);
+    const application = await createApplication({
+      userId,
+      jobId: 2,
+      status: "offer",
+      notes: "Offer received and needs attribution review.",
+    });
+    const applicationId = Number(application.insertId);
+
+    await createApplicationApproval({
+      userId,
+      applicationId,
+      entityType: "application",
+      entityId: applicationId,
+      approvalType: "offer_attribution",
+      status: "pending",
+      riskLevel: "high",
+      requestedBy: "system",
+      title: "Confirm offer attribution",
+      description: "Confirm whether this offer came from Hire.AI activity.",
+    });
+    await createSuccessFee({
+      userId,
+      applicationId,
+      employerName: "Remote Ledger Co",
+      jobTitle: "Frontend Engineer",
+      monthlySalary: 9000,
+      monthlyFeeAmount: 45000,
+      status: "active",
+      startDate: new Date(Date.now() - 95 * 86400000),
+      nextVerificationDue: overdueDate,
+      verificationGraceExpiry: new Date(Date.now() + 12 * 86400000),
+      termsAcceptedAt: new Date(Date.now() - 95 * 86400000),
+    });
+
+    const ledger = await getUserOperatingLedger(userId);
+
+    expect(ledger.successFeeCompliance.status).toBe("needs_attention");
+    expect(ledger.metrics.activeSuccessFees).toBe(1);
+    expect(ledger.metrics.pendingOfferAttributions).toBe(1);
+    expect(ledger.metrics.overdueSuccessFeeVerifications).toBe(1);
+    expect(ledger.queues.successFeeCompliance.map((item) => item.type)).toEqual(
+      expect.arrayContaining(["offer_attribution", "verification_overdue"])
+    );
+    expect(ledger.nextActions).toContain("Review offer attribution and report hires that came through Hire.AI.");
+    expect(ledger.blockers).toContain("Success-fee compliance needs attention");
+  });
+
+  it("queues upcoming scheduled interviews until preparation is persisted", async () => {
+    const userId = 99006;
+    const application = await createApplication({
+      userId,
+      jobId: 2,
+      status: "viewed",
+      notes: "Employer invited the candidate to interview.",
+    });
+    const applicationId = Number(application.insertId);
+    const scheduled = await scheduleInterview({
+      applicationId,
+      interviewType: "video",
+      scheduledAt: new Date(Date.now() + 3 * 86400000),
+      duration: 45,
+      meetingLink: "https://meet.example.com/hire-ai",
+      interviewerName: "Recruiter",
+    }, userId);
+
+    const ledger = await getUserOperatingLedger(userId);
+
+    expect(ledger.metrics.interviewSchedulingNeeded).toBe(0);
+    expect(ledger.metrics.interviewPreparationNeeded).toBe(1);
+    expect(ledger.queues.interviewPreparationNeeded).toHaveLength(1);
+    expect(ledger.queues.interviewPreparationNeeded[0]).toMatchObject({
+      interviewId: scheduled.id,
+      applicationId,
+      jobId: 2,
+      interviewType: "video",
+    });
+    expect(ledger.nextActions).toContain("Prepare for 1 upcoming interview.");
+
+    await upsertInterviewPreparation({
+      userId,
+      jobId: 2,
+      questions: JSON.stringify(["How would you summarize your relevant experience?"]),
+      coachingTips: JSON.stringify(["Use verified resume evidence."]),
+      companyInsights: "Prepare against the saved job evidence.",
+    });
+
+    const updatedLedger = await getUserOperatingLedger(userId);
+
+    expect(updatedLedger.metrics.interviewPreparationNeeded).toBe(0);
+    expect(updatedLedger.queues.interviewPreparationNeeded).toHaveLength(0);
+  });
+
+  it("surfaces interview-status applications that still need scheduling", async () => {
+    const userId = 99002;
+    const futureInterview = new Date(Date.now() + 7 * 86400000);
+
+    await upsertUserProfile({
+      userId,
+      skills: "TypeScript, React, stakeholder communication",
+      experience: "Four years shipping customer-facing product work.",
+      desiredJobTypes: "Product Engineer",
+      desiredLocations: "Remote",
+      resumeUrl: "https://example.com/product-engineer.pdf",
+      preferences: JSON.stringify({ createFollowUps: true }),
+    });
+    const application = await createApplication({
+      userId,
+      jobId: 2,
+      status: "interview",
+      lastActivity: new Date(Date.now() - 7 * 86400000),
+      notes: "Employer invited candidate to schedule a video interview.",
+    });
+
+    const ledger = await getUserOperatingLedger(userId);
+
+    expect(ledger.metrics.interviewSchedulingNeeded).toBe(1);
+    expect(ledger.metrics.followUpsDue).toBe(0);
+    expect(ledger.queues.interviewScheduling).toHaveLength(1);
+    expect(ledger.queues.followUpsDue).toHaveLength(0);
+    expect(ledger.queues.interviewScheduling[0].applicationId).toBe(Number(application.insertId));
+    expect(ledger.nextActions.some((action) => action.includes("Schedule 1 interview invite"))).toBe(true);
+
+    await scheduleInterview({
+      applicationId: Number(application.insertId),
+      interviewType: "video",
+      scheduledAt: futureInterview,
+      duration: 45,
+      meetingLink: "https://meet.example.com/interview",
+    }, userId);
+
+    const ledgerAfterScheduling = await getUserOperatingLedger(userId);
+
+    expect(ledgerAfterScheduling.metrics.interviewSchedulingNeeded).toBe(0);
+    expect(ledgerAfterScheduling.queues.interviewScheduling).toHaveLength(0);
+  });
+
+  it("suppresses routine follow-up queue items once an active draft approval exists", async () => {
+    const userId = 99003;
+    const oldDate = new Date(Date.now() - 8 * 86400000);
+
+    await upsertUserProfile({
+      userId,
+      skills: "TypeScript, React, Node.js",
+      experience: "Five years building production web applications.",
+      desiredJobTypes: "Frontend Engineer",
+      desiredLocations: "Remote",
+      resumeUrl: "https://example.com/frontend-resume.pdf",
+      preferences: JSON.stringify({ createFollowUps: true }),
+    });
+    const application = await createApplication({
+      userId,
+      jobId: 2,
+      status: "applied",
+      appliedDate: oldDate,
+      lastActivity: oldDate,
+      notes: "Submitted and stale enough for a follow-up.",
+    });
+    const applicationId = Number(application.insertId);
+
+    await createFollowUp({
+      applicationId,
+      message: "Hi, I am checking in on my submitted application.",
+    }, userId);
+
+    const ledger = await getUserOperatingLedger(userId);
+
+    expect(ledger.metrics.followUpsDue).toBe(0);
+    expect(ledger.queues.followUpsDue).toHaveLength(0);
+    expect(ledger.metrics.pendingApprovals).toBe(1);
+    expect(ledger.queues.pendingApprovals[0]).toMatchObject({
+      entityType: "follow_up",
+      approvalType: "follow_up_send",
+    });
+    expect(ledger.nextActions.some((action) => action.includes("pending user approval"))).toBe(true);
+  });
+
+  it("suppresses employer response reply queue items once a reply draft approval exists", async () => {
+    const userId = 99004;
+
+    await upsertUserProfile({
+      userId,
+      skills: "Python, APIs, distributed teams",
+      experience: "Six years building backend services.",
+      desiredJobTypes: "Backend Engineer",
+      desiredLocations: "Remote",
+      resumeUrl: "https://example.com/backend-resume.pdf",
+      preferences: JSON.stringify({ createFollowUps: true }),
+    });
+    const application = await createApplication({
+      userId,
+      jobId: 3,
+      status: "viewed",
+      notes: "Recruiter asked a question after viewing the application.",
+    });
+    const applicationId = Number(application.insertId);
+    const response = await recordEmployerResponse({
+      applicationId,
+      responseType: "employer_question",
+      source: "email",
+      summary: "Recruiter asked for availability and remote collaboration details.",
+      receivedAt: new Date(),
+    }, userId);
+
+    await createFollowUp({
+      applicationId,
+      message: "Hi, thanks for reaching out. [Add exact availability here.]",
+      purpose: "employer_reply",
+      sourceResponseId: response.responseId,
+    }, userId);
+
+    const ledger = await getUserOperatingLedger(userId);
+
+    expect(ledger.metrics.employerResponsesNeedingReply).toBe(0);
+    expect(ledger.queues.employerResponsesNeedingReply).toHaveLength(0);
+    expect(ledger.metrics.pendingApprovals).toBe(1);
+    expect(ledger.queues.pendingApprovals[0]?.payload).toContain('"purpose":"employer_reply"');
+    expect(ledger.nextActions.some((action) => action.includes("Reply to 1 employer question"))).toBe(false);
+  });
+
+  it("surfaces approved unsent follow-up drafts as send handoffs", async () => {
+    const userId = 99005;
+    const oldDate = new Date(Date.now() - 8 * 86400000);
+
+    await upsertUserProfile({
+      userId,
+      skills: "React, TypeScript, customer communication",
+      experience: "Five years building customer-facing software.",
+      desiredJobTypes: "Frontend Engineer",
+      desiredLocations: "Remote",
+      resumeUrl: "https://example.com/frontend-resume.pdf",
+      preferences: JSON.stringify({ createFollowUps: true }),
+    });
+    const application = await createApplication({
+      userId,
+      jobId: 2,
+      status: "applied",
+      appliedDate: oldDate,
+      lastActivity: oldDate,
+      notes: "Submitted application with an approved follow-up draft.",
+    });
+    const applicationId = Number(application.insertId);
+    const followUp = await createFollowUp({
+      applicationId,
+      message: "Hi, I am checking in on my submitted application.",
+    }, userId);
+    const approval = (await listUserApplicationApprovals(userId, "pending")).find((item) =>
+      item.entityType === "follow_up" &&
+      item.entityId === followUp.id &&
+      item.approvalType === "follow_up_send"
+    );
+    expect(approval).toBeTruthy();
+
+    await resolveApplicationApproval(
+      approval!.id,
+      userId,
+      "approved",
+      "Approved follow-up draft for manual send handoff.",
+      "user"
+    );
+
+    const ledger = await getUserOperatingLedger(userId);
+
+    expect(ledger.metrics.pendingApprovals).toBe(0);
+    expect(ledger.metrics.followUpsDue).toBe(0);
+    expect(ledger.metrics.approvedFollowUpsReadyToSend).toBe(1);
+    expect(ledger.queues.approvedFollowUpsReadyToSend).toHaveLength(1);
+    expect(ledger.queues.approvedFollowUpsReadyToSend[0]).toMatchObject({
+      applicationId,
+      followUpId: followUp.id,
+      approvalId: approval!.id,
+      purpose: "routine_follow_up",
+    });
+    expect(ledger.nextActions.some((action) =>
+      action.includes("Record send handoff for 1 approved follow-up draft")
+    )).toBe(true);
+
+    await markFollowUpSent(followUp.id, userId);
+    const ledgerAfterSent = await getUserOperatingLedger(userId);
+
+    expect(ledgerAfterSent.metrics.approvedFollowUpsReadyToSend).toBe(0);
+    expect(ledgerAfterSent.queues.approvedFollowUpsReadyToSend).toHaveLength(0);
+  });
+
+  it("retires approved unsent follow-up handoffs when an employer response arrives", async () => {
+    const userId = 99007;
+    const oldDate = new Date(Date.now() - 8 * 86400000);
+
+    await upsertUserProfile({
+      userId,
+      skills: "React, TypeScript, customer communication",
+      experience: "Five years building customer-facing software.",
+      desiredJobTypes: "Frontend Engineer",
+      desiredLocations: "Remote",
+      resumeUrl: "https://example.com/frontend-resume.pdf",
+      preferences: JSON.stringify({ createFollowUps: true }),
+    });
+    const application = await createApplication({
+      userId,
+      jobId: 2,
+      status: "applied",
+      appliedDate: oldDate,
+      lastActivity: oldDate,
+      notes: "Submitted application with an approved follow-up draft.",
+    });
+    const applicationId = Number(application.insertId);
+    const followUp = await createFollowUp({
+      applicationId,
+      message: "Hi, I am checking in on my submitted application.",
+    }, userId);
+    const approval = (await listUserApplicationApprovals(userId, "pending")).find((item) =>
+      item.entityType === "follow_up" &&
+      item.entityId === followUp.id &&
+      item.approvalType === "follow_up_send"
+    );
+    expect(approval).toBeTruthy();
+
+    await resolveApplicationApproval(
+      approval!.id,
+      userId,
+      "approved",
+      "Approved follow-up draft for manual send handoff.",
+      "user"
+    );
+
+    expect((await getUserOperatingLedger(userId)).metrics.approvedFollowUpsReadyToSend).toBe(1);
+
+    await recordEmployerResponse({
+      applicationId,
+      responseType: "employer_question",
+      source: "email",
+      summary: "Recruiter replied with a new question, making the old follow-up stale.",
+      receivedAt: new Date(),
+    }, userId);
+
+    const ledger = await getUserOperatingLedger(userId);
+    const approvals = await listUserApplicationApprovals(userId, "all");
+    const staleApproval = approvals.find((item) => item.id === approval!.id);
+    const auditEvents = await getAuditEventsForEntity(userId, "application", applicationId);
+
+    expect(staleApproval?.status).toBe("cancelled");
+    expect(staleApproval?.decisionNote).toContain("unsent follow-up draft stale");
+    expect(ledger.metrics.approvedFollowUpsReadyToSend).toBe(0);
+    expect(ledger.queues.approvedFollowUpsReadyToSend).toHaveLength(0);
+    expect(ledger.metrics.employerResponsesNeedingReply).toBe(1);
+    expect(auditEvents.some((event) =>
+      event.action === "stale_follow_up_approvals_cancelled" &&
+      event.afterState?.includes(`"cancelledApprovalIds":[${approval!.id}]`) &&
+      event.afterState?.includes('"cancelledStatuses":["approved"]')
+    )).toBe(true);
+  });
+});
