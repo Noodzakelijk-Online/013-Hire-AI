@@ -3,6 +3,12 @@
  * Detects ATS (Applicant Tracking System) and automates job applications
  */
 
+import {
+  normalizeSubmissionEvidence,
+  type NormalizedSubmissionEvidence,
+  type SubmissionEvidenceInput,
+} from "./applicationSubmissionEvidence";
+
 export type ATSType = "greenhouse" | "lever" | "workday" | "taleo" | "smartrecruiters" | "unknown";
 
 export interface ApplicationData {
@@ -22,10 +28,13 @@ export interface ApplicationResult {
   success: boolean;
   prepared: boolean;
   submissionAttempted: boolean;
+  /** True only when an external submission actually completed. */
+  externalSubmissionPerformed: boolean;
   reviewRequired: boolean;
   atsType: ATSType;
   message: string;
   confirmationId?: string;
+  submissionEvidence?: SubmissionEvidenceInput;
   error?: string;
 }
 
@@ -76,11 +85,38 @@ export async function applyToJob(
     success: false,
     prepared: true,
     submissionAttempted: false,
+    externalSubmissionPerformed: false,
     reviewRequired: true,
     atsType,
     message: `Application data is ready, but ${atsType} submission requires user review and manual confirmation.`,
     error: "Final submission is disabled",
   };
+}
+
+/**
+ * Converts an automation result into recordable submission proof. A successful
+ * preparation result is deliberately insufficient: the ledger only moves to
+ * "applied" when an external submission, explicit evidence, and no review
+ * requirement are all present.
+ */
+export function getVerifiedApplicationSubmissionEvidence(
+  result: ApplicationResult
+): NormalizedSubmissionEvidence | null {
+  if (
+    !result.success ||
+    !result.submissionAttempted ||
+    !result.externalSubmissionPerformed ||
+    result.reviewRequired ||
+    !result.submissionEvidence
+  ) {
+    return null;
+  }
+
+  try {
+    return normalizeSubmissionEvidence(result.submissionEvidence);
+  } catch {
+    return null;
+  }
 }
 
 /**

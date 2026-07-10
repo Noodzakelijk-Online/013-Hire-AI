@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { applyToJob, detectATSType } from "./applicationAutomation";
+import {
+  applyToJob,
+  detectATSType,
+  getVerifiedApplicationSubmissionEvidence,
+} from "./applicationAutomation";
 
 const applicationData = {
   firstName: "Alex",
@@ -24,8 +28,22 @@ describe("guarded application preparation", () => {
       success: false,
       prepared: true,
       submissionAttempted: false,
+      externalSubmissionPerformed: false,
       reviewRequired: true,
       atsType: "greenhouse",
     });
+  });
+
+  it("does not treat a generic success flag as submission evidence", () => {
+    expect(getVerifiedApplicationSubmissionEvidence({
+      success: true,
+      prepared: true,
+      submissionAttempted: false,
+      externalSubmissionPerformed: false,
+      reviewRequired: false,
+      atsType: "greenhouse",
+      message: "Prepared application.",
+      confirmationId: "unverified-123",
+    })).toBeNull();
   });
 });

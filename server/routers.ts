@@ -2150,7 +2150,12 @@ export const appRouter = router({
           createAdminReviewItem,
           createApplicationApproval,
         } = await import("./db");
-        const { applyToJob, prepareApplicationData, validateApplicationData } = await import(
+        const {
+          applyToJob,
+          getVerifiedApplicationSubmissionEvidence,
+          prepareApplicationData,
+          validateApplicationData,
+        } = await import(
           "./applicationAutomation"
         );
 
@@ -2185,15 +2190,19 @@ export const appRouter = router({
         // Attempt automated application
         const result = await applyToJob(job.applicationUrl, applicationData);
 
+        // A preparation result never becomes an applied record without explicit proof.
+        const submissionEvidence = getVerifiedApplicationSubmissionEvidence(result);
+        const submissionRecorded = submissionEvidence !== null;
+
         // Create application record
         const applicationRecord = await createApplication({
           userId: ctx.user.id,
           jobId: input.jobId,
-          status: result.success ? "applied" : "pending",
-          appliedDate: result.success ? new Date() : undefined,
+          status: submissionRecorded ? "applied" : "pending",
+          appliedDate: submissionRecorded ? new Date() : undefined,
           coverLetter: input.coverLetter,
           notes: result.message,
-          isAutoApplied: result.success ? 1 : 0,
+          isAutoApplied: submissionRecorded ? 1 : 0,
         });
         const applicationRecordId = Number(applicationRecord.insertId);
         await createApplicationMaterial({
@@ -2208,7 +2217,7 @@ export const appRouter = router({
           jobId: input.jobId,
           platformId: job.platformId,
           attemptType: "prepare",
-          status: result.success
+          status: submissionRecorded
             ? "submitted"
             : result.reviewRequired
               ? "review_required"
@@ -2218,17 +2227,17 @@ export const appRouter = router({
           startedAt: new Date(),
           finishedAt: new Date(),
           errorMessage: result.error,
-          confirmationText: result.confirmationId
+          confirmationText: submissionEvidence?.noteContent ?? (result.confirmationId
             ? `${result.message} Confirmation: ${result.confirmationId}`
-            : result.message,
-          confirmationUrl: result.success ? job.applicationUrl : undefined,
+            : result.message),
+          confirmationUrl: submissionEvidence?.confirmationUrl ?? undefined,
           retryCount: 0,
         });
         await createAuditEvent({
           userId: ctx.user.id,
           entityType: "application",
           entityId: applicationRecordId,
-          action: result.success ? "application_submitted_by_automation" : "application_prepared_by_automation",
+          action: submissionRecorded ? "application_submitted_by_automation" : "application_prepared_by_automation",
           actor: "system",
           source: "automation.applyToJob",
           afterState: JSON.stringify({
@@ -2237,11 +2246,12 @@ export const appRouter = router({
             prepared: result.prepared,
             submissionAttempted: result.submissionAttempted,
             reviewRequired: result.reviewRequired,
-            status: result.success ? "applied" : "pending",
+            externalSubmissionPerformed: submissionRecorded,
+            status: submissionRecorded ? "applied" : "pending",
           }),
-          riskLevel: result.success ? "high" : result.reviewRequired ? "medium" : "low",
+          riskLevel: submissionRecorded ? "high" : result.reviewRequired ? "medium" : "low",
         });
-        if (result.reviewRequired || !result.success) {
+        if (!submissionRecorded) {
           await createAdminReviewItem({
             userId: ctx.user.id,
             entityType: "application",

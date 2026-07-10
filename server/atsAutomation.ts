@@ -79,6 +79,23 @@ export interface CAPTCHAResult {
   error?: string;
 }
 
+function finalSubmissionDisabled(atsType: ATSType): ATSResult {
+  return {
+    success: false,
+    status: "partial",
+    message: `${atsType} application data can be prepared, but final submission is disabled until a user reviews and submits externally.`,
+    nextSteps: [
+      "Review the prepared application material.",
+      "Submit manually through the employer portal.",
+      "Record deterministic confirmation evidence in Hire.AI.",
+    ],
+  };
+}
+
+function isUnattendedFinalSubmissionDisabled(): true {
+  return true;
+}
+
 // ============================================================================
 // CAPTCHA HANDLING
 // ============================================================================
@@ -386,6 +403,13 @@ export class WorkdayAutomation {
   }
 
   async apply(applicationUrl: string, data: ApplicationData, credentials?: ATSCredentials): Promise<ATSResult> {
+    if (isUnattendedFinalSubmissionDisabled()) {
+      void applicationUrl;
+      void data;
+      void credentials;
+      return finalSubmissionDisabled("workday");
+    }
+
     if (!this.browser || !this.page) {
       await this.initialize();
     }
@@ -709,6 +733,13 @@ export class TaleoAutomation {
   }
 
   async apply(applicationUrl: string, data: ApplicationData, credentials?: ATSCredentials): Promise<ATSResult> {
+    if (isUnattendedFinalSubmissionDisabled()) {
+      void applicationUrl;
+      void data;
+      void credentials;
+      return finalSubmissionDisabled("taleo");
+    }
+
     if (!this.browser || !this.page) {
       await this.initialize();
     }
@@ -952,15 +983,5 @@ export async function applyWithATS(
   void data;
   void credentials;
   void captchaApiKey;
-
-  return {
-    success: false,
-    status: "partial",
-    message: `${atsType} application data can be prepared, but final submission is disabled until a user reviews and submits externally.`,
-    nextSteps: [
-      "Review the prepared application material.",
-      "Submit manually through the employer portal.",
-      "Record deterministic confirmation evidence in Hire.AI.",
-    ],
-  };
+  return finalSubmissionDisabled(atsType);
 }
