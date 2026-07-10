@@ -8,6 +8,14 @@ import { buildJobDecisionMutationInput, type JobDecisionLifecycleAction } from "
 import { getSafeExternalUrl, openExternalUrl } from "@/lib/externalUrl";
 import { getJobMatchDecisionSummary } from "@/lib/jobMatchDecisionSummary";
 import { getJobSourcingControlSummary } from "@/lib/jobSourcingControl";
+import {
+  countActiveJobSearchFilters,
+  defaultJobSearchFilters,
+  filterJobListings,
+  type JobApplicationProcessFilter,
+  type JobExperienceLevel,
+  type JobPostedWithin,
+} from "@/lib/jobSearchFilters";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,6 +59,13 @@ export default function JobSearch() {
   const [selectedPlatform, setSelectedPlatform] = useState<string>("all");
   const [salaryRange, setSalaryRange] = useState<[number, number]>([0, 300000]);
   const [showRemoteOnly, setShowRemoteOnly] = useState(true);
+  const [selectedExperienceLevel, setSelectedExperienceLevel] = useState<JobExperienceLevel>("all");
+  const [selectedApplicationProcess, setSelectedApplicationProcess] = useState<JobApplicationProcessFilter>("all");
+  const [postedWithin, setPostedWithin] = useState<JobPostedWithin>("all");
+  const [visaSponsorshipOnly, setVisaSponsorshipOnly] = useState(false);
+  const [openHiringSupportOnly, setOpenHiringSupportOnly] = useState(false);
+  const [diversityFriendlyOnly, setDiversityFriendlyOnly] = useState(false);
+  const [salaryDisclosedOnly, setSalaryDisclosedOnly] = useState(false);
   const [selectedJob, setSelectedJob] = useState<any>(null);
   const [activeTab, setActiveTab] = useState("all");
   const [autonomousMode, setAutonomousMode] = useState<"review_first" | "auto_apply">("review_first");
@@ -158,41 +173,78 @@ export default function JobSearch() {
   // Filter jobs
   const filteredJobs = useMemo(() => {
     if (!jobsList) return [];
-
-    return jobsList.filter((job: any) => {
-      // Search query filter
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        const matchesSearch =
-          job.title?.toLowerCase().includes(query) ||
-          job.company?.toLowerCase().includes(query) ||
-          job.description?.toLowerCase().includes(query) ||
-          job.skills?.toLowerCase().includes(query);
-        if (!matchesSearch) return false;
-      }
-
-      // Job type filter
-      if (selectedJobType !== "all" && job.jobType !== selectedJobType) {
-        return false;
-      }
-
-      // Platform filter
-      if (selectedPlatform !== "all" && job.platformId?.toString() !== selectedPlatform) {
-        return false;
-      }
-
-      // Salary filter
-      if (job.salaryMin && job.salaryMin < salaryRange[0]) return false;
-      if (job.salaryMax && job.salaryMax > salaryRange[1]) return false;
-
-      // Remote filter
-      if (showRemoteOnly && job.location && !job.location.toLowerCase().includes("remote")) {
-        return false;
-      }
-
-      return true;
+    return filterJobListings(jobsList, {
+      query: searchQuery,
+      jobType: selectedJobType,
+      platformId: selectedPlatform,
+      salaryRange,
+      remoteOnly: showRemoteOnly,
+      experienceLevel: selectedExperienceLevel,
+      applicationProcess: selectedApplicationProcess,
+      visaSponsorshipOnly,
+      openHiringSupportOnly,
+      diversityFriendlyOnly,
+      salaryDisclosedOnly,
+      postedWithin,
     });
-  }, [jobsList, searchQuery, selectedJobType, selectedPlatform, salaryRange, showRemoteOnly]);
+  }, [
+    diversityFriendlyOnly,
+    jobsList,
+    openHiringSupportOnly,
+    postedWithin,
+    salaryDisclosedOnly,
+    salaryRange,
+    searchQuery,
+    selectedApplicationProcess,
+    selectedExperienceLevel,
+    selectedJobType,
+    selectedPlatform,
+    showRemoteOnly,
+    visaSponsorshipOnly,
+  ]);
+
+  const activeFilterCount = useMemo(() => countActiveJobSearchFilters({
+    query: searchQuery,
+    jobType: selectedJobType,
+    platformId: selectedPlatform,
+    salaryRange,
+    remoteOnly: showRemoteOnly,
+    experienceLevel: selectedExperienceLevel,
+    applicationProcess: selectedApplicationProcess,
+    visaSponsorshipOnly,
+    openHiringSupportOnly,
+    diversityFriendlyOnly,
+    salaryDisclosedOnly,
+    postedWithin,
+  }), [
+    diversityFriendlyOnly,
+    openHiringSupportOnly,
+    postedWithin,
+    salaryDisclosedOnly,
+    salaryRange,
+    searchQuery,
+    selectedApplicationProcess,
+    selectedExperienceLevel,
+    selectedJobType,
+    selectedPlatform,
+    showRemoteOnly,
+    visaSponsorshipOnly,
+  ]);
+
+  const resetFilters = () => {
+    setSearchQuery(defaultJobSearchFilters.query);
+    setSelectedJobType(defaultJobSearchFilters.jobType);
+    setSelectedPlatform(defaultJobSearchFilters.platformId);
+    setSalaryRange(defaultJobSearchFilters.salaryRange);
+    setShowRemoteOnly(defaultJobSearchFilters.remoteOnly);
+    setSelectedExperienceLevel(defaultJobSearchFilters.experienceLevel);
+    setSelectedApplicationProcess(defaultJobSearchFilters.applicationProcess);
+    setPostedWithin(defaultJobSearchFilters.postedWithin);
+    setVisaSponsorshipOnly(defaultJobSearchFilters.visaSponsorshipOnly);
+    setOpenHiringSupportOnly(defaultJobSearchFilters.openHiringSupportOnly);
+    setDiversityFriendlyOnly(defaultJobSearchFilters.diversityFriendlyOnly);
+    setSalaryDisclosedOnly(defaultJobSearchFilters.salaryDisclosedOnly);
+  };
 
   const scoredJobs = useMemo(() => {
     return filteredJobs.map((job: any) => {
@@ -506,7 +558,7 @@ export default function JobSearch() {
               {filteredJobs.length} jobs found across {platformsData?.length || 0} platforms
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Select value={autonomousMode} onValueChange={(value) => setAutonomousMode(value as "review_first" | "auto_apply")}>
               <SelectTrigger className="w-[150px] bg-slate-800 border-slate-700">
                 <SelectValue />
@@ -751,15 +803,62 @@ export default function JobSearch() {
                     Remote Only
                   </label>
                 </div>
+                <Select value={selectedExperienceLevel} onValueChange={(value) => setSelectedExperienceLevel(value as JobExperienceLevel)}>
+                  <SelectTrigger data-testid="job-filter-experience" className="w-[150px] bg-slate-800 border-slate-700">
+                    <SelectValue placeholder="Experience" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Levels</SelectItem>
+                    <SelectItem value="entry">Entry</SelectItem>
+                    <SelectItem value="junior">Junior</SelectItem>
+                    <SelectItem value="mid">Mid</SelectItem>
+                    <SelectItem value="senior">Senior</SelectItem>
+                    <SelectItem value="lead">Lead / Staff</SelectItem>
+                    <SelectItem value="executive">Executive</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={selectedApplicationProcess} onValueChange={(value) => setSelectedApplicationProcess(value as JobApplicationProcessFilter)}>
+                  <SelectTrigger data-testid="job-filter-application-process" className="w-[150px] bg-slate-800 border-slate-700">
+                    <SelectValue placeholder="Application system" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Systems</SelectItem>
+                    <SelectItem value="greenhouse">Greenhouse</SelectItem>
+                    <SelectItem value="lever">Lever</SelectItem>
+                    <SelectItem value="workday">Workday</SelectItem>
+                    <SelectItem value="email">Email</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={postedWithin} onValueChange={(value) => setPostedWithin(value as JobPostedWithin)}>
+                  <SelectTrigger data-testid="job-filter-posted-within" className="w-[140px] bg-slate-800 border-slate-700">
+                    <SelectValue placeholder="Posted" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Any Date</SelectItem>
+                    <SelectItem value="1">Past 24 hours</SelectItem>
+                    <SelectItem value="3">Past 3 days</SelectItem>
+                    <SelectItem value="7">Past week</SelectItem>
+                    <SelectItem value="30">Past month</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
             <div className="mt-4 pt-4 border-t border-slate-700">
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between gap-3 mb-2">
                 <span className="text-sm text-slate-400">Salary Range</span>
-                <span className="text-sm text-slate-300">
-                  ${(salaryRange[0] / 1000).toFixed(0)}k - ${(salaryRange[1] / 1000).toFixed(0)}k
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-slate-300">
+                    ${(salaryRange[0] / 1000).toFixed(0)}k - ${(salaryRange[1] / 1000).toFixed(0)}k
+                  </span>
+                  {activeFilterCount > 0 && (
+                    <Button data-testid="job-filter-clear" type="button" size="sm" variant="ghost" className="h-7 px-2 text-slate-300" onClick={resetFilters}>
+                      <XCircle className="mr-1 h-3.5 w-3.5" />
+                      Clear {activeFilterCount}
+                    </Button>
+                  )}
+                </div>
               </div>
               <Slider
                 value={salaryRange}
@@ -769,6 +868,23 @@ export default function JobSearch() {
                 step={10000}
                 className="w-full"
               />
+              <div className="mt-4 flex flex-wrap gap-x-5 gap-y-3">
+                {[
+                  ["visa-sponsorship", "Visa sponsorship", visaSponsorshipOnly, setVisaSponsorshipOnly],
+                  ["open-hiring-support", "Open hiring support", openHiringSupportOnly, setOpenHiringSupportOnly],
+                  ["diversity-friendly", "Diversity-friendly", diversityFriendlyOnly, setDiversityFriendlyOnly],
+                  ["salary-disclosed", "Salary disclosed", salaryDisclosedOnly, setSalaryDisclosedOnly],
+                ].map(([id, label, checked, setChecked]) => (
+                  <div key={id as string} className="flex items-center gap-2">
+                    <Checkbox
+                      id={id as string}
+                      checked={checked as boolean}
+                      onCheckedChange={(value) => (setChecked as (next: boolean) => void)(value === true)}
+                    />
+                    <label htmlFor={id as string} className="text-sm text-slate-300 cursor-pointer">{label as string}</label>
+                  </div>
+                ))}
+              </div>
             </div>
           </CardContent>
         </Card>
