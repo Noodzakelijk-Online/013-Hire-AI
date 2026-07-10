@@ -3,6 +3,7 @@ import type { Application, Job, UserProfile } from "../drizzle/schema";
 import {
   buildAutonomousPlan,
   getExecutableDecisions,
+  isJobCurrentForAutonomousProcessing,
   parseAutonomousPreferences,
 } from "./autonomousOrchestrator";
 
@@ -151,6 +152,27 @@ describe("autonomous orchestrator", () => {
     expect(plan.decisions[0].jobId).toBe(baseJob.id);
     expect(plan.decisions[0].action).toBe("queue_for_review");
     expect(plan.decisions[1].action).toBe("skip");
+  });
+
+  it("excludes expired listings from every autonomous preparation decision", () => {
+    const expiredJob: Job = {
+      ...baseJob,
+      id: 2,
+      externalId: "expired-job",
+      expiryDate: new Date(Date.now() - 60_000),
+    };
+
+    expect(isJobCurrentForAutonomousProcessing(expiredJob)).toBe(false);
+
+    const plan = buildAutonomousPlan([expiredJob, baseJob], profile, [], {
+      minMatchScore: 0,
+      dailyApplicationLimit: 2,
+    });
+
+    expect(plan.summary.scanned).toBe(1);
+    expect(plan.summary.expiredJobsSkipped).toBe(1);
+    expect(plan.decisions.map((decision) => decision.jobId)).toEqual([baseJob.id]);
+    expect(plan.nextActions).toContain("Excluded 1 expired job posting from autonomous preparation.");
   });
 
   it("never auto-applies without a connected resume", () => {

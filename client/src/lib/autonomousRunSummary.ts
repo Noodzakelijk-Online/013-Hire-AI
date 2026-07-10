@@ -8,6 +8,9 @@ export interface AutonomousRunSummaryInput {
   skippedEvidenceGatedActions?: number;
   evidenceGates?: Array<{ id?: string; label?: string; severity?: string }>;
   failedActions?: number;
+  summary?: {
+    expiredJobsSkipped?: number;
+  };
 }
 
 function plural(count: number, singular: string, pluralLabel = `${singular}s`) {
@@ -28,6 +31,7 @@ export function getAutonomousRunCounts(result: AutonomousRunSummaryInput) {
     safetyBlockedFollowUps: result.skippedSafetyBlockedFollowUps || 0,
     evidenceGatedActions: result.skippedEvidenceGatedActions || 0,
     evidenceGates: result.evidenceGates?.length || 0,
+    expiredJobsSkipped: result.summary?.expiredJobsSkipped || 0,
     failures: result.failedActions || 0,
     totalCreated: jobTasks + followUpDrafts,
   };
@@ -59,6 +63,9 @@ export function formatAutonomousRunSummary(result: AutonomousRunSummaryInput) {
     notes.push(`${plural(counts.evidenceGatedActions, "external action")} gated by profile or connector evidence`);
   } else if (counts.evidenceGates > 0) {
     notes.push(`${plural(counts.evidenceGates, "evidence gate")} active`);
+  }
+  if (counts.expiredJobsSkipped > 0) {
+    notes.push(`${plural(counts.expiredJobsSkipped, "expired job posting")} excluded`);
   }
   if (counts.failures > 0) {
     notes.push(`${plural(counts.failures, "action")} failed`);

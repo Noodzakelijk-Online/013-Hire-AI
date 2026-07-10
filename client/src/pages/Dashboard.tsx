@@ -1045,6 +1045,7 @@ export default function Dashboard() {
                   ["Manual", autonomousPlan.summary.manualApply],
                   ["Follow-ups", autonomousPlan.summary.followUpsDue],
                   ["Gates", autonomousPlan.evidenceGates?.length || 0],
+                  ["Expired", autonomousPlan.summary.expiredJobsSkipped || 0],
                 ].map(([label, value]) => (
                   <div key={label} className="border-l border-slate-700 pl-3">
                     <p className="text-xs text-slate-500">{label}</p>
@@ -1059,6 +1060,11 @@ export default function Dashboard() {
                 {autonomousPlan.summary.policyWarnings > 0 && (
                   <Badge variant="outline" className="w-fit border-amber-500/40 text-amber-300">
                     {autonomousPlan.summary.policyWarnings} policy warning{autonomousPlan.summary.policyWarnings === 1 ? "" : "s"}
+                  </Badge>
+                )}
+                {autonomousPlan.summary.expiredJobsSkipped > 0 && (
+                  <Badge variant="outline" className="w-fit border-slate-700 text-slate-300">
+                    {autonomousPlan.summary.expiredJobsSkipped} expired posting{autonomousPlan.summary.expiredJobsSkipped === 1 ? "" : "s"} excluded
                   </Badge>
                 )}
               </div>

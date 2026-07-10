@@ -543,8 +543,11 @@ export default function JobSearch() {
                     <h2 className="text-sm font-semibold text-white">Autonomous sourcing plan</h2>
                   </div>
                   <p className="text-sm text-slate-400">
-                    Scanned {autonomousPlan.summary.scanned} jobs, found {autonomousPlan.summary.eligible} eligible matches,
+                    Scanned {autonomousPlan.summary.scanned} current jobs, found {autonomousPlan.summary.eligible} eligible matches,
                     prepared {autonomousPlan.summary.queuedForReview} for review and identified {autonomousPlan.summary.manualApply} manual tasks.
+                    {autonomousPlan.summary.expiredJobsSkipped > 0
+                      ? ` Excluded ${autonomousPlan.summary.expiredJobsSkipped} expired posting${autonomousPlan.summary.expiredJobsSkipped === 1 ? "" : "s"}.`
+                      : ""}
                   </p>
                   {autonomousPlan.policyWarnings?.length > 0 && (
                     <div className="mt-3 space-y-1">
@@ -587,7 +590,7 @@ export default function JobSearch() {
                     <p className="mt-1 text-sm text-slate-400">{autonomousControl.detail}</p>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center">
+                <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-center">
                   <div className="rounded-md bg-slate-800 px-3 py-2">
                     <p className="text-lg font-bold text-white">{autonomousPlan.summary.eligible}</p>
                     <p className="text-xs text-slate-400">Eligible</p>
@@ -607,6 +610,10 @@ export default function JobSearch() {
                   <div className="rounded-md bg-slate-800 px-3 py-2">
                     <p className="text-lg font-bold text-amber-400">{autonomousPlan.evidenceGates?.length || 0}</p>
                     <p className="text-xs text-slate-400">Gates</p>
+                  </div>
+                  <div className="rounded-md bg-slate-800 px-3 py-2">
+                    <p className="text-lg font-bold text-slate-300">{autonomousPlan.summary.expiredJobsSkipped || 0}</p>
+                    <p className="text-xs text-slate-400">Expired</p>
                   </div>
                 </div>
               </div>

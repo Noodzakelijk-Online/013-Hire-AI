@@ -46,6 +46,7 @@ export interface AutonomousPlan {
   mode: AutonomousMode;
   summary: {
     scanned: number;
+    expiredJobsSkipped: number;
     eligible: number;
     queuedForApply: number;
     queuedForReview: number;
@@ -59,6 +60,18 @@ export interface AutonomousPlan {
   followUps: AutonomousFollowUpDecision[];
   nextActions: string[];
   policyWarnings: string[];
+}
+
+/**
+ * Keep a stale listing out of every autonomous path, even when a provider has
+ * not yet refreshed its `isActive` flag.
+ */
+export function isJobCurrentForAutonomousProcessing(job: Job, now = new Date()): boolean {
+  if (job.isActive !== 1) return false;
+  if (!job.expiryDate) return true;
+
+  const expiryMs = new Date(job.expiryDate).getTime();
+  return Number.isFinite(expiryMs) && expiryMs > now.getTime();
 }
 
 function splitList(value?: string | null): string[] {
@@ -208,6 +221,11 @@ export function buildAutonomousPlan(
   const dailyLimit = Math.min(25, Math.max(1, Math.round(preferences.dailyApplicationLimit ?? 12)));
   const requireHumanReview = preferences.requireHumanReview ?? true;
   const allowUnsupportedATS = preferences.allowUnsupportedATS ?? false;
+  const now = new Date();
+  const expiredJobsSkipped = jobs.filter((job) =>
+    job.isActive === 1 && job.expiryDate !== null && !isJobCurrentForAutonomousProcessing(job, now)
+  ).length;
+  const currentJobs = jobs.filter((job) => isJobCurrentForAutonomousProcessing(job, now));
   const appliedJobIds = new Set(applications.map((application) => application.jobId));
   const alreadyQueuedToday = applications.filter(hasAppliedToday).length;
   const dailyRemaining = Math.max(0, dailyLimit - alreadyQueuedToday);
@@ -272,8 +290,7 @@ export function buildAutonomousPlan(
     ? followUps.filter((followUp) => followUp.action === "send_follow_up").length
     : 0;
 
-  const rankedDecisions = jobs
-    .filter((job) => job.isActive === 1)
+  const rankedDecisions = currentJobs
     .map((job) => {
       const { score, reasons, blockers } = scoreJobForProfile(job, profile);
       const support = job.applicationUrl
@@ -382,6 +399,9 @@ export function buildAutonomousPlan(
   if (followUpsDue > 0) {
     nextActions.push(`Draft ${followUpsDue} timely follow-up message${followUpsDue === 1 ? "" : "s"}.`);
   }
+  if (expiredJobsSkipped > 0) {
+    nextActions.push(`Excluded ${expiredJobsSkipped} expired job posting${expiredJobsSkipped === 1 ? "" : "s"} from autonomous preparation.`);
+  }
   if (nextActions.length === 0) {
     nextActions.push("Keep scouting and wait for stronger matches.");
   }
@@ -389,7 +409,8 @@ export function buildAutonomousPlan(
   return {
     mode,
     summary: {
-      scanned: jobs.length,
+      scanned: currentJobs.length,
+      expiredJobsSkipped,
       eligible: decisions.filter((decision) => decision.action !== "skip").length,
       queuedForApply,
       queuedForReview,

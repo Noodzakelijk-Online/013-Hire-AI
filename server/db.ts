@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, like, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gt, gte, isNull, like, or, sql, type SQL } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { 
   InsertUser, 
@@ -258,17 +258,21 @@ export async function createJob(job: InsertJob) {
 export async function getActiveJobs(limit = 100, offset = 0) {
   const boundedLimit = Math.min(Math.max(limit, 1), 250);
   const boundedOffset = Math.max(offset, 0);
+  const now = new Date();
   const db = await getDb();
   if (!db) {
     return sampleJobs
-      .filter((job) => job.isActive === 1)
+      .filter((job) => job.isActive === 1 && (!job.expiryDate || job.expiryDate > now))
       .sort((a, b) => (b.postedDate?.getTime() || 0) - (a.postedDate?.getTime() || 0))
       .slice(boundedOffset, boundedOffset + boundedLimit);
   }
   return await db
     .select()
     .from(jobs)
-    .where(eq(jobs.isActive, 1))
+    .where(and(
+      eq(jobs.isActive, 1),
+      or(isNull(jobs.expiryDate), gt(jobs.expiryDate, now))
+    ))
     .orderBy(desc(jobs.postedDate), desc(jobs.createdAt))
     .limit(boundedLimit)
     .offset(boundedOffset);

@@ -42,4 +42,10 @@ describe("autonomous run summary", () => {
       "Queued 1 job task; 2 external actions gated by profile or connector evidence"
     );
   });
+
+  it("reports expired postings excluded from preparation", () => {
+    expect(formatAutonomousRunSummary({
+      summary: { expiredJobsSkipped: 2 },
+    })).toBe("Autonomous run completed with no new tasks; 2 expired job postings excluded");
+  });
 });
