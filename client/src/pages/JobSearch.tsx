@@ -133,6 +133,17 @@ export default function JobSearch() {
   } = trpc.applications.listDecisions.useQuery(undefined, {
     enabled: Boolean(user),
   });
+  const { data: operatingLedger } = trpc.applications.getOperatingLedger.useQuery(undefined, {
+    enabled: Boolean(user),
+  });
+
+  const autonomousEnabled = useMemo(() => {
+    try {
+      return JSON.parse(profileData?.preferences || "{}").autonomousEnabled === true;
+    } catch {
+      return false;
+    }
+  }, [profileData?.preferences]);
 
   useEffect(() => {
     if (!profileData?.preferences) return;
@@ -259,11 +270,12 @@ export default function JobSearch() {
   const sourcingControl = useMemo(() => getJobSourcingControlSummary(scoredJobs), [scoredJobs]);
   const autonomousControl = useMemo(() => getAutonomousPolicyControlAction({
     plan: autonomousPlan,
+    campaign: operatingLedger?.campaign,
     settings: {
-      autonomousEnabled: false,
+      autonomousEnabled,
       requireHumanReview,
     },
-  }), [autonomousPlan, requireHumanReview]);
+  }), [autonomousEnabled, autonomousPlan, operatingLedger?.campaign, requireHumanReview]);
   const autonomousControlTone = {
     low: "border-slate-700 text-slate-300",
     medium: "border-amber-500/40 text-amber-300",

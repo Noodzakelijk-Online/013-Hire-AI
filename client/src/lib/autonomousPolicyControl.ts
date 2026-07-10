@@ -1,5 +1,6 @@
 export type AutonomousPolicyControlStatus =
   | "blocked"
+  | "paused"
   | "review_ready"
   | "manual_ready"
   | "follow_up_ready"
@@ -11,6 +12,7 @@ export type AutonomousPolicyControlRisk = "low" | "medium" | "high";
 
 export type AutonomousPolicyControlActionId =
   | "fix_profile"
+  | "resume_campaign"
   | "open_review_queue"
   | "open_applications"
   | "run_agent"
@@ -59,6 +61,10 @@ export interface AutonomousPolicyControlSettingsLike {
   requireHumanReview?: boolean | null;
 }
 
+export interface AutonomousPolicyControlCampaignLike {
+  status?: "active" | "paused" | "completed" | "archived" | string | null;
+}
+
 function count(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
 }
@@ -77,10 +83,12 @@ export function getAutonomousPolicyControlAction({
   plan,
   scheduler,
   settings,
+  campaign,
 }: {
   plan?: AutonomousPolicyControlPlanLike | null;
   scheduler?: AutonomousPolicyControlSchedulerLike | null;
   settings?: AutonomousPolicyControlSettingsLike | null;
+  campaign?: AutonomousPolicyControlCampaignLike | null;
 }): AutonomousPolicyControlAction {
   const summary = plan?.summary;
   const warnings = plan?.policyWarnings || [];
@@ -94,6 +102,21 @@ export function getAutonomousPolicyControlAction({
     typeof summary?.dailyRemaining === "number" && Number.isFinite(summary.dailyRemaining)
       ? summary.dailyRemaining
       : null;
+
+  if (campaign?.status === "paused") {
+    return {
+      id: "resume_campaign",
+      status: "paused",
+      label: "Campaign paused",
+      headline: "Autonomous work is paused for this job-search campaign.",
+      detail: "Resume the campaign from the command dashboard before Hire.AI creates new review items or follow-up drafts.",
+      cta: "Resume campaign",
+      route: "/dashboard",
+      risk: "medium",
+      approvalGated: false,
+      runsAgent: false,
+    };
+  }
 
   if (profileWarning) {
     return {

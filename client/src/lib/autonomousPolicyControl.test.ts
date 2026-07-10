@@ -2,6 +2,23 @@ import { describe, expect, it } from "vitest";
 import { getAutonomousPolicyControlAction } from "./autonomousPolicyControl";
 
 describe("autonomous policy control", () => {
+  it("routes a paused campaign to the dashboard before other autonomous work", () => {
+    const action = getAutonomousPolicyControlAction({
+      campaign: { status: "paused" },
+      plan: {
+        summary: { eligible: 5, queuedForReview: 2 },
+        policyWarnings: ["No resume is connected."],
+      },
+      settings: { autonomousEnabled: true, requireHumanReview: true },
+    });
+
+    expect(action.status).toBe("paused");
+    expect(action.id).toBe("resume_campaign");
+    expect(action.cta).toBe("Resume campaign");
+    expect(action.route).toBe("/dashboard");
+    expect(action.runsAgent).toBe(false);
+  });
+
   it("blocks autonomous work on profile evidence warnings", () => {
     const action = getAutonomousPolicyControlAction({
       plan: {
