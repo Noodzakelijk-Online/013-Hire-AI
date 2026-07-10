@@ -8,6 +8,7 @@ import {
   listUserConnectorAccounts,
 } from "./db";
 import { calculateProfileReadiness } from "./profileReadiness";
+import { getActiveResume } from "./resumeStorage";
 import { getProfileEvidenceControlSummary } from "@shared/profileEvidence";
 import { buildAutonomousEvidenceGates } from "@shared/autonomousEvidenceGates";
 import { getConnectorReadinessQueue } from "./applicationCampaigns";
@@ -30,6 +31,7 @@ export async function getAutonomousEvidenceContext(
     educationEntries,
     skills,
     connectorAccounts,
+    activeResume,
   ] = await Promise.all([
     options.profile !== undefined ? Promise.resolve(options.profile) : getUserProfile(userId),
     options.applications !== undefined ? Promise.resolve(options.applications) : getUserApplications(userId),
@@ -37,6 +39,7 @@ export async function getAutonomousEvidenceContext(
     getEducationEntries(userId),
     getUserSkills(userId),
     listUserConnectorAccounts(userId),
+    getActiveResume(userId),
   ]);
 
   const readiness = calculateProfileReadiness({
@@ -44,10 +47,12 @@ export async function getAutonomousEvidenceContext(
     workExperiences,
     educationEntries,
     skills,
+    hasActiveResumeArtifact: Boolean(activeResume),
   });
   const profileEvidence = getProfileEvidenceControlSummary({
     profile,
     readiness,
+    hasActiveResumeArtifact: Boolean(activeResume),
     connectorAccounts: connectorAccounts.map((account) => ({
       provider: account.provider,
       status: account.status,

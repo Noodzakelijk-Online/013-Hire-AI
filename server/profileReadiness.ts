@@ -62,6 +62,11 @@ export function calculateProfileReadiness(input: {
   workExperiences?: Pick<WorkExperience, "jobTitle" | "company" | "description">[];
   educationEntries?: Pick<EducationEntry, "degree" | "institution">[];
   skills?: Pick<UserSkill, "skillName">[];
+  /**
+   * When present, this is the authoritative result from the versioned resume
+   * ledger. It prevents profile metadata from being mistaken for an upload.
+   */
+  hasActiveResumeArtifact?: boolean;
 }): ProfileReadinessResult {
   const profile = input.profile;
   const workExperiences = input.workExperiences || [];
@@ -71,7 +76,9 @@ export function calculateProfileReadiness(input: {
   const signals = {
     // A display URL is not enough to support a repeatable application handoff.
     // Require the storage key as well so the active resume is a durable artifact.
-    hasResume: Boolean(hasText(profile?.resumeUrl) && hasText(profile?.resumeFileKey)),
+    hasResume: input.hasActiveResumeArtifact ?? Boolean(
+      hasText(profile?.resumeUrl) && hasText(profile?.resumeFileKey)
+    ),
     hasSkills: Boolean(hasText(profile?.skills) || hasAnyStructuredSkill(skills)),
     hasExperience: Boolean(hasText(profile?.experience)),
     hasWorkHistory: workExperiences.some((item) => hasText(item.jobTitle) && hasText(item.company)),

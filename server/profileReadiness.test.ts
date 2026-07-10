@@ -74,4 +74,29 @@ describe("profile readiness", () => {
     expect(readiness.autoApplyEligible).toBe(false);
     expect(readiness.blockers.map((gap) => gap.key)).toContain("resume");
   });
+
+  it("uses the active resume ledger over mutable profile metadata", () => {
+    const readiness = calculateProfileReadiness({
+      profile: {
+        skills: "TypeScript, React, Node.js",
+        experience: "5 years building SaaS products.",
+        education: "BSc Computer Science",
+        desiredJobTypes: "Full Stack Engineer",
+        desiredLocations: "Remote, Europe",
+        salaryExpectationMin: 8000,
+        salaryExpectationMax: 12000,
+        resumeUrl: "https://example.com/resume.pdf",
+        resumeFileKey: "resumes/user/resume.pdf",
+        linkedinUrl: "https://linkedin.com/in/example",
+        githubUrl: null,
+        portfolioUrl: null,
+      },
+      workExperiences: [{ jobTitle: "Engineer", company: "Acme", description: "Built product." }],
+      skills: [{ skillName: "TypeScript" }],
+      hasActiveResumeArtifact: false,
+    });
+
+    expect(readiness.signals.hasResume).toBe(false);
+    expect(readiness.autoApplyEligible).toBe(false);
+  });
 });

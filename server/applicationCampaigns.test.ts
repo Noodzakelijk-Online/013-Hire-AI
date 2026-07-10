@@ -1,4 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  getActiveResume: vi.fn(),
+}));
+
+vi.mock("./resumeStorage", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./resumeStorage")>()),
+  getActiveResume: mocks.getActiveResume,
+}));
 import { getUserOperatingLedger } from "./applicationCampaigns";
 import { createFollowUp, markFollowUpSent, recordEmployerResponse, scheduleInterview } from "./applicationFeatures";
 import {
@@ -18,9 +27,26 @@ import {
 } from "./db";
 
 describe("application campaign operating ledger", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getActiveResume.mockResolvedValue(null);
+  });
+
   it("syncs durable campaign state from current operating queues", async () => {
     const userId = 99001;
     const oldDate = new Date(Date.now() - 8 * 86400000);
+    mocks.getActiveResume.mockResolvedValue({
+      id: 99001,
+      userId,
+      fileName: "campaign-resume.pdf",
+      fileUrl: "https://storage.example.local/resumes/99001/campaign-resume.pdf",
+      fileKey: "resumes/99001/campaign-resume.pdf",
+      fileSize: 1024,
+      mimeType: "application/pdf",
+      version: 1,
+      isActive: true,
+      uploadedAt: new Date(),
+    });
 
     await upsertUserProfile({
       userId,

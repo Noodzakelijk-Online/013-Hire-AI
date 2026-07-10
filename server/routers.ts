@@ -371,11 +371,13 @@ export const appRouter = router({
         getEducationEntries(ctx.user.id),
         getUserSkills(ctx.user.id),
       ]);
+      const activeResume = await getActiveResume(ctx.user.id);
       return calculateProfileReadiness({
         profile,
         workExperiences,
         educationEntries,
         skills,
+        hasActiveResumeArtifact: Boolean(activeResume),
       });
     }),
     getEvidenceReadiness: protectedProcedure.query(async ({ ctx }) => {
@@ -388,22 +390,25 @@ export const appRouter = router({
       } = await import("./db");
       const { calculateProfileReadiness } = await import("./profileReadiness");
       const { getProfileEvidenceControlSummary } = await import("@shared/profileEvidence");
-      const [profile, workExperiences, educationEntries, skills, connectorAccounts] = await Promise.all([
+      const [profile, workExperiences, educationEntries, skills, connectorAccounts, activeResume] = await Promise.all([
         getUserProfile(ctx.user.id),
         getWorkExperiences(ctx.user.id),
         getEducationEntries(ctx.user.id),
         getUserSkills(ctx.user.id),
         listUserConnectorAccounts(ctx.user.id),
+        getActiveResume(ctx.user.id),
       ]);
       const readiness = calculateProfileReadiness({
         profile,
         workExperiences,
         educationEntries,
         skills,
+        hasActiveResumeArtifact: Boolean(activeResume),
       });
       return getProfileEvidenceControlSummary({
         profile,
         readiness,
+        hasActiveResumeArtifact: Boolean(activeResume),
         connectorAccounts: connectorAccounts.map((account) => ({
           provider: account.provider,
           status: account.status,

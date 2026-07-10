@@ -20,6 +20,7 @@ import {
 } from "./db";
 import { buildAutonomousPlan, parseAutonomousPreferences } from "./autonomousOrchestrator";
 import { calculateProfileReadiness } from "./profileReadiness";
+import { getActiveResume } from "./resumeStorage";
 import {
   getProfileEvidenceControlSummary,
   type ProfileEvidenceProvider,
@@ -442,6 +443,7 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
     successFees,
     offerAttributionReviews,
     connectorAccounts,
+    activeResume,
   ] = await Promise.all([
     getUserProfile(userId),
     getWorkExperiences(userId),
@@ -455,6 +457,7 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
     getUserSuccessFees(userId),
     getUserOfferAttributionReviews(userId),
     listUserConnectorAccounts(userId),
+    getActiveResume(userId),
   ]);
   const approvals = allApprovals.filter((approval) => approval.status === "pending");
   const existingCampaign = await getApplicationCampaign(userId);
@@ -465,10 +468,12 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
     workExperiences,
     educationEntries,
     skills,
+    hasActiveResumeArtifact: Boolean(activeResume),
   });
   const profileEvidence = getProfileEvidenceControlSummary({
     profile,
     readiness,
+    hasActiveResumeArtifact: Boolean(activeResume),
     connectorAccounts: connectorAccounts.map((account) => ({
       provider: account.provider,
       status: account.status,

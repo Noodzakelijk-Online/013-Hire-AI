@@ -62,6 +62,25 @@ describe("profile evidence control", () => {
     expect(summary.missingCount).toBe(4);
   });
 
+  it("uses the resume ledger status instead of mutable profile fields", () => {
+    const summary = getProfileEvidenceControlSummary({
+      profile: {
+        resumeUrl: "https://storage.example.local/resumes/1/current.pdf",
+        resumeFileKey: "resumes/1/current.pdf",
+      },
+      readiness: {
+        score: 87,
+        autoApplyEligible: true,
+        blockers: [],
+        warnings: [],
+      },
+      hasActiveResumeArtifact: false,
+    });
+
+    expect(summary.status).toBe("blocked");
+    expect(summary.providers.find((provider) => provider.id === "resume")?.status).toBe("missing");
+  });
+
   it("tracks requested and authorized connector state without treating requests as access", () => {
     const summary = getProfileEvidenceControlSummary({
       profile: {

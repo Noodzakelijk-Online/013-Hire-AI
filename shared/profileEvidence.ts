@@ -57,6 +57,8 @@ export interface ProfileEvidenceControlInput {
     blockers?: unknown[] | null;
     warnings?: unknown[] | null;
   } | null;
+  /** Authoritative active-resume state from the versioned resume ledger. */
+  hasActiveResumeArtifact?: boolean;
   connectorAccounts?: Array<{
     provider: ProfileEvidenceProviderId;
     status: ProfileConnectorAccountStatus;
@@ -222,7 +224,9 @@ export function getProfileEvidenceControlSummary(
   input: ProfileEvidenceControlInput = {}
 ): ProfileEvidenceControlSummary {
   const profile = input.profile;
-  const hasVersionedResume = hasText(profile?.resumeUrl) && hasText(profile?.resumeFileKey);
+  const hasVersionedResume = input.hasActiveResumeArtifact ?? (
+    hasText(profile?.resumeUrl) && hasText(profile?.resumeFileKey)
+  );
   const score = clampScore(input.readiness?.score);
   const blockerCount = input.readiness?.blockers?.length ?? 0;
   const autoApplyEligible = input.readiness?.autoApplyEligible === true;
