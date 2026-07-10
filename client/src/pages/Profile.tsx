@@ -4,6 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { 
   Upload, 
   Loader2, 
@@ -81,6 +83,12 @@ export default function Profile() {
   const projectsQuery = trpc.profile.getProjects.useQuery(undefined, {
     enabled: isAuthenticated,
   });
+  const activeResumeQuery = trpc.resume.getActive.useQuery(undefined, {
+    enabled: isAuthenticated,
+  });
+  const resumeVersionsQuery = trpc.resume.getVersions.useQuery(undefined, {
+    enabled: isAuthenticated,
+  });
   const updateProfile = trpc.profile.update.useMutation({
     onSuccess: () => {
       toast.success("Profile evidence saved");
@@ -95,6 +103,78 @@ export default function Profile() {
       evidenceReadinessQuery.refetch();
     },
     onError: (error) => toast.error(error.message || "Failed to record connector request"),
+  });
+  const parseResumeFile = trpc.resume.parseFile.useMutation({
+    onSuccess: async ({ resume }) => {
+      toast.success(`Resume imported as version ${resume.version}. Profile details were refreshed for review.`);
+      await Promise.all([
+        profileQuery.refetch(),
+        evidenceReadinessQuery.refetch(),
+        activeResumeQuery.refetch(),
+        resumeVersionsQuery.refetch(),
+      ]);
+    },
+    onError: (error) => toast.error(error.message || "Unable to import this resume"),
+  });
+  const setActiveResume = trpc.resume.setActiveVersion.useMutation({
+    onSuccess: async ({ success }) => {
+      if (!success) {
+        toast.error("Unable to activate that resume version");
+        return;
+      }
+      toast.success("Active resume updated");
+      await Promise.all([
+        profileQuery.refetch(),
+        evidenceReadinessQuery.refetch(),
+        activeResumeQuery.refetch(),
+        resumeVersionsQuery.refetch(),
+      ]);
+    },
+    onError: (error) => toast.error(error.message || "Unable to activate that resume version"),
+  });
+  const deleteResumeVersion = trpc.resume.deleteVersion.useMutation({
+    onSuccess: async ({ success }) => {
+      if (!success) {
+        toast.error("Unable to delete that resume version");
+        return;
+      }
+      toast.success("Resume version deleted");
+      await Promise.all([
+        profileQuery.refetch(),
+        evidenceReadinessQuery.refetch(),
+        activeResumeQuery.refetch(),
+        resumeVersionsQuery.refetch(),
+      ]);
+    },
+    onError: (error) => toast.error(error.message || "Unable to delete that resume version"),
+  });
+  const deleteWorkExperience = trpc.profile.deleteWorkExperience.useMutation({
+    onSuccess: async () => {
+      toast.success("Work experience deleted");
+      await Promise.all([workExperiencesQuery.refetch(), evidenceReadinessQuery.refetch()]);
+    },
+    onError: (error) => toast.error(error.message || "Unable to delete work experience"),
+  });
+  const deleteEducation = trpc.profile.deleteEducation.useMutation({
+    onSuccess: async () => {
+      toast.success("Education entry deleted");
+      await Promise.all([educationQuery.refetch(), evidenceReadinessQuery.refetch()]);
+    },
+    onError: (error) => toast.error(error.message || "Unable to delete education entry"),
+  });
+  const deleteSkill = trpc.profile.deleteSkill.useMutation({
+    onSuccess: async () => {
+      toast.success("Skill removed");
+      await Promise.all([skillsQuery.refetch(), evidenceReadinessQuery.refetch()]);
+    },
+    onError: (error) => toast.error(error.message || "Unable to remove skill"),
+  });
+  const deleteProject = trpc.profile.deleteProject.useMutation({
+    onSuccess: () => {
+      toast.success("Project deleted");
+      projectsQuery.refetch();
+    },
+    onError: (error) => toast.error(error.message || "Unable to delete project"),
   });
   const evidenceControl = useMemo(
     () => evidenceReadinessQuery.data ?? getProfileEvidenceControlSummary({
@@ -125,9 +205,29 @@ export default function Profile() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const mimeType = getResumeMimeType(file);
+    if (!mimeType) {
+      toast.error("Choose a PDF, DOC, DOCX, TXT, or RTF resume.");
+      e.target.value = "";
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Resume files must be 10MB or smaller.");
+      e.target.value = "";
+      return;
+    }
+
     setIsUploading(true);
-    toast.info("Resume upload coming soon! For now, add your experience manually below.");
-    setIsUploading(false);
+    try {
+      await parseResumeFile.mutateAsync({
+        fileData: await fileToBase64(file),
+        mimeType,
+        filename: file.name,
+      });
+    } finally {
+      setIsUploading(false);
+      e.target.value = "";
+    }
   };
 
   const handleRequestConnectorConnection = (provider: ConnectorProviderId) => {
@@ -288,12 +388,65 @@ export default function Profile() {
                 </Button>
                 <input
                   type="file"
-                  accept=".pdf,.doc,.docx,.txt"
+                  accept=".pdf,.doc,.docx,.txt,.rtf"
                   className="hidden"
                   onChange={handleResumeUpload}
                   disabled={isUploading}
                 />
               </label>
+            </div>
+            <div className="mt-4 rounded-md border border-slate-700/60 bg-slate-950/40 p-3">
+              {activeResumeQuery.data ? (
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-white">{activeResumeQuery.data.fileName}</p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      Active version {activeResumeQuery.data.version} used for application preparation
+                    </p>
+                  </div>
+                  <a
+                    href={activeResumeQuery.data.fileUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm font-medium text-cyan-300 hover:text-cyan-200"
+                  >
+                    View resume
+                  </a>
+                </div>
+              ) : (
+                <p className="text-sm text-slate-400">No active resume yet. Importing a resume creates the version used for future application preparation.</p>
+              )}
+              {resumeVersionsQuery.data && resumeVersionsQuery.data.length > 1 ? (
+                <div className="mt-3 border-t border-slate-800 pt-3">
+                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Resume versions</p>
+                  <div className="space-y-2">
+                    {resumeVersionsQuery.data.map((resume) => (
+                      <div key={resume.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                        <span className="min-w-0 truncate text-slate-300">v{resume.version} - {resume.fileName}</span>
+                        <div className="flex items-center gap-2">
+                          {resume.isActive ? <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-200">Active</Badge> : null}
+                          {!resume.isActive ? (
+                            <Button size="sm" variant="outline" onClick={() => setActiveResume.mutate({ version: resume.version })} disabled={setActiveResume.isPending}>
+                              Use this version
+                            </Button>
+                          ) : null}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-red-300 hover:text-red-200"
+                            onClick={() => {
+                              if (confirm(`Delete resume version ${resume.version}?`)) deleteResumeVersion.mutate({ version: resume.version });
+                            }}
+                            disabled={deleteResumeVersion.isPending}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
           </CardContent>
         </Card>
@@ -374,10 +527,13 @@ export default function Profile() {
               </div>
               <WorkExperienceDialog
                 open={workExpDialogOpen}
-                onOpenChange={setWorkExpDialogOpen}
+                onOpenChange={(isOpen: boolean) => {
+                  setWorkExpDialogOpen(isOpen);
+                  if (!isOpen) setEditingWorkExp(null);
+                }}
                 editing={editingWorkExp}
-                onSuccess={() => {
-                  workExperiencesQuery.refetch();
+                onSuccess={async () => {
+                  await Promise.all([workExperiencesQuery.refetch(), evidenceReadinessQuery.refetch()]);
                   setWorkExpDialogOpen(false);
                   setEditingWorkExp(null);
                 }}
@@ -404,9 +560,7 @@ export default function Profile() {
                     }}
                     onDelete={() => {
                       if (confirm("Are you sure you want to delete this work experience?")) {
-                        // Delete mutation will be added
-                        toast.success("Work experience deleted");
-                        workExperiencesQuery.refetch();
+                        deleteWorkExperience.mutate({ id: exp.id });
                       }
                     }}
                   />
@@ -438,10 +592,13 @@ export default function Profile() {
               </div>
               <EducationDialog
                 open={educationDialogOpen}
-                onOpenChange={setEducationDialogOpen}
+                onOpenChange={(isOpen: boolean) => {
+                  setEducationDialogOpen(isOpen);
+                  if (!isOpen) setEditingEducation(null);
+                }}
                 editing={editingEducation}
-                onSuccess={() => {
-                  educationQuery.refetch();
+                onSuccess={async () => {
+                  await Promise.all([educationQuery.refetch(), evidenceReadinessQuery.refetch()]);
                   setEducationDialogOpen(false);
                   setEditingEducation(null);
                 }}
@@ -468,8 +625,7 @@ export default function Profile() {
                     }}
                     onDelete={() => {
                       if (confirm("Are you sure you want to delete this education entry?")) {
-                        toast.success("Education entry deleted");
-                        educationQuery.refetch();
+                        deleteEducation.mutate({ id: edu.id });
                       }
                     }}
                   />
@@ -495,10 +651,13 @@ export default function Profile() {
               </div>
               <SkillDialog
                 open={skillDialogOpen}
-                onOpenChange={setSkillDialogOpen}
+                onOpenChange={(isOpen: boolean) => {
+                  setSkillDialogOpen(isOpen);
+                  if (!isOpen) setEditingSkill(null);
+                }}
                 editing={editingSkill}
-                onSuccess={() => {
-                  skillsQuery.refetch();
+                onSuccess={async () => {
+                  await Promise.all([skillsQuery.refetch(), evidenceReadinessQuery.refetch()]);
                   setSkillDialogOpen(false);
                   setEditingSkill(null);
                 }}
@@ -525,8 +684,7 @@ export default function Profile() {
                     }}
                     onDelete={() => {
                       if (confirm(`Remove ${skill.skillName}?`)) {
-                        toast.success("Skill removed");
-                        skillsQuery.refetch();
+                        deleteSkill.mutate({ id: skill.id });
                       }
                     }}
                   />
@@ -552,10 +710,13 @@ export default function Profile() {
               </div>
               <ProjectDialog
                 open={projectDialogOpen}
-                onOpenChange={setProjectDialogOpen}
+                onOpenChange={(isOpen: boolean) => {
+                  setProjectDialogOpen(isOpen);
+                  if (!isOpen) setEditingProject(null);
+                }}
                 editing={editingProject}
-                onSuccess={() => {
-                  projectsQuery.refetch();
+                onSuccess={async () => {
+                  await Promise.all([projectsQuery.refetch(), evidenceReadinessQuery.refetch()]);
                   setProjectDialogOpen(false);
                   setEditingProject(null);
                 }}
@@ -582,8 +743,7 @@ export default function Profile() {
                     }}
                     onDelete={() => {
                       if (confirm("Are you sure you want to delete this project?")) {
-                        toast.success("Project deleted");
-                        projectsQuery.refetch();
+                        deleteProject.mutate({ id: project.id });
                       }
                     }}
                   />
@@ -709,8 +869,60 @@ function EvidenceProviderRow({
   );
 }
 
-// Component stubs - will be implemented
 function WorkExperienceDialog({ open, onOpenChange, editing, onSuccess }: any) {
+  const [form, setForm] = useState(emptyWorkExperience());
+  const addExperience = trpc.profile.addWorkExperience.useMutation({
+    onSuccess: () => {
+      toast.success("Work experience saved");
+      onSuccess();
+    },
+    onError: (error) => toast.error(error.message || "Unable to save work experience"),
+  });
+  const updateExperience = trpc.profile.updateWorkExperience.useMutation({
+    onSuccess: () => {
+      toast.success("Work experience updated");
+      onSuccess();
+    },
+    onError: (error) => toast.error(error.message || "Unable to update work experience"),
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    setForm(editing ? {
+      jobTitle: editing.jobTitle || "",
+      company: editing.company || "",
+      location: editing.location || "",
+      startDate: dateForInput(editing.startDate),
+      endDate: dateForInput(editing.endDate),
+      isCurrent: Boolean(editing.isCurrent),
+      description: editing.description || "",
+      achievements: editing.achievements || "",
+      skills: editing.skills || "",
+    } : emptyWorkExperience());
+  }, [editing, open]);
+
+  const isSaving = addExperience.isPending || updateExperience.isPending;
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!form.jobTitle.trim() || !form.company.trim() || !form.startDate) {
+      toast.error("Job title, company, and start date are required.");
+      return;
+    }
+    const payload = {
+      jobTitle: form.jobTitle.trim(),
+      company: form.company.trim(),
+      location: optionalText(form.location),
+      startDate: form.startDate,
+      endDate: form.isCurrent ? undefined : optionalText(form.endDate),
+      isCurrent: form.isCurrent ? 1 : 0,
+      description: optionalText(form.description),
+      achievements: optionalText(form.achievements),
+      skills: optionalText(form.skills),
+    };
+    if (editing) updateExperience.mutate({ id: editing.id, ...payload });
+    else addExperience.mutate(payload);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>
@@ -728,15 +940,84 @@ function WorkExperienceDialog({ open, onOpenChange, editing, onSuccess }: any) {
             Add details about your professional experience
           </DialogDescription>
         </DialogHeader>
-        <div className="text-slate-400 text-center py-8">
-          Form implementation coming next...
-        </div>
+        <form onSubmit={submit} className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField label="Job title" required><Input value={form.jobTitle} onChange={(event) => setForm({ ...form, jobTitle: event.target.value })} /></FormField>
+            <FormField label="Company" required><Input value={form.company} onChange={(event) => setForm({ ...form, company: event.target.value })} /></FormField>
+            <FormField label="Location"><Input value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} /></FormField>
+            <FormField label="Start date" required><Input type="date" value={form.startDate} onChange={(event) => setForm({ ...form, startDate: event.target.value })} /></FormField>
+            <FormField label="End date"><Input type="date" value={form.endDate} disabled={form.isCurrent} onChange={(event) => setForm({ ...form, endDate: event.target.value })} /></FormField>
+            <div className="flex items-end pb-2">
+              <div className="flex items-center gap-2">
+                <Checkbox id="work-current" checked={form.isCurrent} onCheckedChange={(checked) => setForm({ ...form, isCurrent: Boolean(checked) })} />
+                <label htmlFor="work-current" className="text-sm text-slate-300">I currently work here</label>
+              </div>
+            </div>
+          </div>
+          <FormField label="Description"><Textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></FormField>
+          <FormField label="Key achievements"><Textarea value={form.achievements} onChange={(event) => setForm({ ...form, achievements: event.target.value })} /></FormField>
+          <FormField label="Skills used"><Input value={form.skills} onChange={(event) => setForm({ ...form, skills: event.target.value })} placeholder="React, stakeholder management, SQL" /></FormField>
+          <DialogActions isSaving={isSaving} label={editing ? "Save changes" : "Add experience"} onCancel={() => onOpenChange(false)} />
+        </form>
       </DialogContent>
     </Dialog>
   );
 }
 
 function EducationDialog({ open, onOpenChange, editing, onSuccess }: any) {
+  const [form, setForm] = useState(emptyEducation());
+  const addEducation = trpc.profile.addEducation.useMutation({
+    onSuccess: () => {
+      toast.success("Education saved");
+      onSuccess();
+    },
+    onError: (error) => toast.error(error.message || "Unable to save education"),
+  });
+  const updateEducation = trpc.profile.updateEducation.useMutation({
+    onSuccess: () => {
+      toast.success("Education updated");
+      onSuccess();
+    },
+    onError: (error) => toast.error(error.message || "Unable to update education"),
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    setForm(editing ? {
+      degree: editing.degree || "",
+      fieldOfStudy: editing.fieldOfStudy || "",
+      institution: editing.institution || "",
+      location: editing.location || "",
+      startDate: dateForInput(editing.startDate),
+      endDate: dateForInput(editing.endDate),
+      isCurrent: Boolean(editing.isCurrent),
+      gpa: editing.gpa || "",
+      achievements: editing.achievements || "",
+    } : emptyEducation());
+  }, [editing, open]);
+
+  const isSaving = addEducation.isPending || updateEducation.isPending;
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!form.degree.trim() || !form.institution.trim()) {
+      toast.error("Degree and institution are required.");
+      return;
+    }
+    const payload = {
+      degree: form.degree.trim(),
+      institution: form.institution.trim(),
+      fieldOfStudy: optionalText(form.fieldOfStudy),
+      location: optionalText(form.location),
+      startDate: optionalText(form.startDate),
+      endDate: form.isCurrent ? undefined : optionalText(form.endDate),
+      isCurrent: form.isCurrent ? 1 : 0,
+      gpa: optionalText(form.gpa),
+      achievements: optionalText(form.achievements),
+    };
+    if (editing) updateEducation.mutate({ id: editing.id, ...payload });
+    else addEducation.mutate(payload);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>
@@ -754,15 +1035,79 @@ function EducationDialog({ open, onOpenChange, editing, onSuccess }: any) {
             Add details about your educational background
           </DialogDescription>
         </DialogHeader>
-        <div className="text-slate-400 text-center py-8">
-          Form implementation coming next...
-        </div>
+        <form onSubmit={submit} className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField label="Degree" required><Input value={form.degree} onChange={(event) => setForm({ ...form, degree: event.target.value })} /></FormField>
+            <FormField label="Institution" required><Input value={form.institution} onChange={(event) => setForm({ ...form, institution: event.target.value })} /></FormField>
+            <FormField label="Field of study"><Input value={form.fieldOfStudy} onChange={(event) => setForm({ ...form, fieldOfStudy: event.target.value })} /></FormField>
+            <FormField label="Location"><Input value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} /></FormField>
+            <FormField label="Start date"><Input type="date" value={form.startDate} onChange={(event) => setForm({ ...form, startDate: event.target.value })} /></FormField>
+            <FormField label="End date"><Input type="date" value={form.endDate} disabled={form.isCurrent} onChange={(event) => setForm({ ...form, endDate: event.target.value })} /></FormField>
+            <FormField label="GPA"><Input value={form.gpa} onChange={(event) => setForm({ ...form, gpa: event.target.value })} /></FormField>
+            <div className="flex items-end pb-2">
+              <div className="flex items-center gap-2">
+                <Checkbox id="education-current" checked={form.isCurrent} onCheckedChange={(checked) => setForm({ ...form, isCurrent: Boolean(checked) })} />
+                <label htmlFor="education-current" className="text-sm text-slate-300">Currently studying</label>
+              </div>
+            </div>
+          </div>
+          <FormField label="Achievements"><Textarea value={form.achievements} onChange={(event) => setForm({ ...form, achievements: event.target.value })} /></FormField>
+          <DialogActions isSaving={isSaving} label={editing ? "Save changes" : "Add education"} onCancel={() => onOpenChange(false)} />
+        </form>
       </DialogContent>
     </Dialog>
   );
 }
 
 function SkillDialog({ open, onOpenChange, editing, onSuccess }: any) {
+  const [form, setForm] = useState(emptySkill());
+  const addSkill = trpc.profile.addSkill.useMutation({
+    onSuccess: () => {
+      toast.success("Skill saved");
+      onSuccess();
+    },
+    onError: (error) => toast.error(error.message || "Unable to save skill"),
+  });
+  const updateSkill = trpc.profile.updateSkill.useMutation({
+    onSuccess: () => {
+      toast.success("Skill updated");
+      onSuccess();
+    },
+    onError: (error) => toast.error(error.message || "Unable to update skill"),
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    setForm(editing ? {
+      skillName: editing.skillName || "",
+      category: editing.category || "",
+      proficiency: editing.proficiency || "intermediate",
+      yearsOfExperience: editing.yearsOfExperience?.toString() || "",
+    } : emptySkill());
+  }, [editing, open]);
+
+  const isSaving = addSkill.isPending || updateSkill.isPending;
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!form.skillName.trim()) {
+      toast.error("Skill name is required.");
+      return;
+    }
+    const yearsOfExperience = form.yearsOfExperience.trim() ? Number(form.yearsOfExperience) : undefined;
+    if (yearsOfExperience !== undefined && (!Number.isInteger(yearsOfExperience) || yearsOfExperience < 0 || yearsOfExperience > 80)) {
+      toast.error("Years of experience must be a whole number between 0 and 80.");
+      return;
+    }
+    const payload = {
+      skillName: form.skillName.trim(),
+      category: optionalText(form.category),
+      proficiency: form.proficiency,
+      yearsOfExperience,
+    };
+    if (editing) updateSkill.mutate({ id: editing.id, ...payload });
+    else addSkill.mutate(payload);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>
@@ -780,15 +1125,77 @@ function SkillDialog({ open, onOpenChange, editing, onSuccess }: any) {
             Add a technical or professional skill
           </DialogDescription>
         </DialogHeader>
-        <div className="text-slate-400 text-center py-8">
-          Form implementation coming next...
-        </div>
+        <form onSubmit={submit} className="space-y-4">
+          <FormField label="Skill" required><Input value={form.skillName} onChange={(event) => setForm({ ...form, skillName: event.target.value })} /></FormField>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField label="Category"><Input value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} placeholder="Technical, leadership, language" /></FormField>
+            <FormField label="Proficiency">
+              <select className="flex h-9 w-full rounded-md border border-slate-700 bg-slate-800 px-3 text-sm text-white" value={form.proficiency} onChange={(event) => setForm({ ...form, proficiency: event.target.value as SkillProficiency })}>
+                <option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option><option value="expert">Expert</option>
+              </select>
+            </FormField>
+          </div>
+          <FormField label="Years of experience"><Input type="number" min="0" max="80" value={form.yearsOfExperience} onChange={(event) => setForm({ ...form, yearsOfExperience: event.target.value })} /></FormField>
+          <DialogActions isSaving={isSaving} label={editing ? "Save changes" : "Add skill"} onCancel={() => onOpenChange(false)} />
+        </form>
       </DialogContent>
     </Dialog>
   );
 }
 
 function ProjectDialog({ open, onOpenChange, editing, onSuccess }: any) {
+  const [form, setForm] = useState(emptyProject());
+  const addProject = trpc.profile.addProject.useMutation({
+    onSuccess: () => {
+      toast.success("Project saved");
+      onSuccess();
+    },
+    onError: (error) => toast.error(error.message || "Unable to save project"),
+  });
+  const updateProject = trpc.profile.updateProject.useMutation({
+    onSuccess: () => {
+      toast.success("Project updated");
+      onSuccess();
+    },
+    onError: (error) => toast.error(error.message || "Unable to update project"),
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    setForm(editing ? {
+      title: editing.title || "",
+      description: editing.description || "",
+      url: editing.url || "",
+      technologies: editing.technologies || "",
+      startDate: dateForInput(editing.startDate),
+      endDate: dateForInput(editing.endDate),
+    } : emptyProject());
+  }, [editing, open]);
+
+  const isSaving = addProject.isPending || updateProject.isPending;
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!form.title.trim()) {
+      toast.error("Project title is required.");
+      return;
+    }
+    const url = optionalText(form.url);
+    if (url && !isHttpUrl(url)) {
+      toast.error("Project URL must start with http:// or https://.");
+      return;
+    }
+    const payload = {
+      title: form.title.trim(),
+      description: optionalText(form.description),
+      url,
+      technologies: optionalText(form.technologies),
+      startDate: optionalText(form.startDate),
+      endDate: optionalText(form.endDate),
+    };
+    if (editing) updateProject.mutate({ id: editing.id, ...payload });
+    else addProject.mutate(payload);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>
@@ -806,12 +1213,109 @@ function ProjectDialog({ open, onOpenChange, editing, onSuccess }: any) {
             Showcase a portfolio project or side project
           </DialogDescription>
         </DialogHeader>
-        <div className="text-slate-400 text-center py-8">
-          Form implementation coming next...
-        </div>
+        <form onSubmit={submit} className="space-y-4">
+          <FormField label="Project title" required><Input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} /></FormField>
+          <FormField label="Project URL"><Input type="url" value={form.url} onChange={(event) => setForm({ ...form, url: event.target.value })} placeholder="https://..." /></FormField>
+          <FormField label="Description"><Textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></FormField>
+          <FormField label="Technologies"><Input value={form.technologies} onChange={(event) => setForm({ ...form, technologies: event.target.value })} placeholder="React, TypeScript, MySQL" /></FormField>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField label="Start date"><Input type="date" value={form.startDate} onChange={(event) => setForm({ ...form, startDate: event.target.value })} /></FormField>
+            <FormField label="End date"><Input type="date" value={form.endDate} onChange={(event) => setForm({ ...form, endDate: event.target.value })} /></FormField>
+          </div>
+          <DialogActions isSaving={isSaving} label={editing ? "Save changes" : "Add project"} onCancel={() => onOpenChange(false)} />
+        </form>
       </DialogContent>
     </Dialog>
   );
+}
+
+type SkillProficiency = "beginner" | "intermediate" | "advanced" | "expert";
+
+function FormField({ label, required = false, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+  return (
+    <label className="block space-y-2 text-sm font-medium text-slate-300">
+      <span>{label}{required ? <span className="ml-1 text-red-300">*</span> : null}</span>
+      {children}
+    </label>
+  );
+}
+
+function DialogActions({ isSaving, label, onCancel }: { isSaving: boolean; label: string; onCancel: () => void }) {
+  return (
+    <div className="flex justify-end gap-2 border-t border-slate-800 pt-4">
+      <Button type="button" variant="outline" onClick={onCancel} disabled={isSaving}>Cancel</Button>
+      <Button type="submit" className="bg-gradient-to-r from-cyan-500 to-blue-600" disabled={isSaving}>
+        {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+        {label}
+      </Button>
+    </div>
+  );
+}
+
+function emptyWorkExperience() {
+  return { jobTitle: "", company: "", location: "", startDate: "", endDate: "", isCurrent: false, description: "", achievements: "", skills: "" };
+}
+
+function emptyEducation() {
+  return { degree: "", fieldOfStudy: "", institution: "", location: "", startDate: "", endDate: "", isCurrent: false, gpa: "", achievements: "" };
+}
+
+function emptySkill(): { skillName: string; category: string; proficiency: SkillProficiency; yearsOfExperience: string } {
+  return { skillName: "", category: "", proficiency: "intermediate", yearsOfExperience: "" };
+}
+
+function emptyProject() {
+  return { title: "", description: "", url: "", technologies: "", startDate: "", endDate: "" };
+}
+
+function optionalText(value: string): string | undefined {
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+function dateForInput(value: Date | string | null | undefined): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
+}
+
+function isHttpUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function getResumeMimeType(file: File): string | null {
+  const extension = file.name.split(".").pop()?.toLowerCase();
+  const mimeTypeByExtension: Record<string, string> = {
+    pdf: "application/pdf",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    doc: "application/msword",
+    txt: "text/plain",
+    rtf: "text/rtf",
+  };
+  if (extension && mimeTypeByExtension[extension]) return mimeTypeByExtension[extension];
+  return file.type || null;
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Unable to read the selected file"));
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string") {
+        reject(new Error("Unable to read the selected file"));
+        return;
+      }
+      resolve(result.split(",", 2)[1] || "");
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 function WorkExperienceCard({ experience, onEdit, onDelete }: any) {

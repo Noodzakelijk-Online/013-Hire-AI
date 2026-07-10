@@ -1571,7 +1571,7 @@ export const appRouter = router({
         filename: z.string(),
       }))
       .mutation(async ({ input, ctx }) => {
-        const { parseResumeFromFile, uploadResumeToS3, resumeToProfileData } = await import("./resumeParser");
+        const { parseResumeFromFile, resumeToProfileData } = await import("./resumeParser");
         const { upsertUserProfile } = await import("./db");
         const { RESUME_MIME_TYPES, validateUploadedFile } = await import("./uploadValidation");
         
@@ -1584,25 +1584,26 @@ export const appRouter = router({
           allowedMimeTypes: RESUME_MIME_TYPES,
         });
         
-        // Upload to S3
-        const { url, key } = await uploadResumeToS3(
-          buffer,
-          validation.fileName,
-          ctx.user.id,
-          input.mimeType
-        );
-        
         // Parse the resume
         const parsed = await parseResumeFromFile(buffer, input.mimeType);
         
         // Convert to profile format
         const profileData = resumeToProfileData(parsed);
         
+        // Store the parsed file through the versioned resume service so active profile metadata
+        // and the resume used by application preparation always point to the same artifact.
+        const resume = await uploadResume(
+          ctx.user.id,
+          buffer,
+          validation.fileName,
+          input.mimeType
+        );
+
         // Update user profile with parsed data and file info
         await upsertUserProfile({
           userId: ctx.user.id,
-          resumeUrl: url,
-          resumeFileKey: key,
+          resumeUrl: resume.fileUrl,
+          resumeFileKey: resume.fileKey,
           ...profileData,
         });
         
@@ -1610,8 +1611,9 @@ export const appRouter = router({
           success: true,
           parsed,
           profileData,
-          fileUrl: url,
-          fileKey: key,
+          resume,
+          fileUrl: resume.fileUrl,
+          fileKey: resume.fileKey,
         };
       }),
 
@@ -1624,7 +1626,14 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         const buffer = Buffer.from(input.fileData, "base64");
-        return await uploadResume(ctx.user.id, buffer, input.fileName, input.mimeType);
+        const resume = await uploadResume(ctx.user.id, buffer, input.fileName, input.mimeType);
+        const { upsertUserProfile } = await import("./db");
+        await upsertUserProfile({
+          userId: ctx.user.id,
+          resumeUrl: resume.fileUrl,
+          resumeFileKey: resume.fileKey,
+        });
+        return resume;
       }),
 
     // Get active resume
@@ -1640,6 +1649,15 @@ export const appRouter = router({
       .input(z.object({ version: z.number() }))
       .mutation(async ({ ctx, input }) => {
         const success = await setActiveVersion(ctx.user.id, input.version);
+        if (success) {
+          const resume = await getActiveResume(ctx.user.id);
+          const { upsertUserProfile } = await import("./db");
+          await upsertUserProfile({
+            userId: ctx.user.id,
+            resumeUrl: resume?.fileUrl ?? null,
+            resumeFileKey: resume?.fileKey ?? null,
+          });
+        }
         return { success };
       }),
 
@@ -1648,6 +1666,15 @@ export const appRouter = router({
       .input(z.object({ version: z.number() }))
       .mutation(async ({ ctx, input }) => {
         const success = await deleteResumeVersion(ctx.user.id, input.version);
+        if (success) {
+          const resume = await getActiveResume(ctx.user.id);
+          const { upsertUserProfile } = await import("./db");
+          await upsertUserProfile({
+            userId: ctx.user.id,
+            resumeUrl: resume?.fileUrl ?? null,
+            resumeFileKey: resume?.fileKey ?? null,
+          });
+        }
         return { success };
       }),
 
