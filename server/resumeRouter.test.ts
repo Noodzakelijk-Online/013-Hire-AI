@@ -108,4 +108,22 @@ describe("resume router synchronization", () => {
     expect(mocks.deleteResumeVersion).toHaveBeenCalledWith(userId, 1);
     expect(await getUserProfile(userId)).toMatchObject({ resumeUrl: null, resumeFileKey: null });
   });
+
+  it("rejects legacy metadata-only uploads without creating misleading profile evidence", async () => {
+    const metadataOnlyUserId = 190072;
+    const caller = appRouter.createCaller(createContext(metadataOnlyUserId));
+
+    await expect(caller.resume.upload({
+      fileKey: "resumes/190072/unverified.pdf",
+      fileUrl: "https://cdn.example.com/resumes/unverified.pdf",
+      fileName: "unverified.pdf",
+      fileType: "application/pdf",
+    })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringContaining("resume.uploadWithHistory"),
+    });
+
+    expect(await getUserProfile(metadataOnlyUserId)).toBeUndefined();
+    expect(mocks.uploadResume).not.toHaveBeenCalled();
+  });
 });

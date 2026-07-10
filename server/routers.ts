@@ -1535,17 +1535,13 @@ export const appRouter = router({
           fileType: z.string(),
         })
       )
-      .mutation(async ({ ctx, input }) => {
-        const { upsertUserProfile } = await import("./db");
-        
-        // Save resume file info to user profile
-        await upsertUserProfile({
-          userId: ctx.user.id,
-          resumeUrl: input.fileUrl,
-          resumeFileKey: input.fileKey,
+      .mutation(async () => {
+        // A URL/key pair alone cannot be verified or linked to a resume ledger record.
+        // Keep the legacy route registered, but require callers to use a versioned upload.
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Resume metadata-only uploads are no longer supported. Upload resume bytes with resume.uploadWithHistory or import the file with resume.parseFile.",
         });
-
-        return { success: true, fileUrl: input.fileUrl };
       }),
     parse: protectedProcedure
       .input(z.object({ resumeText: z.string() }))
