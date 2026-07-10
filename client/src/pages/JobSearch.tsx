@@ -66,6 +66,10 @@ export default function JobSearch() {
 
   // Fetch platforms
   const { data: platformsData } = trpc.platforms.list.useQuery();
+  const { data: selectedJobSources } = trpc.jobs.getSources.useQuery(
+    { id: selectedJob?.id ?? 0 },
+    { enabled: Boolean(selectedJob?.id) }
+  );
 
   // Fetch user profile for matching
   const { data: profileData } = trpc.profile.get.useQuery();
@@ -146,6 +150,10 @@ export default function JobSearch() {
   const applicationDecisionByJobId = useMemo(() => {
     return new Map((applicationDecisions || []).map((decision: any) => [decision.jobId, decision]));
   }, [applicationDecisions]);
+  const platformNameById = useMemo(
+    () => new Map((platformsData || []).map((platform) => [platform.id, platform.name])),
+    [platformsData]
+  );
 
   // Filter jobs
   const filteredJobs = useMemo(() => {
@@ -1080,6 +1088,30 @@ export default function JobSearch() {
                         </Badge>
                       )}
                     </div>
+
+                    {selectedJobSources && selectedJobSources.sources.length > 1 && (
+                      <div
+                        data-testid="job-detail-source-coverage"
+                        className="border-l-2 border-cyan-400 bg-slate-800/40 py-2 pl-3"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-medium text-slate-200">Source coverage</p>
+                          <Badge variant="outline" className="border-cyan-500/40 text-cyan-300">
+                            {selectedJobSources.sources.length} linked sources
+                          </Badge>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-400">
+                          Hire.AI is showing one canonical listing while preserving every matched source for verification.
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {selectedJobSources.sources.map((source) => (
+                            <Badge key={source.id} variant="outline" className="border-slate-600 text-slate-300">
+                              {platformNameById.get(source.platformId) || `Platform #${source.platformId}`}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {selectedJob.skills && (
                       <div>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compareJobsForDeduplication } from "./jobDeduplication";
+import { compareJobsForDeduplication, findBestJobDuplicateCandidate } from "./jobDeduplication";
 
 describe("job deduplication", () => {
   it("matches canonical application URLs across tracking parameters", () => {
@@ -53,5 +53,54 @@ describe("job deduplication", () => {
     );
 
     expect(match.isDuplicate).toBe(false);
+  });
+
+  it("chooses the strongest canonical source deterministically before linking a duplicate", () => {
+    const match = findBestJobDuplicateCandidate(
+      {
+        company: "Acme Technologies",
+        title: "Senior Software Engineer - Remote",
+        description: "Build distributed TypeScript services with Node.js, PostgreSQL, AWS, and Kubernetes.",
+      },
+      [
+        {
+          id: 9,
+          company: "Acme Technologies",
+          title: "Senior Software Engineer",
+          description: "Build distributed TypeScript services with Node.js, PostgreSQL, AWS, and Kubernetes.",
+        },
+        {
+          id: 3,
+          company: "Acme Technologies",
+          title: "Senior Software Engineer",
+          description: "Build distributed TypeScript services using Node.js, PostgreSQL, AWS and Kubernetes.",
+        },
+      ]
+    );
+
+    expect(match).toMatchObject({
+      job: { id: 9 },
+      match: { isDuplicate: true, reason: "content" },
+    });
+  });
+
+  it("does not create a source link when no candidate is a duplicate", () => {
+    const match = findBestJobDuplicateCandidate(
+      {
+        company: "Acme",
+        title: "Software Engineer",
+        description: "Develop iOS applications with Swift and UIKit.",
+      },
+      [
+        {
+          id: 4,
+          company: "Acme",
+          title: "Software Engineer",
+          description: "Build data pipelines with Python, Spark, and Airflow.",
+        },
+      ]
+    );
+
+    expect(match).toBeNull();
   });
 });

@@ -12,6 +12,15 @@ export interface JobDuplicateMatch {
   reason?: "application_url" | "content";
 }
 
+export interface JobDeduplicationRecord extends JobDeduplicationCandidate {
+  id: number;
+}
+
+export interface JobDuplicateCandidate {
+  job: JobDeduplicationRecord;
+  match: JobDuplicateMatch;
+}
+
 const TITLE_NOISE = new Set(["remote", "hybrid", "onsite", "job", "role", "position"]);
 const TRACKING_QUERY_PARAMETERS = new Set([
   "source",
@@ -105,4 +114,23 @@ export function compareJobsForDeduplication(
     similarity,
     reason: isDuplicate ? "content" : undefined,
   };
+}
+
+/**
+ * Resolve one stable canonical listing for a candidate before writing a
+ * cross-platform source relationship. The highest similarity wins; job ID is
+ * used only as a deterministic tie-breaker.
+ */
+export function findBestJobDuplicateCandidate(
+  candidate: JobDeduplicationCandidate,
+  existing: JobDeduplicationRecord[]
+): JobDuplicateCandidate | null {
+  const matches = existing
+    .map((job) => ({ job, match: compareJobsForDeduplication(candidate, job) }))
+    .filter((item) => item.match.isDuplicate)
+    .sort((left, right) =>
+      right.match.similarity - left.match.similarity || left.job.id - right.job.id
+    );
+
+  return matches[0] || null;
 }

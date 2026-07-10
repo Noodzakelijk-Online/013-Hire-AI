@@ -1,10 +1,11 @@
-import { and, desc, eq, gt, gte, isNull, like, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, isNull, like, or, sql, type SQL } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { 
   InsertUser, 
   users, 
   jobPlatforms,
   jobs,
+  jobDuplicates,
   userProfiles,
   userConnectorAccounts,
   applications,
@@ -51,7 +52,7 @@ import {
 } from "../drizzle/schema";
 import type { InferInsertModel } from "drizzle-orm";
 import { ENV } from "./_core/env";
-import { sampleJobs, samplePlatforms } from "./sampleData";
+import { sampleJobDuplicateLinks, sampleJobs, samplePlatforms } from "./sampleData";
 import {
   canTransitionApplicationStatus,
   type ApplicationStatus,
@@ -259,6 +260,13 @@ export async function createJob(job: InsertJob) {
   return await db.insert(jobs).values(job);
 }
 
+const canonicalJobCondition = sql`NOT EXISTS (
+  SELECT 1 FROM ${jobDuplicates}
+  WHERE ${jobDuplicates.duplicateJobId} = ${jobs.id}
+)`;
+
+const sampleDuplicateJobIds = new Set(sampleJobDuplicateLinks.map((link) => link.duplicateJobId));
+
 export async function getActiveJobs(limit = 100, offset = 0) {
   const boundedLimit = Math.min(Math.max(limit, 1), 250);
   const boundedOffset = Math.max(offset, 0);
@@ -266,7 +274,11 @@ export async function getActiveJobs(limit = 100, offset = 0) {
   const db = await getDb();
   if (!db) {
     return sampleJobs
-      .filter((job) => job.isActive === 1 && (!job.expiryDate || job.expiryDate > now))
+      .filter((job) =>
+        job.isActive === 1 &&
+        !sampleDuplicateJobIds.has(job.id) &&
+        (!job.expiryDate || job.expiryDate > now)
+      )
       .sort((a, b) => (b.postedDate?.getTime() || 0) - (a.postedDate?.getTime() || 0))
       .slice(boundedOffset, boundedOffset + boundedLimit);
   }
@@ -275,7 +287,8 @@ export async function getActiveJobs(limit = 100, offset = 0) {
     .from(jobs)
     .where(and(
       eq(jobs.isActive, 1),
-      or(isNull(jobs.expiryDate), gt(jobs.expiryDate, now))
+      or(isNull(jobs.expiryDate), gt(jobs.expiryDate, now)),
+      canonicalJobCondition
     ))
     .orderBy(desc(jobs.postedDate), desc(jobs.createdAt))
     .limit(boundedLimit)
@@ -311,6 +324,7 @@ export async function searchJobs(filters: {
 
     return sampleJobs
       .filter((job) => job.isActive === 1)
+      .filter((job) => !sampleDuplicateJobIds.has(job.id))
       .filter((job) => !title || job.title.toLowerCase().includes(title))
       .filter((job) => !company || job.company.toLowerCase().includes(company))
       .filter((job) => !location || (job.location || "").toLowerCase().includes(location))
@@ -318,7 +332,7 @@ export async function searchJobs(filters: {
       .slice(boundedOffset, boundedOffset + boundedLimit);
   }
 
-  const conditions: SQL[] = [eq(jobs.isActive, 1)];
+  const conditions: SQL[] = [eq(jobs.isActive, 1), canonicalJobCondition];
 
   if (filters.title?.trim()) {
     conditions.push(like(jobs.title, searchTerm(filters.title)));
@@ -345,6 +359,57 @@ export async function searchJobs(filters: {
     .where(and(...conditions))
     .limit(Math.min(Math.max(filters.limit || 50, 1), 100))
     .offset(Math.max(filters.offset || 0, 0));
+}
+
+export async function getJobAggregationSources(jobId: number) {
+  const db = await getDb();
+  if (!db) {
+    const job = sampleJobs.find((item) => item.id === jobId);
+    if (!job) return null;
+    const primaryJobId = sampleJobDuplicateLinks.find((link) => link.duplicateJobId === jobId)?.primaryJobId ?? jobId;
+    const sourceIds = [
+      primaryJobId,
+      ...sampleJobDuplicateLinks
+        .filter((link) => link.primaryJobId === primaryJobId)
+        .map((link) => link.duplicateJobId),
+    ];
+    return {
+      primaryJobId,
+      sources: sourceIds
+        .map((sourceId) => sampleJobs.find((item) => item.id === sourceId))
+        .filter((source): source is typeof job => Boolean(source)),
+    };
+  }
+
+  const job = await db
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(eq(jobs.id, jobId))
+    .limit(1);
+  if (!job[0]) return null;
+
+  const relation = await db
+    .select({ primaryJobId: jobDuplicates.primaryJobId })
+    .from(jobDuplicates)
+    .where(eq(jobDuplicates.duplicateJobId, jobId))
+    .limit(1);
+  const primaryJobId = relation[0]?.primaryJobId ?? jobId;
+  const duplicates = await db
+    .select({ duplicateJobId: jobDuplicates.duplicateJobId })
+    .from(jobDuplicates)
+    .where(eq(jobDuplicates.primaryJobId, primaryJobId));
+  const sourceIds = [primaryJobId, ...duplicates.map((item) => item.duplicateJobId)];
+  const sources = await db
+    .select()
+    .from(jobs)
+    .where(inArray(jobs.id, sourceIds));
+
+  return {
+    primaryJobId,
+    sources: sources.sort((left, right) =>
+      Number(right.id === primaryJobId) - Number(left.id === primaryJobId) || left.id - right.id
+    ),
+  };
 }
 
 // User Profiles

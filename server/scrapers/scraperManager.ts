@@ -1,10 +1,10 @@
 import type { BaseScraper, ScrapeResult } from "./baseScraper";
 import { getScraperForPlatform, getSupportedPlatforms, hasScraper } from "./index";
 import { getDb } from "../db";
-import { jobs, jobPlatforms } from "../../drizzle/schema";
-import { and, eq, or } from "drizzle-orm";
+import { jobDuplicates, jobs, jobPlatforms } from "../../drizzle/schema";
+import { and, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { samplePlatforms } from "../sampleData";
-import { compareJobsForDeduplication } from "../jobDeduplication";
+import { findBestJobDuplicateCandidate } from "../jobDeduplication";
 
 /**
  * Scraper Manager
@@ -157,6 +157,7 @@ export class ScraperManager {
     let saved = 0;
     let duplicates = 0;
     let errors = 0;
+    const now = new Date();
 
     for (const job of scrapedJobs) {
       try {
@@ -177,6 +178,7 @@ export class ScraperManager {
         const duplicateCandidates = job.company && job.title
           ? await db
               .select({
+                id: jobs.id,
                 applicationUrl: jobs.applicationUrl,
                 sourceUrl: jobs.sourceUrl,
                 title: jobs.title,
@@ -184,16 +186,29 @@ export class ScraperManager {
                 description: jobs.description,
               })
               .from(jobs)
-              .where(or(
-                eq(jobs.company, job.company),
-                eq(jobs.title, job.title)
+              .where(and(
+                or(
+                  eq(jobs.company, job.company),
+                  eq(jobs.title, job.title)
+                ),
+                eq(jobs.isActive, 1),
+                or(isNull(jobs.expiryDate), gt(jobs.expiryDate, now)),
+                sql`NOT EXISTS (
+                  SELECT 1 FROM ${jobDuplicates}
+                  WHERE ${jobDuplicates.duplicateJobId} = ${jobs.id}
+                )`
               ))
               .limit(100)
           : [];
-        const crossPlatformDuplicate = duplicateCandidates.some((existing) =>
-          compareJobsForDeduplication(job, existing).isDuplicate
-        );
+        const crossPlatformDuplicate = findBestJobDuplicateCandidate(job, duplicateCandidates);
         if (crossPlatformDuplicate) {
+          const duplicateWrite = await db.insert(jobs).values(job);
+          const duplicateJobId = Number(duplicateWrite[0].insertId);
+          await db.insert(jobDuplicates).values({
+            primaryJobId: crossPlatformDuplicate.job.id,
+            duplicateJobId,
+            similarityScore: Math.round(crossPlatformDuplicate.match.similarity * 100),
+          });
           duplicates++;
           continue;
         }

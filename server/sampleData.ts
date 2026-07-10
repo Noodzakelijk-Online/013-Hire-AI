@@ -133,4 +133,42 @@ export const sampleJobs: SampleJob[] = [
     createdAt: new Date(now - 4 * 86400000),
     updatedAt: new Date(now - 4 * 86400000),
   },
+  {
+    id: 5,
+    externalId: "sample-senior-fullstack-flexjobs",
+    title: "Senior Full Stack Developer - Remote",
+    company: "TechFlow Inc",
+    description: "Build scalable remote-first web applications using React, Node.js, PostgreSQL, Docker, and AWS.",
+    requirements: "5+ years JavaScript or TypeScript, React, Node.js, SQL, REST APIs, Git",
+    responsibilities: "Own core product surfaces, improve platform reliability, and mentor engineers.",
+    benefits: "Health insurance, 401k matching, unlimited PTO, remote work, learning budget",
+    location: "Remote - Worldwide",
+    jobType: "full-time",
+    salaryMin: 120000,
+    salaryMax: 160000,
+    salaryCurrency: "USD",
+    skills: "JavaScript, TypeScript, React, Node.js, PostgreSQL, AWS, Docker",
+    applicationUrl: "https://boards.greenhouse.io/techflow/jobs/12345?source=flexjobs",
+    applicationEmail: null,
+    applicationProcess: "greenhouse",
+    platformId: 1,
+    sourceUrl: "https://flexjobs.example.com/techflow/senior-full-stack-developer",
+    postedDate: new Date(now - 2 * 86400000),
+    expiryDate: null,
+    isActive: 1,
+    visaSponsorshipAvailable: 1,
+    openHiringSupport: 0,
+    diversityFriendly: 1,
+    createdAt: new Date(now - 2 * 86400000),
+    updatedAt: new Date(now - 2 * 86400000),
+  },
+];
+
+/** Mirrors persisted job_duplicates rows in the database-free development runtime. */
+export const sampleJobDuplicateLinks: Array<{
+  primaryJobId: number;
+  duplicateJobId: number;
+  similarityScore: number;
+}> = [
+  { primaryJobId: 1, duplicateJobId: 5, similarityScore: 100 },
 ];

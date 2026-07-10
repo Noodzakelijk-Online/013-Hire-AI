@@ -281,6 +281,12 @@ export const appRouter = router({
         const { getJobById } = await import("./db");
         return await getJobById(input.id);
       }),
+    getSources: publicProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .query(async ({ input }) => {
+        const { getJobAggregationSources } = await import("./db");
+        return await getJobAggregationSources(input.id);
+      }),
 
     // Saved Jobs
     saveJob: protectedProcedure

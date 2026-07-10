@@ -4,9 +4,15 @@
  */
 
 import { getDb } from "./db";
-import { jobs } from "../drizzle/schema";
+import { jobDuplicates, jobs } from "../drizzle/schema";
 import { asc, desc, gt, and, eq, gte, inArray, like, or, sql } from "drizzle-orm";
-import { sampleJobs } from "./sampleData";
+import { sampleJobDuplicateLinks, sampleJobs } from "./sampleData";
+
+const canonicalJobCondition = sql`NOT EXISTS (
+  SELECT 1 FROM ${jobDuplicates}
+  WHERE ${jobDuplicates.duplicateJobId} = ${jobs.id}
+)`;
+const sampleDuplicateJobIds = new Set(sampleJobDuplicateLinks.map((link) => link.duplicateJobId));
 
 // ============================================================================
 // TYPES
@@ -33,6 +39,14 @@ export interface JobSummary {
   platformId: number;
   postedDate: Date | null;
   matchScore?: number;
+}
+
+export function selectCanonicalDiscoveryJobs(
+  jobs: Array<JobSummary & { createdAt?: Date; isDuplicate?: number }>
+): JobSummary[] {
+  return jobs
+    .filter((job) => !Boolean(job.isDuplicate))
+    .map(({ isDuplicate: _isDuplicate, createdAt: _createdAt, ...job }) => job);
 }
 
 export interface DiscoverySubscription {
@@ -135,6 +149,10 @@ class SubscriptionManager {
           platformId: jobs.platformId,
           postedDate: jobs.postedDate,
           createdAt: jobs.createdAt,
+          isDuplicate: sql<number>`EXISTS (
+            SELECT 1 FROM ${jobDuplicates}
+            WHERE ${jobDuplicates.duplicateJobId} = ${jobs.id}
+          )`,
         })
         .from(jobs)
         .where(
@@ -156,7 +174,10 @@ class SubscriptionManager {
         const newestJob = newJobs[newJobs.length - 1];
         this.lastCheckedTimestamp = newestJob.createdAt;
         this.lastCheckedId = newestJob.id;
-        this.notifySubscribers(newJobs as JobSummary[]);
+        const canonicalJobs = selectCanonicalDiscoveryJobs(newJobs);
+        if (canonicalJobs.length > 0) {
+          this.notifySubscribers(canonicalJobs as JobSummary[]);
+        }
       }
     } catch (error) {
       console.error("[Discovery] Error checking for new jobs:", error);
@@ -244,7 +265,7 @@ class SubscriptionManager {
         postedDate: jobs.postedDate,
       })
       .from(jobs)
-      .where(eq(jobs.isActive, 1))
+      .where(and(eq(jobs.isActive, 1), canonicalJobCondition))
       .orderBy(desc(jobs.createdAt))
       .limit(50);
 
@@ -284,7 +305,7 @@ export async function getRecentJobs(options: {
   if (!db) {
     const limit = options.limit || 20;
     const offset = options.offset || 0;
-    let filteredJobs = sampleJobs.filter((job) => job.isActive === 1);
+    let filteredJobs = sampleJobs.filter((job) => job.isActive === 1 && !sampleDuplicateJobIds.has(job.id));
 
     if (options.keywords?.length) {
       filteredJobs = filteredJobs.filter((job) => {
@@ -324,7 +345,7 @@ export async function getRecentJobs(options: {
   const limit = options.limit || 20;
   const offset = options.offset || 0;
 
-  const conditions = [eq(jobs.isActive, 1)];
+  const conditions = [eq(jobs.isActive, 1), canonicalJobCondition];
 
   if (options.postedAfter) {
     conditions.push(gt(jobs.postedDate, options.postedAfter));
@@ -398,7 +419,7 @@ export async function getDiscoveryStats(): Promise<{
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const weekStart = new Date(todayStart.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const activeJobs = sampleJobs.filter((job) => job.isActive === 1);
+    const activeJobs = sampleJobs.filter((job) => job.isActive === 1 && !sampleDuplicateJobIds.has(job.id));
     return {
       totalJobs: activeJobs.length,
       jobsToday: activeJobs.filter((job) => job.createdAt > todayStart).length,
@@ -425,17 +446,17 @@ export async function getDiscoveryStats(): Promise<{
   const totalResult = await db
     .select({ count: sql<number>`count(*)` })
     .from(jobs)
-    .where(eq(jobs.isActive, 1));
+    .where(and(eq(jobs.isActive, 1), canonicalJobCondition));
 
   const todayResult = await db
     .select({ count: sql<number>`count(*)` })
     .from(jobs)
-    .where(and(eq(jobs.isActive, 1), gt(jobs.createdAt, todayStart)));
+    .where(and(eq(jobs.isActive, 1), gt(jobs.createdAt, todayStart), canonicalJobCondition));
 
   const weekResult = await db
     .select({ count: sql<number>`count(*)` })
     .from(jobs)
-    .where(and(eq(jobs.isActive, 1), gt(jobs.createdAt, weekStart)));
+    .where(and(eq(jobs.isActive, 1), gt(jobs.createdAt, weekStart), canonicalJobCondition));
 
   const platformsResult = await db
     .select({
@@ -443,7 +464,7 @@ export async function getDiscoveryStats(): Promise<{
       count: sql<number>`count(*)`,
     })
     .from(jobs)
-    .where(eq(jobs.isActive, 1))
+    .where(and(eq(jobs.isActive, 1), canonicalJobCondition))
     .groupBy(jobs.platformId)
     .orderBy(desc(sql`count(*)`))
     .limit(10);
@@ -454,7 +475,7 @@ export async function getDiscoveryStats(): Promise<{
       count: sql<number>`count(*)`,
     })
     .from(jobs)
-    .where(and(eq(jobs.isActive, 1), sql`${jobs.location} IS NOT NULL`))
+    .where(and(eq(jobs.isActive, 1), sql`${jobs.location} IS NOT NULL`, canonicalJobCondition))
     .groupBy(jobs.location)
     .orderBy(desc(sql`count(*)`))
     .limit(10);
@@ -489,6 +510,7 @@ export async function searchJobs(query: string, options?: {
     const offset = options?.offset || 0;
     const searchTerms = query.toLowerCase().split(/\s+/).filter(Boolean);
     const scoredJobs = sampleJobs
+      .filter((job) => !sampleDuplicateJobIds.has(job.id))
       .map((job) => {
         const searchable = `${job.title} ${job.company} ${job.description || ""} ${job.skills || ""}`.toLowerCase();
         const score = searchTerms.reduce((total, term) => total + (searchable.includes(term) ? 1 : 0), 0);
@@ -534,7 +556,7 @@ export async function searchJobs(query: string, options?: {
       description: jobs.description,
     })
     .from(jobs)
-    .where(eq(jobs.isActive, 1))
+    .where(and(eq(jobs.isActive, 1), canonicalJobCondition))
     .orderBy(desc(jobs.postedDate));
 
   const scoredJobs = allJobs

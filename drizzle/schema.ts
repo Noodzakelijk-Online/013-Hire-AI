@@ -87,7 +87,10 @@ export const jobDuplicates = mysqlTable("job_duplicates", {
   duplicateJobId: int("duplicate_job_id").notNull(),
   similarityScore: int("similarity_score"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  uniqueIndex("job_duplicates_primary_duplicate_unique").on(table.primaryJobId, table.duplicateJobId),
+  index("job_duplicates_duplicate_job_idx").on(table.duplicateJobId),
+]);
 
 /**
  * User Profiles Extended
