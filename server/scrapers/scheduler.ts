@@ -14,6 +14,8 @@ export interface SchedulerConfig {
 export interface SchedulerStatus {
   isStarted: boolean;
   isRunning: boolean;
+  intervalMinutes: number;
+  maxJobsPerRun: number;
   lastRunAt: Date | null;
   nextRunAt: Date | null;
   totalJobsScraped: number;
@@ -27,6 +29,8 @@ export class JobScrapingScheduler {
   private status: SchedulerStatus = {
     isStarted: false,
     isRunning: false,
+    intervalMinutes: 0,
+    maxJobsPerRun: 0,
     lastRunAt: null,
     nextRunAt: null,
     totalJobsScraped: 0,
@@ -36,6 +40,8 @@ export class JobScrapingScheduler {
 
   constructor(config: SchedulerConfig) {
     this.config = config;
+    this.status.intervalMinutes = config.intervalMinutes;
+    this.status.maxJobsPerRun = config.maxJobsPerRun;
   }
 
   /**
@@ -134,10 +140,17 @@ export class JobScrapingScheduler {
    * Update scheduler configuration
    */
   updateConfig(config: Partial<SchedulerConfig>): void {
+    const shouldRestart = Boolean(
+      this.intervalId &&
+      config.intervalMinutes !== undefined &&
+      config.intervalMinutes !== this.config.intervalMinutes
+    );
     this.config = { ...this.config, ...config };
+    this.status.intervalMinutes = this.config.intervalMinutes;
+    this.status.maxJobsPerRun = this.config.maxJobsPerRun;
     
     // Restart if running with new interval
-    if (this.intervalId && config.intervalMinutes) {
+    if (shouldRestart) {
       this.stop();
       this.start();
     }
@@ -153,6 +166,8 @@ export function getScheduler(config?: SchedulerConfig): JobScrapingScheduler {
       intervalMinutes: 60, // Default: every hour
       maxJobsPerRun: 100,
     });
+  } else if (config) {
+    schedulerInstance.updateConfig(config);
   }
   return schedulerInstance;
 }

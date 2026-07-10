@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import {
   Activity,
@@ -28,6 +29,8 @@ import {
   FileText,
   Gavel,
   RefreshCw,
+  Pause,
+  Play,
   Shield,
   Users,
   XCircle,
@@ -109,6 +112,9 @@ export default function AdminPanel() {
   const [reviewDialog, setReviewDialog] = useState<{ open: boolean; itemId: number | null; status: "resolved" | "dismissed" }>({ open: false, itemId: null, status: "resolved" });
   const [reviewResolution, setReviewResolution] = useState("");
   const [evidenceDialog, setEvidenceDialog] = useState<{ open: boolean; itemId: number | null }>({ open: false, itemId: null });
+  const [scrapingIntervalMinutes, setScrapingIntervalMinutes] = useState("60");
+  const [scrapingMaxJobsPerRun, setScrapingMaxJobsPerRun] = useState("100");
+  const scrapingScheduleInitialized = useRef(false);
 
   // Data queries
   const { data: stats, refetch: refetchStats } = trpc.admin.getStats.useQuery();
@@ -125,6 +131,20 @@ export default function AdminPanel() {
     { enabled: evidenceDialog.open && evidenceDialog.itemId !== null }
   );
   const { data: payments } = trpc.admin.listPayments.useQuery({ limit: 50, offset: 0 });
+  const {
+    data: scrapingStatus,
+    refetch: refetchScrapingStatus,
+  } = trpc.scraping.status.useQuery(undefined, {
+    enabled: user?.role === "admin",
+    refetchInterval: 30_000,
+  });
+
+  useEffect(() => {
+    if (!scrapingStatus?.scheduler || scrapingScheduleInitialized.current) return;
+    setScrapingIntervalMinutes(String(scrapingStatus.scheduler.intervalMinutes));
+    setScrapingMaxJobsPerRun(String(scrapingStatus.scheduler.maxJobsPerRun));
+    scrapingScheduleInitialized.current = true;
+  }, [scrapingStatus?.scheduler]);
 
   // Mutations
   const updateStatus = trpc.admin.updateFeeStatus.useMutation({
@@ -189,6 +209,41 @@ export default function AdminPanel() {
     },
     onError: (err) => toast.error(err.message),
   });
+  const startScrapingScheduler = trpc.scraping.startScheduler.useMutation({
+    onSuccess: (result) => {
+      toast.success(result.message);
+      refetchScrapingStatus();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const stopScrapingScheduler = trpc.scraping.stopScheduler.useMutation({
+    onSuccess: (result) => {
+      toast.success(result.message);
+      refetchScrapingStatus();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const runScrapingNow = trpc.scraping.runNow.useMutation({
+    onSuccess: (result) => {
+      toast.success(result.message);
+      refetchScrapingStatus();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const handleStartScrapingScheduler = () => {
+    const intervalMinutes = Number(scrapingIntervalMinutes);
+    const maxJobsPerRun = Number(scrapingMaxJobsPerRun);
+    if (!Number.isInteger(intervalMinutes) || intervalMinutes < 5 || intervalMinutes > 1440) {
+      toast.error("Choose an interval between 5 minutes and 24 hours.");
+      return;
+    }
+    if (!Number.isInteger(maxJobsPerRun) || maxJobsPerRun < 10 || maxJobsPerRun > 1000) {
+      toast.error("Choose 10 to 1,000 jobs per run.");
+      return;
+    }
+    startScrapingScheduler.mutate({ intervalMinutes, maxJobsPerRun });
+  };
 
   // Auth guard
   if (loading) {
@@ -267,6 +322,7 @@ export default function AdminPanel() {
                 refetchOverdue();
                 refetchVerifications();
                 refetchReviewQueue();
+                refetchScrapingStatus();
               }}
               className="text-slate-400 hover:text-white"
             >
@@ -370,7 +426,7 @@ export default function AdminPanel() {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="bg-slate-900 border border-slate-800 mb-6">
+          <TabsList className="mb-6 h-auto flex flex-wrap justify-start bg-slate-900 border border-slate-800">
             <TabsTrigger value="overview" className="data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-400">
               All Fees
             </TabsTrigger>
@@ -386,7 +442,188 @@ export default function AdminPanel() {
             <TabsTrigger value="payments" className="data-[state=active]:bg-green-500/20 data-[state=active]:text-green-400">
               Payments
             </TabsTrigger>
+            <TabsTrigger
+              value="discovery"
+              data-testid="admin-job-discovery-tab"
+              className="data-[state=active]:bg-blue-500/20 data-[state=active]:text-blue-300"
+            >
+              Job discovery
+            </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="discovery" data-testid="admin-job-discovery-panel">
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
+              <Card className="bg-slate-900/60 border-slate-800/50">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base text-white">
+                    <Activity className="h-5 w-5 text-blue-300" />
+                    Job discovery scheduler
+                    <Badge
+                      variant="outline"
+                      className={scrapingStatus?.scheduler.isStarted
+                        ? "border-emerald-500/30 text-emerald-300"
+                        : "border-slate-600 text-slate-400"}
+                    >
+                      {scrapingStatus?.scheduler.isStarted ? "Scheduled" : "Stopped"}
+                    </Badge>
+                    {scrapingStatus?.scheduler.isRunning && (
+                      <Badge variant="outline" className="border-blue-500/30 text-blue-300">
+                        Running
+                      </Badge>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    {[
+                      ["Configured sources", scrapingStatus?.platforms.length ?? 0],
+                      ["Successful runs", scrapingStatus?.scheduler.totalRunsCompleted ?? 0],
+                      ["Jobs saved", scrapingStatus?.scheduler.totalJobsScraped ?? 0],
+                      ["Source errors", scrapingStatus?.scheduler.errors.length ?? 0],
+                    ].map(([label, value]) => (
+                      <div key={String(label)} className="rounded-md border border-slate-800 bg-slate-950/50 p-3">
+                        <div className="text-xs text-slate-500">{label}</div>
+                        <div className="mt-1 text-lg font-semibold text-white">{value}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+                    <div className="rounded-md border border-slate-800 bg-slate-950/50 p-3">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Last discovery</div>
+                      <div className="mt-1 text-slate-200">
+                        {scrapingStatus?.scheduler.lastRunAt
+                          ? new Date(scrapingStatus.scheduler.lastRunAt).toLocaleString()
+                          : "No completed run"}
+                      </div>
+                    </div>
+                    <div className="rounded-md border border-slate-800 bg-slate-950/50 p-3">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Next scheduled run</div>
+                      <div className="mt-1 text-slate-200">
+                        {scrapingStatus?.scheduler.nextRunAt
+                          ? new Date(scrapingStatus.scheduler.nextRunAt).toLocaleString()
+                          : "Not scheduled"}
+                      </div>
+                    </div>
+                  </div>
+                  {scrapingStatus?.scheduler.errors.length ? (
+                    <div className="mt-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+                      <div className="font-medium">Latest source issues</div>
+                      <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-amber-200">
+                        {scrapingStatus.scheduler.errors.slice(0, 5).map((error) => <li key={error}>{error}</li>)}
+                      </ul>
+                    </div>
+                  ) : null}
+                </CardContent>
+              </Card>
+
+              <Card className="bg-slate-900/60 border-slate-800/50">
+                <CardHeader>
+                  <CardTitle className="text-base text-white">Runtime schedule</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="scraping-interval" className="text-slate-300">Interval (minutes)</Label>
+                      <Input
+                        id="scraping-interval"
+                        data-testid="admin-scraping-interval"
+                        type="number"
+                        min={5}
+                        max={1440}
+                        value={scrapingIntervalMinutes}
+                        onChange={(event) => setScrapingIntervalMinutes(event.target.value)}
+                        className="border-slate-700 bg-slate-950 text-white"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="scraping-max-jobs" className="text-slate-300">Maximum jobs per run</Label>
+                      <Input
+                        id="scraping-max-jobs"
+                        data-testid="admin-scraping-max-jobs"
+                        type="number"
+                        min={10}
+                        max={1000}
+                        value={scrapingMaxJobsPerRun}
+                        onChange={(event) => setScrapingMaxJobsPerRun(event.target.value)}
+                        className="border-slate-700 bg-slate-950 text-white"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      data-testid="admin-start-scraping-scheduler"
+                      className="bg-blue-600 text-white hover:bg-blue-700"
+                      disabled={startScrapingScheduler.isPending || stopScrapingScheduler.isPending || runScrapingNow.isPending}
+                      onClick={handleStartScrapingScheduler}
+                    >
+                      <Play className="mr-2 h-4 w-4" />
+                      {scrapingStatus?.scheduler.isStarted ? "Update schedule" : "Start schedule"}
+                    </Button>
+                    <Button
+                      data-testid="admin-stop-scraping-scheduler"
+                      variant="outline"
+                      className="border-slate-700 text-slate-200"
+                      disabled={!scrapingStatus?.scheduler.isStarted || startScrapingScheduler.isPending || stopScrapingScheduler.isPending || runScrapingNow.isPending}
+                      onClick={() => stopScrapingScheduler.mutate()}
+                    >
+                      <Pause className="mr-2 h-4 w-4" />
+                      Stop
+                    </Button>
+                    <Button
+                      data-testid="admin-run-scraping-now"
+                      variant="outline"
+                      className="border-amber-500/40 text-amber-200 hover:bg-amber-500/10"
+                      disabled={startScrapingScheduler.isPending || stopScrapingScheduler.isPending || runScrapingNow.isPending || scrapingStatus?.scheduler.isRunning}
+                      onClick={() => runScrapingNow.mutate()}
+                    >
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                      Run discovery now
+                    </Button>
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    Current: every {scrapingStatus?.scheduler.intervalMinutes ?? 60} minutes, up to {scrapingStatus?.scheduler.maxJobsPerRun ?? 100} jobs per run.
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card className="mt-4 bg-slate-900/60 border-slate-800/50">
+              <CardHeader>
+                <CardTitle className="text-base text-white">Configured source health</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-slate-400">
+                        <th className="py-2 pr-4 text-left">Source</th>
+                        <th className="py-2 pr-4 text-left">Tier</th>
+                        <th className="py-2 pr-4 text-left">Category</th>
+                        <th className="py-2 text-left">Last successful scrape</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {scrapingStatus?.platforms.map((platform) => (
+                        <tr key={platform.id} className="border-b border-slate-800/50">
+                          <td className="py-3 pr-4 font-medium text-white">{platform.name}</td>
+                          <td className="py-3 pr-4 text-slate-400">{platform.tier}</td>
+                          <td className="py-3 pr-4 text-slate-400">{platform.category || "General"}</td>
+                          <td className="py-3 text-slate-300">
+                            {platform.lastScraped ? new Date(platform.lastScraped).toLocaleString() : "Awaiting first successful scrape"}
+                          </td>
+                        </tr>
+                      ))}
+                      {(!scrapingStatus || scrapingStatus.platforms.length === 0) && (
+                        <tr>
+                          <td colSpan={4} className="py-8 text-center text-slate-500">No configured scraper sources.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
           {/* All Fees Tab */}
           <TabsContent value="overview">

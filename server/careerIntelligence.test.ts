@@ -162,6 +162,11 @@ describe("Scraping API", () => {
       expect(result.availableScrapers).toBeGreaterThanOrEqual(48);
       expect(result.supportedPlatforms).toBeInstanceOf(Array);
       expect(result.supportedPlatforms.length).toBeGreaterThanOrEqual(48);
+      expect(result.platforms).toBeInstanceOf(Array);
+      expect(result.scheduler).toMatchObject({
+        intervalMinutes: expect.any(Number),
+        maxJobsPerRun: expect.any(Number),
+      });
       // Check that some common platforms are present
       const platformNames = result.supportedPlatforms.map((p: any) => p.name);
       expect(platformNames.length).toBeGreaterThan(0);

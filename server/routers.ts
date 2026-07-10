@@ -1742,15 +1742,28 @@ export const appRouter = router({
       const { getScraperManager } = await import("./scrapers/scraperManager");
       const { getSupportedPlatforms } = await import("./scrapers/index");
       const { getScheduler } = await import("./scrapers/scheduler");
+      const { getAllJobPlatforms } = await import("./db");
       const manager = await getScraperManager();
       const supportedPlatforms = getSupportedPlatforms();
       const scheduler = getScheduler();
       const schedulerStatus = scheduler.getStatus();
+      const configuredPlatforms = await getAllJobPlatforms();
+      const platforms = configuredPlatforms
+        .filter((platform) => supportedPlatforms.includes(platform.name))
+        .map((platform) => ({
+          id: platform.id,
+          name: platform.name,
+          category: platform.category,
+          tier: platform.tier,
+          isActive: platform.isActive === 1,
+          lastScraped: platform.lastScraped,
+        }));
 
       return {
         initialized: true,
         availableScrapers: supportedPlatforms.length,
         supportedPlatforms,
+        platforms,
         scheduler: schedulerStatus,
         message: `Scraper system ready. Supporting ${supportedPlatforms.length} platforms.`,
       };

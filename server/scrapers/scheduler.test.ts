@@ -9,7 +9,7 @@ vi.mock("./scraperManager", () => ({
   getScraperManager: mocks.getScraperManager,
 }));
 
-import { JobScrapingScheduler } from "./scheduler";
+import { getScheduler, JobScrapingScheduler } from "./scheduler";
 
 describe("job scraping scheduler", () => {
   beforeEach(() => {
@@ -33,6 +33,8 @@ describe("job scraping scheduler", () => {
     expect(scheduler.getStatus()).toMatchObject({
       isStarted: false,
       isRunning: false,
+      intervalMinutes: 60,
+      maxJobsPerRun: 25,
       totalJobsScraped: 3,
       totalRunsCompleted: 1,
       errors: ["We Work Remotely: Rate limited"],
@@ -47,5 +49,25 @@ describe("job scraping scheduler", () => {
 
     scheduler.stop();
     expect(scheduler.getStatus()).toMatchObject({ isStarted: false, nextRunAt: null });
+  });
+
+  it("applies a revised runtime configuration before the next discovery run", () => {
+    const scheduler = new JobScrapingScheduler({ intervalMinutes: 60, maxJobsPerRun: 25 });
+
+    scheduler.updateConfig({ intervalMinutes: 120, maxJobsPerRun: 80 });
+
+    expect(scheduler.getStatus()).toMatchObject({
+      intervalMinutes: 120,
+      maxJobsPerRun: 80,
+      isStarted: false,
+    });
+  });
+
+  it("updates an existing scheduler singleton with operator configuration", () => {
+    const initial = getScheduler({ intervalMinutes: 30, maxJobsPerRun: 40 });
+    const updated = getScheduler({ intervalMinutes: 90, maxJobsPerRun: 75 });
+
+    expect(updated).toBe(initial);
+    expect(updated.getStatus()).toMatchObject({ intervalMinutes: 90, maxJobsPerRun: 75 });
   });
 });
