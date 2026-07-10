@@ -424,17 +424,31 @@ export const appRouter = router({
           experience: z.string().optional(),
           education: z.string().optional(),
           preferences: z.string().optional(),
-          desiredJobTypes: z.string().optional(),
-          desiredLocations: z.string().optional(),
-          salaryExpectationMin: z.number().optional(),
-          salaryExpectationMax: z.number().optional(),
+          desiredJobTypes: z.string().trim().max(500).nullable().optional(),
+          desiredLocations: z.string().trim().max(500).nullable().optional(),
+          salaryExpectationMin: z.number().int().min(0).max(10_000_000).nullable().optional(),
+          salaryExpectationMax: z.number().int().min(0).max(10_000_000).nullable().optional(),
           resumeUrl: safeHttpUrl.optional(),
           resumeFileKey: z.string().trim().max(500).optional(),
           linkedinUrl: safeHttpUrl.optional(),
           githubUrl: safeHttpUrl.optional(),
           portfolioUrl: safeHttpUrl.optional(),
           diversityGroup: z.string().optional(),
-          needsVisaSponsorship: z.number().optional(),
+          needsVisaSponsorship: z.number().int().min(0).max(1).optional(),
+        }).superRefine((value, context) => {
+          if (
+            value.salaryExpectationMin !== undefined &&
+            value.salaryExpectationMax !== undefined &&
+            value.salaryExpectationMin !== null &&
+            value.salaryExpectationMax !== null &&
+            value.salaryExpectationMin > value.salaryExpectationMax
+          ) {
+            context.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ["salaryExpectationMax"],
+              message: "Maximum salary must be at least the minimum salary.",
+            });
+          }
         })
       )
       .mutation(async ({ ctx, input }) => {

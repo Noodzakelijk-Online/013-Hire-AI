@@ -28,6 +28,7 @@ export type ProfileEvidenceControlStatus =
 export type ProfileEvidenceControlSection =
   | "import"
   | "social"
+  | "preferences"
   | "work-experience"
   | "skills";
 
@@ -356,6 +357,21 @@ export function getProfileEvidenceControlSummary(
   const missingCount = providers.filter((provider) => provider.status === "missing").length;
   const consentRequiredCount = providers.filter((provider) => provider.status === "consent_required").length;
 
+  const blockerKeys = input.readiness?.blockers
+    ?.map((blocker) => typeof blocker === "object" && blocker !== null && "key" in blocker
+      ? String((blocker as { key?: unknown }).key || "")
+      : "")
+    .filter(Boolean) ?? [];
+  const primarySection: ProfileEvidenceControlSection = providers[0].status !== "connected"
+    ? "import"
+    : blockerKeys.includes("skills")
+      ? "skills"
+      : blockerKeys.includes("experience")
+        ? "work-experience"
+        : blockerKeys.includes("target_roles") || blockerKeys.includes("locations") || blockerKeys.includes("salary")
+          ? "preferences"
+          : "import";
+
   if (blockerCount > 0 || providers[0].status !== "connected") {
     return {
       status: "blocked",
@@ -363,7 +379,7 @@ export function getProfileEvidenceControlSummary(
       headline: "Profile evidence is not ready for autonomous preparation.",
       detail: "Add the core resume, skills, and experience evidence before any external application workflow can advance.",
       cta: "Fix profile evidence",
-      primarySection: providers[0].status !== "connected" ? "import" : "skills",
+      primarySection,
       score,
       connectedCount,
       missingCount,

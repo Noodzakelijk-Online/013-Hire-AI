@@ -81,6 +81,25 @@ describe("profile evidence control", () => {
     expect(summary.providers.find((provider) => provider.id === "resume")?.status).toBe("missing");
   });
 
+  it("routes a target-role readiness blocker to editable search preferences", () => {
+    const summary = getProfileEvidenceControlSummary({
+      profile: {
+        resumeUrl: "https://storage.example.local/resumes/1/current.pdf",
+        resumeFileKey: "resumes/1/current.pdf",
+      },
+      hasActiveResumeArtifact: true,
+      readiness: {
+        score: 66,
+        autoApplyEligible: false,
+        blockers: [{ key: "target_roles" }],
+        warnings: [],
+      },
+    });
+
+    expect(summary.status).toBe("blocked");
+    expect(summary.primarySection).toBe("preferences");
+  });
+
   it("tracks requested and authorized connector state without treating requests as access", () => {
     const summary = getProfileEvidenceControlSummary({
       profile: {

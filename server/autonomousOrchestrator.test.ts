@@ -80,6 +80,19 @@ describe("autonomous orchestrator", () => {
     expect(plan.decisions[0].automationSupported).toBe(false);
   });
 
+  it("keeps jobs outside explicit target roles out of autonomous queues", () => {
+    const plan = buildAutonomousPlan([baseJob], {
+      ...profile,
+      desiredJobTypes: "Product Designer",
+    }, [], {
+      minMatchScore: 0,
+      dailyApplicationLimit: 2,
+    });
+
+    expect(plan.decisions[0]).toMatchObject({ action: "skip" });
+    expect(plan.decisions[0].blockers).toContain("Role does not match the user's target preferences");
+  });
+
   it("enforces daily limits for review preparation", () => {
     const todayApplication: Application = {
       id: 20,

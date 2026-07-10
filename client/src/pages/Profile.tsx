@@ -19,6 +19,7 @@ import {
   Code,
   FolderGit2,
   Globe,
+  Target,
   ShieldCheck,
   LockKeyhole,
   AlertTriangle,
@@ -63,6 +64,11 @@ export default function Profile() {
   const [linkedinUrl, setLinkedinUrl] = useState("");
   const [githubUrl, setGithubUrl] = useState("");
   const [portfolioUrl, setPortfolioUrl] = useState("");
+  const [targetRoles, setTargetRoles] = useState("");
+  const [targetLocations, setTargetLocations] = useState("");
+  const [salaryMinimum, setSalaryMinimum] = useState("");
+  const [salaryMaximum, setSalaryMaximum] = useState("");
+  const [needsVisaSponsorship, setNeedsVisaSponsorship] = useState(false);
 
   // Queries
   const profileQuery = trpc.profile.get.useQuery(undefined, {
@@ -195,6 +201,20 @@ export default function Profile() {
     setPortfolioUrl(profileQuery.data?.portfolioUrl || "");
   }, [profileQuery.data?.linkedinUrl, profileQuery.data?.githubUrl, profileQuery.data?.portfolioUrl]);
 
+  useEffect(() => {
+    setTargetRoles(profileQuery.data?.desiredJobTypes || "");
+    setTargetLocations(profileQuery.data?.desiredLocations || "");
+    setSalaryMinimum(profileQuery.data?.salaryExpectationMin?.toString() || "");
+    setSalaryMaximum(profileQuery.data?.salaryExpectationMax?.toString() || "");
+    setNeedsVisaSponsorship(Boolean(profileQuery.data?.needsVisaSponsorship));
+  }, [
+    profileQuery.data?.desiredJobTypes,
+    profileQuery.data?.desiredLocations,
+    profileQuery.data?.salaryExpectationMin,
+    profileQuery.data?.salaryExpectationMax,
+    profileQuery.data?.needsVisaSponsorship,
+  ]);
+
   const scrollToProfileSection = (section: string) => {
     document
       .getElementById(`profile-section-${section}`)
@@ -243,6 +263,27 @@ export default function Profile() {
       linkedinUrl: linkedinUrl.trim() || undefined,
       githubUrl: githubUrl.trim() || undefined,
       portfolioUrl: portfolioUrl.trim() || undefined,
+    });
+  };
+
+  const handleSaveSearchPreferences = () => {
+    const minimum = parseOptionalSalary(salaryMinimum);
+    const maximum = parseOptionalSalary(salaryMaximum);
+    if (minimum === undefined || maximum === undefined) {
+      toast.error("Salary expectations must be whole, non-negative numbers.");
+      return;
+    }
+    if (minimum !== null && maximum !== null && minimum > maximum) {
+      toast.error("Maximum salary must be at least the minimum salary.");
+      return;
+    }
+
+    updateProfile.mutate({
+      desiredJobTypes: targetRoles.trim() || null,
+      desiredLocations: targetLocations.trim() || null,
+      salaryExpectationMin: minimum,
+      salaryExpectationMax: maximum,
+      needsVisaSponsorship: needsVisaSponsorship ? 1 : 0,
     });
   };
 
@@ -517,6 +558,102 @@ export default function Profile() {
           </CardContent>
         </Card>
 
+        <Card id="profile-section-preferences" data-testid="profile-section-preferences" className="mb-6 bg-slate-900/50 border-slate-700/50 scroll-mt-24">
+          <CardHeader>
+            <CardTitle className="text-white flex items-center gap-2">
+              <Target className="w-5 h-5 text-cyan-400" />
+              Job Search Targets
+            </CardTitle>
+            <CardDescription>
+              Define the role, location, compensation, and work-authorization constraints used to rank autonomous preparation work.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label htmlFor="profile-target-roles" className="mb-2 block text-sm font-medium text-slate-300">
+                  Target roles or employment types
+                </label>
+                <Input
+                  id="profile-target-roles"
+                  data-testid="profile-target-roles"
+                  value={targetRoles}
+                  onChange={(event) => setTargetRoles(event.target.value)}
+                  placeholder="Frontend Engineer, full-time"
+                  className="bg-slate-800 border-slate-700 text-white"
+                />
+                <p className="mt-1 text-xs text-slate-500">Use commas to list role titles, categories, or employment types.</p>
+              </div>
+              <div>
+                <label htmlFor="profile-target-locations" className="mb-2 block text-sm font-medium text-slate-300">
+                  Target locations
+                </label>
+                <Input
+                  id="profile-target-locations"
+                  data-testid="profile-target-locations"
+                  value={targetLocations}
+                  onChange={(event) => setTargetLocations(event.target.value)}
+                  placeholder="Remote, Netherlands, Europe"
+                  className="bg-slate-800 border-slate-700 text-white"
+                />
+                <p className="mt-1 text-xs text-slate-500">Use commas to list acceptable remote, country, or regional locations.</p>
+              </div>
+              <div>
+                <label htmlFor="profile-salary-minimum" className="mb-2 block text-sm font-medium text-slate-300">
+                  Minimum annual salary
+                </label>
+                <Input
+                  id="profile-salary-minimum"
+                  data-testid="profile-salary-minimum"
+                  inputMode="numeric"
+                  value={salaryMinimum}
+                  onChange={(event) => setSalaryMinimum(event.target.value)}
+                  placeholder="90000"
+                  className="bg-slate-800 border-slate-700 text-white"
+                />
+              </div>
+              <div>
+                <label htmlFor="profile-salary-maximum" className="mb-2 block text-sm font-medium text-slate-300">
+                  Maximum annual salary
+                </label>
+                <Input
+                  id="profile-salary-maximum"
+                  data-testid="profile-salary-maximum"
+                  inputMode="numeric"
+                  value={salaryMaximum}
+                  onChange={(event) => setSalaryMaximum(event.target.value)}
+                  placeholder="130000"
+                  className="bg-slate-800 border-slate-700 text-white"
+                />
+              </div>
+            </div>
+            <div className="flex items-start gap-3 rounded-md border border-slate-700/60 bg-slate-950/40 p-3">
+              <Checkbox
+                id="profile-needs-visa"
+                checked={needsVisaSponsorship}
+                onCheckedChange={(checked) => setNeedsVisaSponsorship(checked === true)}
+              />
+              <div>
+                <label htmlFor="profile-needs-visa" className="text-sm font-medium text-slate-200">
+                  I require visa sponsorship
+                </label>
+                <p className="mt-1 text-xs text-slate-500">Roles without a sponsorship signal stay out of the autonomous preparation queue.</p>
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Button
+                data-testid="profile-save-search-preferences"
+                onClick={handleSaveSearchPreferences}
+                disabled={updateProfile.isPending}
+                className="bg-gradient-to-r from-cyan-500 to-blue-600"
+              >
+                {updateProfile.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Save Search Targets
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Work Experience Section */}
         <Card id="profile-section-work-experience" data-testid="profile-section-work-experience" className="mb-6 bg-slate-900/50 border-slate-700/50 scroll-mt-24">
           <CardHeader>
@@ -761,6 +898,14 @@ export default function Profile() {
       </div>
     </div>
   );
+}
+
+function parseOptionalSalary(value: string): number | null | undefined {
+  const normalized = value.trim().replace(/[$,\s]/g, "");
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 10_000_000) return undefined;
+  return parsed;
 }
 
 function getEvidenceStatusClass(status: ProfileEvidenceControlStatus) {

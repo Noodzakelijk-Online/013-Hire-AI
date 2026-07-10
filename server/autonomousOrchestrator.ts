@@ -117,6 +117,26 @@ function hasOverlap(candidate: string[], target: string[]): number {
   ).length;
 }
 
+function canonicalTarget(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function matchesTargetRole(job: Job, targets: string[]): boolean {
+  if (targets.length === 0) return true;
+
+  const jobTargets = [job.title, job.jobType]
+    .filter((value): value is string => Boolean(value))
+    .map(canonicalTarget)
+    .filter(Boolean);
+
+  return targets
+    .map(canonicalTarget)
+    .filter(Boolean)
+    .some((target) => jobTargets.some((jobTarget) =>
+      jobTarget.includes(target) || target.includes(jobTarget)
+    ));
+}
+
 function daysSince(date?: Date | string | null): number {
   if (!date) return 0;
   return Math.max(0, Math.floor((Date.now() - new Date(date).getTime()) / 86400000));
@@ -174,10 +194,13 @@ export function scoreJobForProfile(job: Job, profile?: Partial<UserProfile> | nu
     }
   }
 
-  const desiredTypes = splitList(profile?.desiredJobTypes).map((type) => type.replace("_", "-"));
-  if (desiredTypes.length > 0 && job.jobType && desiredTypes.includes(job.jobType)) {
+  const desiredTargets = splitList(profile?.desiredJobTypes);
+  if (desiredTargets.length > 0 && matchesTargetRole(job, desiredTargets)) {
     score += 8;
-    reasons.push("Job type matches preference");
+    reasons.push("Role or employment type matches target preferences");
+  } else if (desiredTargets.length > 0) {
+    blockers.push("Role does not match the user's target preferences");
+    score -= 20;
   }
 
   if (profile?.salaryExpectationMin && job.salaryMax && job.salaryMax < profile.salaryExpectationMin) {
