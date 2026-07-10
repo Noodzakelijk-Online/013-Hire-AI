@@ -4,20 +4,26 @@ import { successFeesRouter } from "./routers/successFees";
 
 const mocks = vi.hoisted(() => {
   const selectLimit = vi.fn();
+  const selectOrderLimit = vi.fn();
   const storagePut = vi.fn();
   const mockDb = {
     select: vi.fn(() => ({
       from: vi.fn(() => ({
         where: vi.fn(() => ({
           limit: selectLimit,
+          orderBy: vi.fn(() => ({
+            limit: selectOrderLimit,
+          })),
         })),
       })),
     })),
+    insert: vi.fn(),
   };
 
   return {
     mockDb,
     selectLimit,
+    selectOrderLimit,
     storagePut,
     getDb: vi.fn(),
     createAdminReviewItem: vi.fn(),
@@ -62,6 +68,7 @@ describe("success fee report-hire eligibility", () => {
     vi.clearAllMocks();
     mocks.getDb.mockResolvedValue(mocks.mockDb);
     mocks.selectLimit.mockResolvedValue([{ id: 51, status: "pending" }]);
+    mocks.selectOrderLimit.mockResolvedValue([]);
   });
 
   it("rejects a linked application before uploading proof or creating billing state when no offer exists", async () => {
@@ -84,5 +91,30 @@ describe("success fee report-hire eligibility", () => {
     });
 
     expect(mocks.storagePut).not.toHaveBeenCalled();
+  });
+
+  it("rejects a cancelled or rejected attribution before proof upload or success-fee creation", async () => {
+    mocks.selectLimit.mockResolvedValue([{ id: 51, status: "offer" }]);
+    mocks.selectOrderLimit.mockResolvedValue([{ id: 77, status: "rejected" }]);
+    const caller = successFeesRouter.createCaller(createContext(190092));
+
+    await expect(caller.reportHire({
+      employerName: "Example Employer",
+      jobTitle: "Example Role",
+      monthlySalary: 5000,
+      currency: "USD",
+      startDate: "2026-07-10",
+      applicationId: 51,
+      offerLetterBase64: "cHJvb2Y=",
+      offerLetterMimeType: "text/plain",
+      offerLetterFileName: "offer.txt",
+      termsAccepted: true,
+    })).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: expect.stringContaining("rejected or cancelled"),
+    });
+
+    expect(mocks.storagePut).not.toHaveBeenCalled();
+    expect(mocks.mockDb.insert).not.toHaveBeenCalled();
   });
 });

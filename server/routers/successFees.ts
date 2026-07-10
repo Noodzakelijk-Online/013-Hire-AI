@@ -79,6 +79,30 @@ export const successFeesRouter = router({
         }
       }
 
+      const linkedOfferAttributionApproval = input.applicationId === undefined
+        ? null
+        : (await db
+          .select({ id: applicationApprovals.id, status: applicationApprovals.status })
+          .from(applicationApprovals)
+          .where(and(
+            eq(applicationApprovals.userId, userId),
+            eq(applicationApprovals.entityType, "application"),
+            eq(applicationApprovals.entityId, input.applicationId),
+            eq(applicationApprovals.approvalType, "offer_attribution")
+          ))
+          .orderBy(desc(applicationApprovals.createdAt))
+          .limit(1))[0] ?? null;
+
+      if (
+        linkedOfferAttributionApproval?.status === "rejected" ||
+        linkedOfferAttributionApproval?.status === "cancelled"
+      ) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Offer attribution approval was rejected or cancelled for this application.",
+        });
+      }
+
       // Check if user already has an active fee for this employer
       const existingFee = await db
         .select()
@@ -149,27 +173,10 @@ export const successFeesRouter = router({
 
       const approvalDecidedAt = new Date();
       let offerAttributionApprovalId: number;
-      if (input.applicationId) {
-        const existingOfferApproval = await db
-          .select({ id: applicationApprovals.id, status: applicationApprovals.status })
-          .from(applicationApprovals)
-          .where(and(
-            eq(applicationApprovals.userId, userId),
-            eq(applicationApprovals.entityType, "application"),
-            eq(applicationApprovals.entityId, input.applicationId),
-            eq(applicationApprovals.approvalType, "offer_attribution")
-          ))
-          .orderBy(desc(applicationApprovals.createdAt))
-          .limit(1);
-        if (existingOfferApproval[0]?.status === "rejected" || existingOfferApproval[0]?.status === "cancelled") {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: "Offer attribution approval was rejected or cancelled for this application.",
-          });
-        }
-        if (existingOfferApproval[0]) {
-          offerAttributionApprovalId = existingOfferApproval[0].id;
-          if (existingOfferApproval[0].status === "pending") {
+      if (input.applicationId !== undefined) {
+        if (linkedOfferAttributionApproval) {
+          offerAttributionApprovalId = linkedOfferAttributionApproval.id;
+          if (linkedOfferAttributionApproval.status === "pending") {
             await db
               .update(applicationApprovals)
               .set({
@@ -178,7 +185,7 @@ export const successFeesRouter = router({
                 decisionNote: "Approved through report-hire success fee flow.",
                 decidedAt: approvalDecidedAt,
               })
-              .where(eq(applicationApprovals.id, existingOfferApproval[0].id));
+              .where(eq(applicationApprovals.id, linkedOfferAttributionApproval.id));
           }
         } else {
           const attributionApproval = await db.insert(applicationApprovals).values({
