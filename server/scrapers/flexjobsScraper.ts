@@ -27,9 +27,8 @@ export class FlexJobsScraper extends BaseScraper {
       this.log("Starting scrape...");
       await this.rateLimit();
 
-      // FlexJobs doesn't have a public API, so we'd need to scrape HTML
-      // For now, we'll use their RSS feed if available or return empty
-      // In production, this would use Puppeteer for full scraping
+      // FlexJobs does not expose a public API. Use its RSS feed when available
+      // and leave unsupported discovery empty until an approved source exists.
       
       const rssUrl = `${this.config.baseUrl}/rss/jobs.rss`;
       
@@ -80,8 +79,8 @@ export class FlexJobsScraper extends BaseScraper {
           }
         }
       } catch (rssError) {
-        this.log(`RSS feed not available, would need Puppeteer for full scraping: ${rssError}`, "warn");
-        errors.push(`FlexJobs requires browser automation for full scraping`);
+        this.log(`RSS feed not available; no approved FlexJobs source is configured: ${rssError}`, "warn");
+        errors.push("FlexJobs RSS feed is unavailable; no approved discovery source is configured.");
       }
 
       this.log(`Successfully scraped ${jobs.length} jobs`);

@@ -176,7 +176,7 @@ hire_ai_v2/
 │   ├── db.ts                    # Drizzle query helpers
 │   ├── aiMatching.ts            # AI job matching engine
 │   ├── applicationAutomation.ts # Autonomous application submission
-│   ├── browserAutomation.ts     # Headless browser for job platforms
+│   ├── browserAutomation.ts     # Approval-gated manual employer-portal handoff
 │   ├── careerIntelligence.ts    # Salary benchmarking, skill gap analysis
 │   ├── jobNormalization.ts      # Normalise job data across platforms
 │   ├── realTimeDiscovery.ts     # Live job board scanning
