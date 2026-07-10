@@ -1,5 +1,5 @@
 export type ReportHireEvidenceState = "complete" | "pending" | "review";
-export type ReportHireEvidenceStatus = "ready" | "needs_proof" | "needs_terms" | "unlinked_review";
+export type ReportHireEvidenceStatus = "ready" | "needs_proof" | "needs_terms" | "unlinked_review" | "application_not_offer";
 export type ReportHireEvidenceRisk = "high" | "critical";
 
 export interface ReportHireApplicationLike {
@@ -133,6 +133,19 @@ export function getReportHireEvidenceSummary(input: ReportHireEvidenceInput): Re
       detail: "Submitting creates an audit event and admin review item for offer attribution and proof review.",
     },
   ];
+
+  if (linkedApplication && !applicationLooksOfferReady) {
+    return {
+      status: "application_not_offer",
+      label: "Offer required",
+      nextAction: "Record an employer offer or accepted outcome before reporting a hire against this application.",
+      risk: "high",
+      approvalGated: true,
+      canContinueToTerms: false,
+      canConfirm: false,
+      checkpoints,
+    };
+  }
 
   if (!input.hasOfferLetter) {
     return {

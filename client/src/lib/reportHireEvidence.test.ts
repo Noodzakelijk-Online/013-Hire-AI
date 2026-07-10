@@ -43,6 +43,18 @@ describe("report hire evidence summary", () => {
     expect(summary.canConfirm).toBe(false);
   });
 
+  it("blocks a linked pending application before proof or terms can advance", () => {
+    const summary = getReportHireEvidenceSummary({
+      application: { id: 13, status: "pending" },
+      hasOfferLetter: true,
+      termsAccepted: true,
+    });
+
+    expect(summary.status).toBe("application_not_offer");
+    expect(summary.canContinueToTerms).toBe(false);
+    expect(summary.canConfirm).toBe(false);
+  });
+
   it("keeps unlinked hires approval-gated and critical risk", () => {
     const summary = getReportHireEvidenceSummary({
       application: null,

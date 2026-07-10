@@ -2,8 +2,9 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure } from "../_core/trpc";
 import { createAdminReviewItem, createAuditEvent, getDb, getUserOfferAttributionReviews, getUserSuccessFees } from "../db";
-import { applicationApprovals, successFees, employmentVerifications, feePayments, users } from "../../drizzle/schema";
+import { applicationApprovals, applications, successFees, employmentVerifications, feePayments, users } from "../../drizzle/schema";
 import { eq, desc, and } from "drizzle-orm";
+import { isOfferEligibleApplicationStatus } from "@shared/offerEligibility";
 import { storagePut } from "../storage";
 import { validateUploadedFile, VERIFICATION_MIME_TYPES } from "../uploadValidation";
 import Stripe from "stripe";
@@ -59,6 +60,24 @@ export const successFeesRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const userId = ctx.user.id;
+
+      if (input.applicationId !== undefined) {
+        const linkedApplication = await db
+          .select({ id: applications.id, status: applications.status })
+          .from(applications)
+          .where(and(eq(applications.id, input.applicationId), eq(applications.userId, userId)))
+          .limit(1);
+
+        if (!linkedApplication[0]) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Linked application not found." });
+        }
+        if (!isOfferEligibleApplicationStatus(linkedApplication[0].status)) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "A linked application can be reported as a hire only after an offer is recorded or accepted.",
+          });
+        }
+      }
 
       // Check if user already has an active fee for this employer
       const existingFee = await db

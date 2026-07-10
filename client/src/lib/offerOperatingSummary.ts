@@ -1,3 +1,5 @@
+import { isOfferEligibleApplicationStatus } from "@shared/offerEligibility";
+
 export type OfferOperatingStatus =
   | "not_applicable"
   | "attribution_review"
@@ -60,7 +62,9 @@ export function getOfferOperatingSummary(
     nextVerificationDue,
   };
 
-  if (hasOfferAttributionReview) {
+  const offerLifecycleActive = isOfferEligibleApplicationStatus(applicationStatus);
+
+  if (hasOfferAttributionReview && offerLifecycleActive) {
     return {
       ...base,
       status: "attribution_review",
@@ -110,7 +114,7 @@ export function getOfferOperatingSummary(
     };
   }
 
-  if (applicationStatus === "offer" || applicationStatus === "accepted") {
+  if (offerLifecycleActive) {
     return {
       ...base,
       status: "report_hire",

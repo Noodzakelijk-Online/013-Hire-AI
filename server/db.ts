@@ -62,6 +62,7 @@ import {
   filterJobListings,
   type JobSearchFilterState,
 } from "@shared/jobSearchFilters";
+import { isOfferEligibleApplicationStatus } from "@shared/offerEligibility";
 
 type InsertJob = InferInsertModel<typeof jobs>;
 type InsertUserProfile = InferInsertModel<typeof userProfiles>;
@@ -1484,7 +1485,7 @@ export async function getUserOfferAttributionReviews(userId: number) {
     .filter((approval) => approval.approvalType === "offer_attribution");
   const userApplications = await getUserApplications(userId);
 
-  return await Promise.all(approvals.map(async (approval) => {
+  const reviews = await Promise.all(approvals.map(async (approval) => {
     const applicationId = approval.applicationId ??
       (approval.entityType === "application" ? approval.entityId : null);
     const application = applicationId
@@ -1500,6 +1501,10 @@ export async function getUserOfferAttributionReviews(userId: number) {
       }
     }
 
+    if (application && !isOfferEligibleApplicationStatus(application.status)) {
+      return null;
+    }
+
     return {
       approval,
       application,
@@ -1508,6 +1513,8 @@ export async function getUserOfferAttributionReviews(userId: number) {
       recommendedAction: "report_hire" as const,
     };
   }));
+
+  return reviews.filter((review) => review !== null);
 }
 
 export async function createSuccessFee(fee: InsertSuccessFee) {

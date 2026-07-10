@@ -318,4 +318,30 @@ describe("application approval ledger", () => {
     expect(reviews[0].payload).toMatchObject({ responseType: "offer" });
     expect(reviews[0].recommendedAction).toBe("report_hire");
   });
+
+  it("does not surface attribution reviews until the linked application has an offer", async () => {
+    const userId = 98008;
+    const application = await createApplication({
+      userId,
+      jobId: 1,
+      status: "pending",
+      notes: "This application does not have an offer.",
+    });
+    const applicationId = Number(application.insertId);
+
+    await createApplicationApproval({
+      userId,
+      applicationId,
+      entityType: "application",
+      entityId: applicationId,
+      approvalType: "offer_attribution",
+      status: "pending",
+      riskLevel: "high",
+      requestedBy: "system",
+      title: "Invalid early offer attribution",
+      description: "This should remain hidden until an offer is recorded.",
+    });
+
+    await expect(getUserOfferAttributionReviews(userId)).resolves.toEqual([]);
+  });
 });

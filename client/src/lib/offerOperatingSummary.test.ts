@@ -21,6 +21,17 @@ describe("offer operating summary", () => {
     expect(summary.hasOfferAttributionReview).toBe(true);
   });
 
+  it("does not surface attribution or hire reporting for a non-offer application", () => {
+    const summary = getOfferOperatingSummary(
+      { status: "pending" },
+      { approval: { status: "pending" } },
+      null
+    );
+
+    expect(summary.status).toBe("not_applicable");
+    expect(summary.canReportHire).toBe(false);
+  });
+
   it("asks accepted offers without a fee to be reported", () => {
     const summary = getOfferOperatingSummary({ status: "accepted" }, null, null);
 
