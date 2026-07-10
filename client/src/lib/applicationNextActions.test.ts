@@ -143,6 +143,31 @@ describe("getApplicationNextActions", () => {
     expect(summary.secondary.some((action) => action.id === "report_hire")).toBe(true);
   });
 
+  it("requires explicit acceptance before advancing an unconfirmed offer", () => {
+    const summary = getApplicationNextActions({
+      application: { status: "offer" },
+      ledgerSummary: {
+        ...baseLedger,
+        status: "offer_action",
+      },
+      offerSummary: {
+        status: "report_hire",
+        label: "Report hire",
+        nextAction: "Report the hire.",
+        canReportHire: true,
+        hasOfferAttributionReview: false,
+        hasSuccessFee: false,
+        monthlyFeeCents: 0,
+        nextVerificationDue: null,
+      },
+    });
+
+    expect(summary.primary.id).toBe("confirm_offer_acceptance");
+    expect(summary.primary.risk).toBe("high");
+    expect(summary.primary.requiresApproval).toBe(true);
+    expect(summary.secondary.some((action) => action.id === "report_hire")).toBe(true);
+  });
+
   it("falls back to the audit trail for closed applications", () => {
     const summary = getApplicationNextActions({
       application: { status: "withdrawn" },

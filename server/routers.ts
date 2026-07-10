@@ -1181,16 +1181,10 @@ export const appRouter = router({
       .input(
         z.object({
           applicationId: z.number(),
-          status: z.enum(["pending", "applied", "viewed", "interview", "offer", "rejected", "accepted", "withdrawn"]),
+          status: z.literal("withdrawn"),
         })
       )
       .mutation(async ({ ctx, input }) => {
-        if (input.status === "applied") {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Confirm submission with evidence instead of directly marking it applied.",
-          });
-        }
         const { updateApplicationStatus } = await import("./db");
         try {
           await updateApplicationStatus(input.applicationId, input.status, ctx.user.id);
@@ -1212,6 +1206,52 @@ export const appRouter = router({
             message,
           });
         }
+        return { success: true };
+      }),
+    confirmOfferAcceptance: protectedProcedure
+      .input(z.object({
+        applicationId: z.number(),
+        confirmed: z.literal(true),
+        acceptanceNote: z.string().trim().min(8).max(5000),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { createAuditEvent, getUserApplications, updateApplicationStatus } = await import("./db");
+        const application = (await getUserApplications(ctx.user.id)).find((item) => item.id === input.applicationId);
+        if (!application) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Application not found." });
+        }
+        if (application.status !== "offer") {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Only a recorded offer can be confirmed as accepted.",
+          });
+        }
+
+        try {
+          await updateApplicationStatus(input.applicationId, "accepted", ctx.user.id);
+          await createAuditEvent({
+            userId: ctx.user.id,
+            entityType: "application",
+            entityId: input.applicationId,
+            action: "offer_acceptance_confirmed",
+            actor: "user",
+            source: "applications.confirmOfferAcceptance",
+            beforeState: JSON.stringify({ status: "offer" }),
+            afterState: JSON.stringify({
+              status: "accepted",
+              confirmed: input.confirmed,
+              acceptanceNote: input.acceptanceNote,
+            }),
+            riskLevel: "high",
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unable to confirm offer acceptance.";
+          throw new TRPCError({
+            code: message === "Application not found." ? "NOT_FOUND" : "CONFLICT",
+            message,
+          });
+        }
+
         return { success: true };
       }),
     confirmSubmission: protectedProcedure

@@ -9,6 +9,7 @@ export type ApplicationNextActionId =
   | "record_response"
   | "draft_follow_up"
   | "schedule_interview"
+  | "confirm_offer_acceptance"
   | "report_hire"
   | "view_audit"
   | "monitor";
@@ -86,6 +87,13 @@ const actionLibrary: Record<ApplicationNextActionId, ApplicationNextAction> = {
     risk: "medium",
     requiresApproval: false,
   },
+  confirm_offer_acceptance: {
+    id: "confirm_offer_acceptance",
+    label: "Confirm offer acceptance",
+    detail: "Record your explicit acceptance in the application ledger before Hire.AI advances the hire workflow.",
+    risk: "high",
+    requiresApproval: true,
+  },
   report_hire: {
     id: "report_hire",
     label: "Report hire",
@@ -125,6 +133,10 @@ function getPrimaryAction(input: ApplicationNextActionsInput): ApplicationNextAc
 
   if (offer?.status === "fee_attention" || offer?.status === "attribution_review") {
     return actionLibrary.review_queue;
+  }
+
+  if (input.application?.status === "offer") {
+    return actionLibrary.confirm_offer_acceptance;
   }
 
   if (offer?.canReportHire) {
@@ -198,6 +210,10 @@ export function getApplicationNextActions(input: ApplicationNextActionsInput): A
     secondaryCandidates.push(actionLibrary.schedule_interview);
   }
 
+  if (input.application?.status === "offer") {
+    secondaryCandidates.push(actionLibrary.confirm_offer_acceptance);
+  }
+
   if (ledger?.approvedSubmission && !ledger.hasSubmissionEvidence) {
     secondaryCandidates.push(actionLibrary.confirm_submission);
   }
@@ -227,6 +243,7 @@ export function getApplicationNextActions(input: ApplicationNextActionsInput): A
     (input.evidenceGateCount || 0) > 0,
     ledger?.approvedSubmission && !ledger.hasSubmissionEvidence,
     interview?.status === "needs_scheduling",
+    input.application?.status === "offer",
     offer?.status === "attribution_review",
     offer?.status === "fee_attention",
     offer?.canReportHire,

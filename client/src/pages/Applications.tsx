@@ -23,6 +23,7 @@ import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import {
@@ -136,6 +137,9 @@ export default function Applications() {
   const [interviewOutcomeSummary, setInterviewOutcomeSummary] = useState("");
   const [reportHireOpen, setReportHireOpen] = useState(false);
   const [reportHireApplicationId, setReportHireApplicationId] = useState<number | undefined>(undefined);
+  const [acceptingOfferApplication, setAcceptingOfferApplication] = useState<any>(null);
+  const [offerAcceptanceConfirmed, setOfferAcceptanceConfirmed] = useState(false);
+  const [offerAcceptanceNote, setOfferAcceptanceNote] = useState("");
 
   // Fetch applications
   const { data: applications, isLoading, refetch } = trpc.applications.list.useQuery();
@@ -191,6 +195,20 @@ export default function Applications() {
     onError: (error) => {
       toast.error(error.message || "Failed to update application");
     },
+  });
+  const confirmOfferAcceptanceMutation = trpc.applications.confirmOfferAcceptance.useMutation({
+    onSuccess: () => {
+      toast.success("Offer acceptance recorded");
+      setAcceptingOfferApplication(null);
+      setOfferAcceptanceConfirmed(false);
+      setOfferAcceptanceNote("");
+      setSelectedApplication(null);
+      refetch();
+      refetchLedgerArtifacts();
+      refetchOfferAttributionReviews();
+      refetchOperatingLedger();
+    },
+    onError: (error) => toast.error(error.message || "Failed to record offer acceptance"),
   });
   const generateFollowUpMutation = trpc.applications.generateFollowUpEmail.useMutation({
     onSuccess: ({ email }, variables) => {
@@ -570,6 +588,12 @@ export default function Applications() {
     setInterviewNotes("");
   };
 
+  const openOfferAcceptanceDialog = (application: any) => {
+    setAcceptingOfferApplication(application);
+    setOfferAcceptanceConfirmed(false);
+    setOfferAcceptanceNote("");
+  };
+
   const getNextActionIcon = (actionId: ApplicationNextActionId) => {
     switch (actionId) {
       case "review_queue":
@@ -616,6 +640,9 @@ export default function Applications() {
         return;
       case "schedule_interview":
         openScheduleInterviewDialog(selectedApplication);
+        return;
+      case "confirm_offer_acceptance":
+        openOfferAcceptanceDialog(selectedApplication);
         return;
       case "report_hire":
         setReportHireApplicationId(selectedApplication.id);
@@ -1952,6 +1979,17 @@ export default function Applications() {
                       <MessageSquare className="w-4 h-4 mr-1" />
                       Record Response
                     </Button>
+                    {selectedApplication.status === "offer" && (
+                      <Button
+                        data-testid="confirm-offer-acceptance-open"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openOfferAcceptanceDialog(selectedApplication)}
+                      >
+                        <CheckCircle className="w-4 h-4 mr-1" />
+                        Confirm Acceptance
+                      </Button>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"
@@ -2447,6 +2485,86 @@ export default function Applications() {
               >
                 {createFollowUpMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 Save Draft
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={Boolean(acceptingOfferApplication)}
+          onOpenChange={(open) => {
+            if (!open && !confirmOfferAcceptanceMutation.isPending) {
+              setAcceptingOfferApplication(null);
+              setOfferAcceptanceConfirmed(false);
+              setOfferAcceptanceNote("");
+            }
+          }}
+        >
+          <DialogContent className="bg-slate-900 border-slate-700">
+            <DialogHeader>
+              <DialogTitle className="text-white">Confirm Offer Acceptance</DialogTitle>
+              <DialogDescription className="text-slate-400">
+                This records your explicit decision in the application ledger. It does not send anything to the employer or create billing.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="rounded-md border border-slate-700 bg-slate-800/70 p-3 text-sm text-slate-300">
+                <p className="font-medium text-white">{acceptingOfferApplication?.job?.title || "Offer"}</p>
+                <p>{acceptingOfferApplication?.job?.company || "Employer"}</p>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-300" htmlFor="offer-acceptance-note">
+                  Confirmation note
+                </label>
+                <Textarea
+                  id="offer-acceptance-note"
+                  data-testid="offer-acceptance-note"
+                  value={offerAcceptanceNote}
+                  onChange={(event) => setOfferAcceptanceNote(event.target.value)}
+                  placeholder="Example: I accepted the written offer on July 10."
+                  className="min-h-24 bg-slate-800 border-slate-700 text-white"
+                />
+              </div>
+              <label className="flex items-start gap-3 text-sm text-slate-300">
+                <Checkbox
+                  data-testid="offer-acceptance-confirmed"
+                  checked={offerAcceptanceConfirmed}
+                  onCheckedChange={(checked) => setOfferAcceptanceConfirmed(checked === true)}
+                />
+                <span>I confirm that I accepted this employer offer.</span>
+              </label>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                disabled={confirmOfferAcceptanceMutation.isPending}
+                onClick={() => {
+                  setAcceptingOfferApplication(null);
+                  setOfferAcceptanceConfirmed(false);
+                  setOfferAcceptanceNote("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                data-testid="confirm-offer-acceptance-submit"
+                disabled={
+                  !acceptingOfferApplication ||
+                  !offerAcceptanceConfirmed ||
+                  offerAcceptanceNote.trim().length < 8 ||
+                  confirmOfferAcceptanceMutation.isPending
+                }
+                onClick={() => {
+                  if (!acceptingOfferApplication || !offerAcceptanceConfirmed) return;
+                  confirmOfferAcceptanceMutation.mutate({
+                    applicationId: acceptingOfferApplication.id,
+                    confirmed: true,
+                    acceptanceNote: offerAcceptanceNote.trim(),
+                  });
+                }}
+              >
+                {confirmOfferAcceptanceMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Record Acceptance
               </Button>
             </div>
           </DialogContent>
