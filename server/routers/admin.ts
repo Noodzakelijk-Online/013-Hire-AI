@@ -514,6 +514,24 @@ export const adminRouter = router({
 
       const escalationNote = `[LEGAL ESCALATION ${new Date().toISOString()}] ${input.reason}`;
       const updatedNotes = fee.notes ? `${fee.notes}\n${escalationNote}` : escalationNote;
+      const activeUserFees = await db
+        .select()
+        .from(successFees)
+        .where(and(eq(successFees.userId, fee.userId), eq(successFees.status, "active")));
+      const feesToPause = Array.from(
+        new Map([...activeUserFees, fee].map((item) => [item.id, item])).values()
+      );
+
+      for (const feeToPause of feesToPause) {
+        if (!feeToPause.stripeSubscriptionId) continue;
+        try {
+          await getStripeClient().subscriptions.update(feeToPause.stripeSubscriptionId, {
+            pause_collection: { behavior: "void" },
+          });
+        } catch (err) {
+          console.error("[Admin] Failed to pause subscription during legal escalation:", err);
+        }
+      }
 
       await db
         .update(successFees)
@@ -522,6 +540,34 @@ export const adminRouter = router({
           notes: updatedNotes,
         })
         .where(eq(successFees.id, input.feeId));
+
+      const relatedSuspensionNote = `Suspended: legal escalation on success fee #${input.feeId}.`;
+      const relatedActiveFees = activeUserFees.filter((activeFee) => activeFee.id !== input.feeId);
+      for (const relatedFee of relatedActiveFees) {
+        const relatedNotes = relatedFee.notes
+          ? `${relatedFee.notes}\n${relatedSuspensionNote}`
+          : relatedSuspensionNote;
+        await db
+          .update(successFees)
+          .set({ status: "suspended", notes: relatedNotes })
+          .where(eq(successFees.id, relatedFee.id));
+        await createAuditEvent({
+          userId: fee.userId,
+          entityType: "success_fee",
+          entityId: relatedFee.id,
+          action: "success_fee_suspended_for_legal_escalation",
+          actor: "admin",
+          source: "admin.flagLegalEscalation",
+          beforeState: JSON.stringify({ status: relatedFee.status }),
+          afterState: JSON.stringify({
+            status: "suspended",
+            escalatedFeeId: input.feeId,
+            accountStatus: "suspended",
+            adminUserId: ctx.user.id,
+          }),
+          riskLevel: "critical",
+        });
+      }
 
       // Suspend user account
       await db
