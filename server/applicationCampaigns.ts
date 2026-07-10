@@ -5,6 +5,7 @@ import {
   getEmployerResponses,
   getEducationEntries,
   getInterviewPreparationForJob,
+  listUnreadInterviewNotifications,
   getUserApplicationDecisions,
   getUserApplications,
   getUserProfile,
@@ -200,6 +201,39 @@ async function getInterviewSchedulingQueue(applications: UserApplicationRecord[]
         location: application.job.location,
       } : null,
     }));
+}
+
+async function getInterviewNotificationQueue(applications: UserApplicationRecord[], userId: number) {
+  const notifications = await listUnreadInterviewNotifications(userId, 5);
+  const applicationsById = new Map(applications.map((application) => [application.id, application]));
+
+  const items = await Promise.all(notifications.map(async (notification) => {
+    const application = applicationsById.get(notification.applicationId);
+    if (!application) return null;
+
+    const response = (await getEmployerResponses(application.id, userId))
+      .find((item) => item.id === notification.employerResponseId);
+    if (!response || response.responseType !== "interview_invite") return null;
+
+    return {
+      notificationId: notification.id,
+      applicationId: application.id,
+      jobId: application.jobId,
+      employerResponseId: response.id,
+      notificationType: notification.notificationType,
+      createdAt: notification.createdAt,
+      receivedAt: response.receivedAt,
+      summary: response.summary,
+      job: application.job ? {
+        id: application.job.id,
+        title: application.job.title,
+        company: application.job.company,
+        location: application.job.location,
+      } : null,
+    };
+  }));
+
+  return items.filter((item): item is NonNullable<typeof item> => item !== null);
 }
 
 async function getEmployerResponseQueue(
@@ -471,6 +505,7 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
   const responseCount = applicationStatusCount(applications, ["viewed", "interview", "offer", "accepted", "rejected"]);
   const followUpSuppressionState = await getFollowUpSuppressionState(applications, allApprovals, userId);
   const interviewSchedulingQueue = await getInterviewSchedulingQueue(applications, userId);
+  const interviewNotificationQueue = await getInterviewNotificationQueue(applications, userId);
   const interviewPreparationQueue = await getInterviewPreparationQueue(userId);
   const employerResponseQueue = await getEmployerResponseQueue(applications, userId, followUpSuppressionState);
   const successFeeCompliance = getSuccessFeeComplianceSummary(successFees, offerAttributionReviews);
@@ -505,6 +540,9 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
       : "",
     interviewSchedulingQueue.length > 0
       ? `Schedule ${interviewSchedulingQueue.length} interview invite${interviewSchedulingQueue.length === 1 ? "" : "s"} before follow-up automation continues.`
+      : "",
+    interviewNotificationQueue.length > 0
+      ? `Review ${interviewNotificationQueue.length} verified interview invite${interviewNotificationQueue.length === 1 ? "" : "s"}.`
       : "",
     interviewPreparationQueue.length > 0
       ? `Prepare for ${interviewPreparationQueue.length} upcoming interview${interviewPreparationQueue.length === 1 ? "" : "s"}.`
@@ -589,6 +627,7 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
       employerResponses: responseCount,
       employerResponsesNeedingReply: employerResponseQueue.length,
       interviews: applicationStatusCount(applications, ["interview"]),
+      unreadInterviewNotifications: interviewNotificationQueue.length,
       interviewSchedulingNeeded: interviewSchedulingQueue.length,
       interviewPreparationNeeded: interviewPreparationQueue.length,
       offers: applicationStatusCount(applications, ["offer", "accepted"]),
@@ -612,6 +651,7 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
       pendingApprovals: approvals.slice(0, 5),
       adminReviews: userAdminReviews.slice(0, 5),
       reviewDecisions: reviewDecisionQueue.slice(0, 5),
+      interviewNotifications: interviewNotificationQueue,
       interviewScheduling: interviewSchedulingQueue.slice(0, 5),
       interviewPreparationNeeded: interviewPreparationQueue.slice(0, 5),
       employerResponsesNeedingReply: employerResponseQueue.slice(0, 5),

@@ -95,6 +95,15 @@ export default function Dashboard() {
       toast.error(error.message || "Unable to resolve approval");
     },
   });
+  const markInterviewNotificationRead = trpc.applications.markInterviewNotificationRead.useMutation({
+    onSuccess: async (result) => {
+      if (result.changed) toast.success("Interview notification marked read");
+      await refetchOperatingLedger();
+    },
+    onError: (error) => {
+      toast.error(error.message || "Unable to update interview notification");
+    },
+  });
 
   // Calculate real stats
   const totalApplications = applications?.length || 0;
@@ -201,6 +210,7 @@ export default function Dashboard() {
         ["Prepared", operatingLedger.metrics.preparedApplications],
         ["Submitted", operatingLedger.metrics.submittedApplications],
         ["Responses", operatingLedger.metrics.employerResponses],
+        ["Interview alerts", operatingLedger.metrics.unreadInterviewNotifications],
         ["Replies", operatingLedger.metrics.employerResponsesNeedingReply],
         ["Interviews", operatingLedger.metrics.interviews],
         ["Scheduling", operatingLedger.metrics.interviewSchedulingNeeded],
@@ -587,6 +597,74 @@ export default function Dashboard() {
               </div>
 
               <Separator className="bg-slate-800" />
+
+              {operatingLedger.queues.interviewNotifications.length > 0 && (
+                <section
+                  data-testid="dashboard-interview-notifications"
+                  aria-live="polite"
+                  className="border-b border-slate-800 pb-5"
+                >
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-white">Interview notifications</p>
+                      <p className="text-xs text-slate-500">
+                        Shown only after a recorded employer interview invitation.
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="w-fit border-blue-500/40 text-blue-300">
+                      {operatingLedger.metrics.unreadInterviewNotifications} unread
+                    </Badge>
+                  </div>
+                  <div className="mt-3 space-y-3">
+                    {operatingLedger.queues.interviewNotifications.map((notification) => (
+                      <div
+                        key={notification.notificationId}
+                        className="flex flex-col gap-3 border-l-2 border-blue-400 bg-slate-950/30 py-2 pl-3 sm:flex-row sm:items-start sm:justify-between"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Bell className="h-4 w-4 text-blue-300" aria-hidden="true" />
+                            <p className="text-sm font-medium text-white">
+                              {notification.job?.title || `Application #${notification.applicationId}`}
+                            </p>
+                            <Badge variant="outline" className="border-blue-500/40 text-blue-300">
+                              Verified interview invite
+                            </Badge>
+                          </div>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {notification.job?.company || "Employer"}
+                            {notification.job?.location ? ` - ${notification.job.location}` : ""}
+                          </p>
+                          <p className="mt-2 line-clamp-2 text-sm text-slate-300">
+                            {notification.summary}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 flex-wrap gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="border-blue-500/40 text-blue-200"
+                            onClick={() => setLocation(getApplicationDeepLink(notification.applicationId, "schedule-interview"))}
+                          >
+                            <Calendar className="mr-2 h-4 w-4" />
+                            Schedule
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-slate-300 hover:text-white"
+                            disabled={markInterviewNotificationRead.isPending}
+                            onClick={() => markInterviewNotificationRead.mutate({ notificationId: notification.notificationId })}
+                          >
+                            <CheckCircle className="mr-2 h-4 w-4" />
+                            Mark read
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
 
               <div className="space-y-3">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

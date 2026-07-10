@@ -300,6 +300,26 @@ export const employerResponses = mysqlTable("employer_responses", {
 ]);
 
 /**
+ * Application Notifications
+ * Keeps user-facing interview alerts tied to deterministic employer-response evidence.
+ * This is intentionally separate from external email delivery: an alert is only queued
+ * after an interview invite has been recorded in the application ledger.
+ */
+export const applicationNotifications = mysqlTable("application_notifications", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  applicationId: int("application_id").notNull(),
+  employerResponseId: int("employer_response_id").notNull(),
+  notificationType: mysqlEnum("notification_type", ["interview_invite"]).notNull(),
+  readAt: timestamp("read_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("application_notifications_employer_response_unique").on(table.employerResponseId),
+  index("application_notifications_user_read_created_idx").on(table.userId, table.readAt, table.createdAt),
+  index("application_notifications_application_idx").on(table.applicationId),
+]);
+
+/**
  * Audit Events
  * Records consequential operating-ledger decisions and actions.
  */
@@ -676,6 +696,7 @@ export type ApplicationDecision = typeof applicationDecisions.$inferSelect;
 export type ApplicationMaterial = typeof applicationMaterials.$inferSelect;
 export type ApplicationAttempt = typeof applicationAttempts.$inferSelect;
 export type EmployerResponse = typeof employerResponses.$inferSelect;
+export type ApplicationNotification = typeof applicationNotifications.$inferSelect;
 export type AuditEvent = typeof auditEvents.$inferSelect;
 export type AdminReviewItem = typeof adminReviewItems.$inferSelect;
 export type ApplicationApproval = typeof applicationApprovals.$inferSelect;

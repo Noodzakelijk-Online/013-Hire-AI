@@ -267,6 +267,32 @@ describe("command center summary", () => {
     expect(summary.primaryRoute).toBe("/review-queue");
   });
 
+  it("surfaces a verified interview notification before scheduling and routine follow-ups", () => {
+    const summary = getCommandCenterSummary({
+      readiness: {
+        autoApplyEligible: true,
+        blockers: [],
+        warnings: [],
+      },
+      queues: {
+        interviewScheduling: [{ applicationId: 1 }],
+      },
+      metrics: {
+        unreadInterviewNotifications: 1,
+        interviewSchedulingNeeded: 1,
+        followUpsDue: 2,
+      },
+    }, clearCompliance);
+
+    expect(summary.status).toBe("attention");
+    expect(summary.label).toBe("Interview invite");
+    expect(summary.unreadInterviewNotifications).toBe(1);
+    expect(summary.interviewSchedulingNeeded).toBe(1);
+    expect(summary.followUpsDue).toBe(2);
+    expect(summary.openActions).toBe(4);
+    expect(summary.primaryRoute).toBe("/dashboard");
+  });
+
   it("surfaces interview preparation before employer replies and follow-up drafting", () => {
     const summary = getCommandCenterSummary({
       readiness: {

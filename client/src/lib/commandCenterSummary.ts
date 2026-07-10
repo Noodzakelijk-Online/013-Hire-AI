@@ -29,6 +29,7 @@ export interface CommandCenterSummary {
   reviewItems: number;
   complianceItems: number;
   interviewSchedulingNeeded: number;
+  unreadInterviewNotifications: number;
   interviewPreparationNeeded: number;
   employerResponsesNeedingReply: number;
   followUpsDue: number;
@@ -50,6 +51,7 @@ export interface CommandCenterLedgerInput extends OperatingReviewQueueInput {
     openAdminReviews?: number | null;
     reviewRequiredDecisions?: number | null;
     interviewSchedulingNeeded?: number | null;
+    unreadInterviewNotifications?: number | null;
     interviewPreparationNeeded?: number | null;
     employerResponsesNeedingReply?: number | null;
     followUpsDue?: number | null;
@@ -90,6 +92,7 @@ export function getCommandCenterSummary(
     queueCounts.profileWarnings;
   const interviewSchedulingNeeded =
     positiveNumber(ledger?.metrics?.interviewSchedulingNeeded) || queueCounts.interviewScheduling;
+  const unreadInterviewNotifications = positiveNumber(ledger?.metrics?.unreadInterviewNotifications);
   const interviewPreparationNeeded =
     positiveNumber(ledger?.metrics?.interviewPreparationNeeded) || queueCounts.interviewPreparationNeeded;
   const employerResponsesNeedingReply =
@@ -111,6 +114,7 @@ export function getCommandCenterSummary(
     reviewItems +
     complianceItems +
     interviewSchedulingNeeded +
+    unreadInterviewNotifications +
     interviewPreparationNeeded +
     employerResponsesNeedingReply +
     followUpsDue +
@@ -125,6 +129,7 @@ export function getCommandCenterSummary(
     reviewItems,
     complianceItems,
     interviewSchedulingNeeded,
+    unreadInterviewNotifications,
     interviewPreparationNeeded,
     employerResponsesNeedingReply,
     followUpsDue,
@@ -205,6 +210,20 @@ export function getCommandCenterSummary(
       primaryRoute: "/profile",
       secondaryCta: "Review Queue",
       secondaryRoute: "/review-queue",
+    };
+  }
+
+  if (unreadInterviewNotifications > 0) {
+    return {
+      ...base,
+      status: "attention",
+      label: "Interview invite",
+      headline: `${unreadInterviewNotifications} verified interview invite${unreadInterviewNotifications === 1 ? " is" : "s are"} ready for review.`,
+      nextAction: "Review the employer-backed interview invite, then record a time only when you explicitly accept it.",
+      primaryCta: "Open Dashboard",
+      primaryRoute: "/dashboard",
+      secondaryCta: "Open Applications",
+      secondaryRoute: "/applications",
     };
   }
 

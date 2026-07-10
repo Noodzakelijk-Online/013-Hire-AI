@@ -30,7 +30,8 @@ describe("employer response source-reference idempotency", () => {
     expect(retry).toMatchObject({ success: true, existing: true, responseId: first.responseId, status: "interview" });
     expect(responses).toHaveLength(1);
     expect(auditEvents.filter((event) => event.action === "employer_response_recorded")).toHaveLength(1);
-    expect(auditEvents[0]?.afterState).toContain('"sourceReferencePresent":true');
+    expect(auditEvents.find((event) => event.action === "employer_response_recorded")?.afterState)
+      .toContain('"sourceReferencePresent":true');
   });
 
   it("refuses to reuse one external message reference for another application", async () => {

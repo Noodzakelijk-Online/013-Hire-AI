@@ -945,6 +945,37 @@ export const appRouter = router({
         includeAdminReviews: ctx.user.role === "admin",
       });
     }),
+    listInterviewNotifications: protectedProcedure
+      .input(z.object({ limit: boundedPageSize.optional().default(25) }).optional())
+      .query(async ({ ctx, input }) => {
+        const { listUnreadInterviewNotifications } = await import("./db");
+        return await listUnreadInterviewNotifications(ctx.user.id, input?.limit ?? 25);
+      }),
+    markInterviewNotificationRead: protectedProcedure
+      .input(z.object({ notificationId: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        const { markInterviewNotificationRead, createAuditEvent } = await import("./db");
+        const result = await markInterviewNotificationRead(input.notificationId, ctx.user.id);
+        if (!result) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Interview notification not found." });
+        }
+        if (result.changed) {
+          await createAuditEvent({
+            userId: ctx.user.id,
+            entityType: "application",
+            entityId: result.notification.applicationId,
+            action: "interview_notification_read",
+            actor: "user",
+            source: "applications.markInterviewNotificationRead",
+            afterState: JSON.stringify({
+              notificationId: result.notification.id,
+              employerResponseId: result.notification.employerResponseId,
+            }),
+            riskLevel: "low",
+          });
+        }
+        return { success: true, changed: result.changed, notification: result.notification };
+      }),
     getLedgerArtifacts: protectedProcedure
       .input(z.object({ applicationId: z.number() }))
       .query(async ({ ctx, input }) => {

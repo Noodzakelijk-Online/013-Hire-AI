@@ -12,6 +12,7 @@ import {
   applicationMaterials,
   applicationAttempts,
   employerResponses,
+  applicationNotifications,
   auditEvents,
   adminReviewItems,
   applicationApprovals,
@@ -33,6 +34,7 @@ import {
   type ApplicationMaterial,
   type ApplicationAttempt,
   type EmployerResponse,
+  type ApplicationNotification,
   type AuditEvent,
   type AdminReviewItem,
   type ApplicationApproval,
@@ -63,6 +65,7 @@ type InsertApplicationDecision = InferInsertModel<typeof applicationDecisions>;
 type InsertApplicationMaterial = InferInsertModel<typeof applicationMaterials>;
 type InsertApplicationAttempt = InferInsertModel<typeof applicationAttempts>;
 type InsertEmployerResponse = InferInsertModel<typeof employerResponses>;
+type InsertApplicationNotification = InferInsertModel<typeof applicationNotifications>;
 type InsertAuditEvent = InferInsertModel<typeof auditEvents>;
 type InsertAdminReviewItem = InferInsertModel<typeof adminReviewItems>;
 type InsertApplicationApproval = InferInsertModel<typeof applicationApprovals>;
@@ -94,6 +97,7 @@ const memoryApplicationDecisions: (InsertApplicationDecision & { id: number; cre
 const memoryApplicationMaterials: (InsertApplicationMaterial & { id: number; createdAt: Date; updatedAt: Date })[] = [];
 const memoryApplicationAttempts: (InsertApplicationAttempt & { id: number; createdAt: Date })[] = [];
 const memoryEmployerResponses: (InsertEmployerResponse & { id: number; createdAt: Date })[] = [];
+const memoryApplicationNotifications: (InsertApplicationNotification & { id: number; createdAt: Date })[] = [];
 const memoryAuditEvents: (InsertAuditEvent & { id: number; createdAt: Date })[] = [];
 const memoryAdminReviewItems: (InsertAdminReviewItem & { id: number; createdAt: Date; updatedAt: Date })[] = [];
 const memoryApplicationApprovals: (InsertApplicationApproval & { id: number; createdAt: Date; updatedAt: Date })[] = [];
@@ -1188,6 +1192,120 @@ export async function getEmployerResponses(applicationId: number, userId: number
       eq(employerResponses.userId, userId)
     ))
     .orderBy(desc(employerResponses.receivedAt));
+}
+
+export async function createInterviewNotification(input: {
+  userId: number;
+  applicationId: number;
+  employerResponseId: number;
+}) {
+  const db = await getDb();
+  if (!db) {
+    const existing = memoryApplicationNotifications.find((notification) =>
+      notification.employerResponseId === input.employerResponseId
+    );
+    if (existing) {
+      return { notification: existing as ApplicationNotification, existing: true };
+    }
+
+    const notification = {
+      id: memoryApplicationNotifications.length + 1,
+      userId: input.userId,
+      applicationId: input.applicationId,
+      employerResponseId: input.employerResponseId,
+      notificationType: "interview_invite" as const,
+      readAt: null,
+      createdAt: new Date(),
+    };
+    memoryApplicationNotifications.push(notification);
+    return { notification: notification as ApplicationNotification, existing: false };
+  }
+
+  const existing = await db
+    .select()
+    .from(applicationNotifications)
+    .where(eq(applicationNotifications.employerResponseId, input.employerResponseId))
+    .limit(1);
+  if (existing[0]) {
+    return { notification: existing[0], existing: true };
+  }
+
+  const result = await db.insert(applicationNotifications).values({
+    userId: input.userId,
+    applicationId: input.applicationId,
+    employerResponseId: input.employerResponseId,
+    notificationType: "interview_invite",
+  });
+  const notifications = await db
+    .select()
+    .from(applicationNotifications)
+    .where(eq(applicationNotifications.id, Number(result[0].insertId)))
+    .limit(1);
+  return { notification: notifications[0], existing: false };
+}
+
+export async function listUnreadInterviewNotifications(userId: number, limit = 25) {
+  const db = await getDb();
+  const boundedLimit = Math.min(100, Math.max(1, Math.floor(limit)));
+  if (!db) {
+    return memoryApplicationNotifications
+      .filter((notification) => notification.userId === userId && !notification.readAt)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, boundedLimit) as ApplicationNotification[];
+  }
+
+  return await db
+    .select()
+    .from(applicationNotifications)
+    .where(and(
+      eq(applicationNotifications.userId, userId),
+      isNull(applicationNotifications.readAt)
+    ))
+    .orderBy(desc(applicationNotifications.createdAt))
+    .limit(boundedLimit);
+}
+
+export async function markInterviewNotificationRead(notificationId: number, userId: number) {
+  const db = await getDb();
+  if (!db) {
+    const notification = memoryApplicationNotifications.find((item) =>
+      item.id === notificationId && item.userId === userId
+    );
+    if (!notification) return null;
+    if (notification.readAt) {
+      return { notification: notification as ApplicationNotification, changed: false };
+    }
+    notification.readAt = new Date();
+    return { notification: notification as ApplicationNotification, changed: true };
+  }
+
+  const notification = await db
+    .select()
+    .from(applicationNotifications)
+    .where(and(
+      eq(applicationNotifications.id, notificationId),
+      eq(applicationNotifications.userId, userId)
+    ))
+    .limit(1);
+  if (!notification[0]) return null;
+  if (notification[0].readAt) {
+    return { notification: notification[0], changed: false };
+  }
+
+  await db
+    .update(applicationNotifications)
+    .set({ readAt: new Date() })
+    .where(and(
+      eq(applicationNotifications.id, notificationId),
+      eq(applicationNotifications.userId, userId),
+      isNull(applicationNotifications.readAt)
+    ));
+  const updated = await db
+    .select()
+    .from(applicationNotifications)
+    .where(eq(applicationNotifications.id, notificationId))
+    .limit(1);
+  return { notification: updated[0], changed: true };
 }
 
 function parseApprovalPayload(payload?: string | null): Record<string, unknown> | null {

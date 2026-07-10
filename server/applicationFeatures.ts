@@ -10,6 +10,7 @@ import {
   createApplicationAttempt,
   createAuditEvent,
   createEmployerResponse,
+  createInterviewNotification,
   findEmployerResponseBySourceReference,
   getEmployerResponses,
   getInterviewPreparationForJob,
@@ -21,7 +22,7 @@ import {
   updateApplicationStatus,
   upsertInterviewPreparation,
 } from "./db";
-import { savedJobs, applicationNotes, interviewSchedules, followUps, applications, applicationAttempts, employerResponses, auditEvents, adminReviewItems, applicationApprovals, jobs, jobAlerts, type FollowUp, type InterviewSchedule } from "../drizzle/schema";
+import { savedJobs, applicationNotes, interviewSchedules, followUps, applications, applicationAttempts, employerResponses, applicationNotifications, auditEvents, adminReviewItems, applicationApprovals, jobs, jobAlerts, type FollowUp, type InterviewSchedule } from "../drizzle/schema";
 import { generateInterviewPreparation as generateAiInterviewPreparation } from "./aiMatching";
 import { invokeLLM } from "./_core/llm";
 import { notifyOwner } from "./_core/notification";
@@ -630,6 +631,30 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
     });
     const responseId = Number(responseWrite.insertId);
 
+    if (response.responseType === "interview_invite") {
+      const notification = await createInterviewNotification({
+        userId,
+        applicationId: input.applicationId,
+        employerResponseId: responseId,
+      });
+      if (!notification.existing) {
+        await createAuditEvent({
+          userId,
+          entityType: "application",
+          entityId: input.applicationId,
+          action: "interview_notification_queued",
+          actor: "system",
+          source: "applications.recordResponse",
+          afterState: JSON.stringify({
+            employerResponseId: responseId,
+            notificationId: notification.notification.id,
+            notificationType: "interview_invite",
+          }),
+          riskLevel: "medium",
+        });
+      }
+    }
+
     if (response.nextStatus && response.nextStatus !== currentStatus) {
       await updateApplicationStatus(input.applicationId, response.nextStatus, userId);
     }
@@ -800,6 +825,29 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
     });
     const responseId = Number(responseWrite[0].insertId);
     const cancelledFollowUpApprovalIds: number[] = [];
+
+    if (response.responseType === "interview_invite") {
+      const notification = await tx.insert(applicationNotifications).values({
+        userId,
+        applicationId: input.applicationId,
+        employerResponseId: responseId,
+        notificationType: "interview_invite",
+      });
+      await tx.insert(auditEvents).values({
+        userId,
+        entityType: "application",
+        entityId: input.applicationId,
+        action: "interview_notification_queued",
+        actor: "system",
+        source: "applications.recordResponse",
+        afterState: JSON.stringify({
+          employerResponseId: responseId,
+          notificationId: Number(notification[0].insertId),
+          notificationType: "interview_invite",
+        }),
+        riskLevel: "medium",
+      });
+    }
 
     if (response.nextStatus && response.nextStatus !== application[0].status) {
       const updateResult = await tx
