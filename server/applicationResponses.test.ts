@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   normalizeEmployerResponse,
+  normalizeEmployerResponseSourceReference,
   resolveEmployerResponseStatus,
 } from "./applicationResponses";
 
@@ -44,5 +45,12 @@ describe("application employer response classification", () => {
         "pending"
       )
     ).toThrow(/submission/i);
+  });
+
+  it("normalizes stable source references without storing message content", () => {
+    expect(normalizeEmployerResponseSourceReference("  gmail-msg-123  ")).toBe("gmail-msg-123");
+    expect(normalizeEmployerResponseSourceReference(" ")).toBeNull();
+    expect(() => normalizeEmployerResponseSourceReference("id")).toThrow(/too short/i);
+    expect(() => normalizeEmployerResponseSourceReference("message id 123")).toThrow(/whitespace/i);
   });
 });

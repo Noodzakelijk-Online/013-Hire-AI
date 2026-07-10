@@ -18,6 +18,7 @@ export type EmployerResponseSource =
 export interface EmployerResponseInput {
   responseType: EmployerResponseType;
   source: EmployerResponseSource;
+  sourceReference?: string | null;
   summary: string;
   receivedAt?: Date;
 }
@@ -25,10 +26,28 @@ export interface EmployerResponseInput {
 export interface NormalizedEmployerResponse {
   responseType: EmployerResponseType;
   source: EmployerResponseSource;
+  sourceReference: string | null;
   summary: string;
   receivedAt: Date;
   nextStatus: ApplicationStatus | null;
   noteContent: string;
+}
+
+export function normalizeEmployerResponseSourceReference(value?: string | null): string | null {
+  if (value == null) return null;
+
+  const reference = value.trim();
+  if (!reference) return null;
+  if (reference.length < 3) {
+    throw new Error("Employer response source reference is too short.");
+  }
+  if (reference.length > 320) {
+    throw new Error("Employer response source reference is too long.");
+  }
+  if (/\s/.test(reference)) {
+    throw new Error("Employer response source reference cannot contain whitespace.");
+  }
+  return reference;
 }
 
 const TYPE_LABELS: Record<EmployerResponseType, string> = {
@@ -77,6 +96,7 @@ export function normalizeEmployerResponse(
   }
 
   const summary = input.summary.trim().replace(/\r\n/g, "\n");
+  const sourceReference = normalizeEmployerResponseSourceReference(input.sourceReference);
   if (summary.length < 8) {
     throw new Error("Employer response summary must describe what happened.");
   }
@@ -102,6 +122,7 @@ export function normalizeEmployerResponse(
   return {
     responseType: input.responseType,
     source: input.source,
+    sourceReference,
     summary,
     receivedAt,
     nextStatus,

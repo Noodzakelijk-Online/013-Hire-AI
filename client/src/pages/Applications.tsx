@@ -119,6 +119,7 @@ export default function Applications() {
   const [responseApplication, setResponseApplication] = useState<any>(null);
   const [employerResponseType, setEmployerResponseType] = useState<EmployerResponseType>("viewed");
   const [employerResponseSource, setEmployerResponseSource] = useState<EmployerResponseSource>("email");
+  const [employerResponseSourceReference, setEmployerResponseSourceReference] = useState("");
   const [employerResponseSummary, setEmployerResponseSummary] = useState("");
   const [schedulingApplication, setSchedulingApplication] = useState<any>(null);
   const [interviewType, setInterviewType] = useState<InterviewType>("video");
@@ -251,12 +252,13 @@ export default function Applications() {
     onError: (error) => toast.error(error.message || "Failed to confirm submission"),
   });
   const recordResponseMutation = trpc.applications.recordResponse.useMutation({
-    onSuccess: () => {
-      toast.success("Employer response recorded");
+    onSuccess: (result) => {
+      toast.success(result.existing ? "Existing employer response kept" : "Employer response recorded");
       setResponseApplication(null);
       setSelectedApplication(null);
       setEmployerResponseType("viewed");
       setEmployerResponseSource("email");
+      setEmployerResponseSourceReference("");
       setEmployerResponseSummary("");
       refetch();
       refetchOfferAttributionReviews();
@@ -551,6 +553,7 @@ export default function Applications() {
     setSelectedApplication(null);
     setEmployerResponseType(application.status === "interview" ? "offer" : "viewed");
     setEmployerResponseSource("email");
+    setEmployerResponseSourceReference("");
     setEmployerResponseSummary("");
   };
 
@@ -1986,6 +1989,7 @@ export default function Applications() {
           onOpenChange={(open) => {
             if (!open) {
               setResponseApplication(null);
+              setEmployerResponseSourceReference("");
               setEmployerResponseSummary("");
             }
           }}
@@ -2035,6 +2039,15 @@ export default function Applications() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-300">Message or portal reference</label>
+                <Input
+                  value={employerResponseSourceReference}
+                  onChange={(event) => setEmployerResponseSourceReference(event.target.value)}
+                  className="bg-slate-800 border-slate-700 text-white"
+                  placeholder="Optional: message or portal ID"
+                />
+              </div>
               <div className="space-y-2 md:col-span-2">
                 <label className="text-sm font-medium text-slate-300">Response summary</label>
                 <Textarea
@@ -2050,6 +2063,7 @@ export default function Applications() {
                 variant="outline"
                 onClick={() => {
                   setResponseApplication(null);
+                  setEmployerResponseSourceReference("");
                   setEmployerResponseSummary("");
                 }}
               >
@@ -2063,6 +2077,7 @@ export default function Applications() {
                     applicationId: responseApplication.id,
                     responseType: employerResponseType,
                     source: employerResponseSource,
+                    sourceReference: employerResponseSourceReference.trim() || undefined,
                     summary: employerResponseSummary.trim(),
                   });
                 }}

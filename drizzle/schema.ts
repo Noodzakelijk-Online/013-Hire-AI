@@ -264,6 +264,7 @@ export const employerResponses = mysqlTable("employer_responses", {
     "other",
   ]).notNull(),
   source: mysqlEnum("source", ["email", "employer_portal", "linkedin", "phone", "other"]).notNull(),
+  sourceReference: varchar("source_reference", { length: 320 }),
   summary: text("summary").notNull(),
   receivedAt: timestamp("received_at").notNull(),
   statusBefore: mysqlEnum("status_before", [
@@ -291,6 +292,11 @@ export const employerResponses = mysqlTable("employer_responses", {
 }, (table) => [
   index("employer_responses_application_idx").on(table.applicationId),
   index("employer_responses_user_received_idx").on(table.userId, table.receivedAt),
+  uniqueIndex("employer_responses_user_source_reference_unique").on(
+    table.userId,
+    table.source,
+    table.sourceReference
+  ),
 ]);
 
 /**

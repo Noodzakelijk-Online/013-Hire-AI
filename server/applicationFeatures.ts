@@ -10,6 +10,7 @@ import {
   createApplicationAttempt,
   createAuditEvent,
   createEmployerResponse,
+  findEmployerResponseBySourceReference,
   getEmployerResponses,
   getInterviewPreparationForJob,
   getDb,
@@ -27,6 +28,7 @@ import { notifyOwner } from "./_core/notification";
 import {
   canTransitionApplicationStatus,
   canTransitionInterviewStatus,
+  type ApplicationStatus,
 } from "./applicationLifecycle";
 import { sanitizeFollowUpMessage } from "./messageSanitization";
 import {
@@ -35,6 +37,7 @@ import {
 } from "./applicationSubmissionEvidence";
 import {
   normalizeEmployerResponse,
+  normalizeEmployerResponseSourceReference,
   type EmployerResponseInput,
 } from "./applicationResponses";
 
@@ -561,6 +564,26 @@ export interface RecordEmployerResponseInput extends EmployerResponseInput {
   applicationId: number;
 }
 
+function existingEmployerResponseResult(response: {
+  applicationId: number;
+  id: number;
+  responseType: EmployerResponseInput["responseType"];
+  statusAfter: ApplicationStatus;
+}, applicationId: number) {
+  if (response.applicationId !== applicationId) {
+    throw new Error("This employer response reference is already linked to another application.");
+  }
+
+  return {
+    success: true,
+    existing: true,
+    status: response.statusAfter,
+    responseType: response.responseType,
+    responseId: response.id,
+    cancelledFollowUpApprovalIds: [] as number[],
+  };
+}
+
 function shouldCancelUnsentFollowUpApprovals(responseType: EmployerResponseInput["responseType"]) {
   return responseType !== "viewed";
 }
@@ -576,6 +599,16 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
     const application = applicationsForUser.find((item) => item.id === input.applicationId);
     if (!application) throw new Error("Application not found.");
 
+    const sourceReference = normalizeEmployerResponseSourceReference(input.sourceReference);
+    if (sourceReference) {
+      const existing = await findEmployerResponseBySourceReference({
+        userId,
+        source: input.source,
+        sourceReference,
+      });
+      if (existing) return existingEmployerResponseResult(existing, input.applicationId);
+    }
+
     const currentStatus = application.status || "pending";
     const response = normalizeEmployerResponse(input, currentStatus);
     if (response.nextStatus && !canTransitionApplicationStatus(currentStatus, response.nextStatus)) {
@@ -588,6 +621,7 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
       userId,
       responseType: response.responseType,
       source: response.source,
+      sourceReference: response.sourceReference,
       summary: response.summary,
       receivedAt: response.receivedAt,
       statusBefore: currentStatus,
@@ -665,6 +699,7 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
         responseId,
         responseType: response.responseType,
         receivedAt: response.receivedAt.toISOString(),
+        sourceReferencePresent: Boolean(response.sourceReference),
       }),
       riskLevel: response.responseType === "offer" ? "high" : response.responseType === "interview_invite" ? "medium" : "low",
     });
@@ -703,6 +738,7 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
 
     return {
       success: true,
+      existing: false,
       status: statusAfter,
       responseType: response.responseType,
       responseId,
@@ -717,6 +753,25 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
       .where(and(eq(applications.id, input.applicationId), eq(applications.userId, userId)))
       .limit(1);
     if (!application[0]) throw new Error("Application not found.");
+
+    const sourceReference = normalizeEmployerResponseSourceReference(input.sourceReference);
+    if (sourceReference) {
+      const existing = await tx
+        .select({
+          id: employerResponses.id,
+          applicationId: employerResponses.applicationId,
+          responseType: employerResponses.responseType,
+          statusAfter: employerResponses.statusAfter,
+        })
+        .from(employerResponses)
+        .where(and(
+          eq(employerResponses.userId, userId),
+          eq(employerResponses.source, input.source),
+          eq(employerResponses.sourceReference, sourceReference)
+        ))
+        .limit(1);
+      if (existing[0]) return existingEmployerResponseResult(existing[0], input.applicationId);
+    }
 
     const response = normalizeEmployerResponse(input, application[0].status);
     if (response.nextStatus && !canTransitionApplicationStatus(application[0].status, response.nextStatus)) {
@@ -736,6 +791,7 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
       userId,
       responseType: response.responseType,
       source: response.source,
+      sourceReference: response.sourceReference,
       summary: response.summary,
       receivedAt: response.receivedAt,
       statusBefore: application[0].status,
@@ -831,6 +887,7 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
         responseId,
         responseType: response.responseType,
         receivedAt: response.receivedAt.toISOString(),
+        sourceReferencePresent: Boolean(response.sourceReference),
       }),
       riskLevel: response.responseType === "offer" ? "high" : response.responseType === "interview_invite" ? "medium" : "low",
     });
@@ -891,6 +948,7 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
 
     return {
       success: true,
+      existing: false,
       status: statusAfter,
       responseType: response.responseType,
       responseId,

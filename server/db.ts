@@ -1135,6 +1135,32 @@ export async function createEmployerResponse(response: InsertEmployerResponse) {
   return { insertId: Number(result[0].insertId) };
 }
 
+export async function findEmployerResponseBySourceReference(input: {
+  userId: number;
+  source: EmployerResponse["source"];
+  sourceReference: string;
+}) {
+  const db = await getDb();
+  if (!db) {
+    return memoryEmployerResponses.find((response) =>
+      response.userId === input.userId &&
+      response.source === input.source &&
+      response.sourceReference === input.sourceReference
+    ) as EmployerResponse | undefined;
+  }
+
+  const result = await db
+    .select()
+    .from(employerResponses)
+    .where(and(
+      eq(employerResponses.userId, input.userId),
+      eq(employerResponses.source, input.source),
+      eq(employerResponses.sourceReference, input.sourceReference)
+    ))
+    .limit(1);
+  return result[0];
+}
+
 export async function getEmployerResponses(applicationId: number, userId: number) {
   const db = await getDb();
   if (!db) {
