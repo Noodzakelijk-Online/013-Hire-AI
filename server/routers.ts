@@ -664,6 +664,13 @@ export const appRouter = router({
           createAdminReviewItem,
           createApplicationApproval,
         } = await import("./db");
+        const activeResume = await getActiveResume(ctx.user.id);
+        if (!activeResume) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "An active versioned resume is required before Hire.AI can prepare an application.",
+          });
+        }
         const application = await createApplication({
           userId: ctx.user.id,
           jobId: input.jobId,
@@ -675,6 +682,7 @@ export const appRouter = router({
         const applicationId = Number(application.insertId);
         await createApplicationMaterial({
           applicationId,
+          resumeId: activeResume.id,
           coverLetter: input.coverLetter,
           customResume: input.customResume,
           sourceProfileSnapshot: profileSnapshotForApplication(ctx.user),
@@ -696,7 +704,12 @@ export const appRouter = router({
           action: "application_prepared",
           actor: "user",
           source: "applications.create",
-          afterState: JSON.stringify({ jobId: input.jobId, status: "pending", reviewRequired: true }),
+          afterState: JSON.stringify({
+            jobId: input.jobId,
+            status: "pending",
+            reviewRequired: true,
+            resume: { id: activeResume.id, version: activeResume.version },
+          }),
           riskLevel: "medium",
         });
         await createAdminReviewItem({
@@ -723,6 +736,8 @@ export const appRouter = router({
             jobId: input.jobId,
             source: "applications.create",
             status: "pending",
+            resumeId: activeResume.id,
+            resumeVersion: activeResume.version,
           }),
         });
         return { success: true, applicationRecordId: applicationId };
@@ -756,6 +771,17 @@ export const appRouter = router({
         const job = await getJobById(input.jobId);
         if (!job) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Job not found" });
+        }
+
+        const createsPreparedApplication = ["apply", "review", "manual_apply"].includes(input.decision);
+        const activeResume = createsPreparedApplication
+          ? await getActiveResume(ctx.user.id)
+          : null;
+        if (createsPreparedApplication && !activeResume) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "An active versioned resume is required before Hire.AI can queue an application for review.",
+          });
         }
 
         const reviewRequired = input.reviewRequired ?? input.decision !== "ignore";
@@ -812,6 +838,7 @@ export const appRouter = router({
           const shouldCreateQueuedArtifacts = application.existing !== true || !hasQueuedDecisionAttempt;
           await createApplicationMaterial({
             applicationId: applicationRecordId,
+            resumeId: activeResume!.id,
             sourceProfileSnapshot: profileSnapshotForApplication(ctx.user),
           });
           if (shouldCreateQueuedArtifacts) {
@@ -841,6 +868,7 @@ export const appRouter = router({
                 decision: input.decision,
                 status: "pending",
                 reviewRequired: true,
+                resume: { id: activeResume!.id, version: activeResume!.version },
               }),
               riskLevel: input.riskLevel === "high" ? "high" : "medium",
             });
@@ -881,6 +909,8 @@ export const appRouter = router({
                 decision: input.decision,
                 matchScore: input.matchScore ?? null,
                 source: "applications.decide",
+                resumeId: activeResume!.id,
+                resumeVersion: activeResume!.version,
               }),
             });
           }

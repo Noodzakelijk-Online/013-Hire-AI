@@ -1,4 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  getActiveResume: vi.fn(),
+}));
+
+vi.mock("./resumeStorage", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./resumeStorage")>()),
+  getActiveResume: mocks.getActiveResume,
+}));
+
 import {
   createApplication,
   createEmployerResponse,
@@ -14,6 +24,22 @@ import { getFollowUps } from "./applicationFeatures";
 import { runAutonomousForUser } from "./autonomousService";
 
 describe("autonomous submission approval gates", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getActiveResume.mockImplementation(async (userId: number) => ({
+      id: 98000 + userId,
+      userId,
+      fileName: "active-resume.pdf",
+      fileUrl: `https://storage.example.local/resumes/${userId}/active-resume.pdf`,
+      fileKey: `resumes/${userId}/active-resume.pdf`,
+      fileSize: 1024,
+      mimeType: "application/pdf",
+      version: 2,
+      isActive: true,
+      uploadedAt: new Date(),
+    }));
+  });
+
   it("creates submission approvals for queued autonomous application records", async () => {
     const userId = 99101;
 
@@ -50,6 +76,7 @@ describe("autonomous submission approval gates", () => {
       approval.applicationId === applicationId
     )).toBe(true);
     expect(ledger.material?.sourceProfileSnapshot).toContain("autonomousService");
+    expect(ledger.material?.resumeId).toBe(98000 + userId);
     expect(ledger.material?.claimsMade).toContain("No qualifications");
     expect(ledger.attempts[0].status).toBe("review_required");
     expect(ledger.attempts[0].confirmationText).toContain("No external submission was performed");
@@ -119,6 +146,37 @@ describe("autonomous submission approval gates", () => {
     expect(auditEvents.some((event) =>
       event.action === "autonomous_follow_up_safety_blocked" &&
       event.afterState?.includes("Employer response needs a reply")
+    )).toBe(true);
+  });
+
+  it("does not create application preparation records when no active resume is available", async () => {
+    const userId = 99103;
+    mocks.getActiveResume.mockResolvedValue(null);
+    await upsertUserProfile({
+      userId,
+      skills: "React, TypeScript, Node.js",
+      experience: "Five years building production web applications.",
+      desiredJobTypes: "full-time",
+      desiredLocations: "remote, worldwide",
+      resumeUrl: "https://untrusted.example.local/resume.pdf",
+      resumeFileKey: "resumes/99103/legacy-resume.pdf",
+      preferences: JSON.stringify({
+        autonomousEnabled: true,
+        mode: "review_first",
+        minMatchScore: 0,
+        dailyApplicationLimit: 1,
+      }),
+    });
+
+    const result = await runAutonomousForUser(userId, { dailyApplicationLimit: 1, minMatchScore: 0 });
+    const auditEvents = await getAuditEventsForUser(userId, 10);
+
+    expect(result.skippedResumeEvidenceActions).toBeGreaterThan(0);
+    expect(result.queuedReviewRecords + result.queuedApplicationRecords + result.queuedManualRecords).toBe(0);
+    expect(await getUserApplications(userId)).toHaveLength(0);
+    expect(auditEvents.some((event) =>
+      event.action === "autonomous_application_preparation_blocked_missing_resume" &&
+      event.afterState?.includes("skippedApplicationPreparations")
     )).toBe(true);
   });
 });

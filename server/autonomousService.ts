@@ -37,6 +37,7 @@ import {
   type AutonomousEvidenceGate,
 } from "../shared/autonomousEvidenceGates";
 import { getAutonomousEvidenceContext } from "./autonomousEvidence";
+import { getActiveResume } from "./resumeStorage";
 
 export interface AutonomousRunResult extends AutonomousPlan {
   queuedApplicationRecords: number;
@@ -45,6 +46,7 @@ export interface AutonomousRunResult extends AutonomousPlan {
   queuedFollowUps: number;
   skippedDuplicateFollowUps: number;
   skippedSafetyBlockedFollowUps: number;
+  skippedResumeEvidenceActions: number;
   skippedEvidenceGatedActions: number;
   evidenceGates: AutonomousEvidenceGate[];
   failedActions: number;
@@ -79,6 +81,7 @@ async function recordAutonomousApplicationLedgerArtifacts({
   applicationId,
   decision,
   profile,
+  resume,
   platformId,
   branch,
   approvalId,
@@ -87,6 +90,7 @@ async function recordAutonomousApplicationLedgerArtifacts({
   applicationId: number;
   decision: AutonomousJobDecision;
   profile: unknown;
+  resume: { id: number; version: number; fileName: string; fileKey: string };
   platformId?: number | null;
   branch: "auto_apply" | "review" | "manual";
   approvalId: number;
@@ -103,6 +107,7 @@ async function recordAutonomousApplicationLedgerArtifacts({
 
   await createApplicationMaterial({
     applicationId,
+    resumeId: resume.id,
     coverLetter: `Autonomous preparation note for ${decision.title} at ${decision.company}.`,
     customAnswers: JSON.stringify({
       source: "autonomousService",
@@ -148,6 +153,12 @@ async function recordAutonomousApplicationLedgerArtifacts({
       atsType: decision.atsType,
       reviewRequired: true,
       approvalId,
+      resume: {
+        id: resume.id,
+        version: resume.version,
+        fileName: resume.fileName,
+        fileKey: resume.fileKey,
+      },
       externalSubmissionPerformed: false,
     }),
     riskLevel,
@@ -200,10 +211,11 @@ async function executeAutonomousRun(
   overrides: AutonomousPreferences = {},
   assertLeaseActive: () => void = () => {}
 ): Promise<AutonomousRunResult> {
-  const [jobList, profile, applications] = await Promise.all([
+  const [jobList, profile, applications, activeResume] = await Promise.all([
     getActiveJobs(250, 0),
     getUserProfile(userId),
     getUserApplications(userId),
+    getActiveResume(userId),
   ]);
   const resolvedPreferences = {
     ...parseAutonomousPreferences(profile?.preferences),
@@ -221,6 +233,12 @@ async function executeAutonomousRun(
     applicationSubmissionCandidates: executable.autoApply.length,
     followUpSendCandidates: resolvedPreferences.createFollowUps ? executable.followUps.length : 0,
   });
+  const applicationPreparationCandidates =
+    executable.autoApply.length + executable.review.length + executable.manual.length;
+  const skippedResumeEvidenceActions = activeResume ? 0 : applicationPreparationCandidates;
+  const executableApplicationDecisions = activeResume
+    ? executable
+    : { ...executable, autoApply: [], review: [], manual: [] };
   const jobById = new Map(jobList.map((job) => [job.id, job]));
   let queuedApplicationRecords = 0;
   let queuedReviewRecords = 0;
@@ -250,7 +268,26 @@ async function executeAutonomousRun(
     });
   }
 
-  for (const decision of executable.autoApply) {
+  if (skippedResumeEvidenceActions > 0) {
+    await createAuditEvent({
+      userId,
+      entityType: "user",
+      entityId: userId,
+      action: "autonomous_application_preparation_blocked_missing_resume",
+      actor: "system",
+      source: "autonomousService",
+      afterState: JSON.stringify({
+        skippedApplicationPreparations: skippedResumeEvidenceActions,
+        autoApplyCandidates: executable.autoApply.length,
+        reviewCandidates: executable.review.length,
+        manualCandidates: executable.manual.length,
+        externalSubmissionPerformed: false,
+      }),
+      riskLevel: "high",
+    });
+  }
+
+  for (const decision of executableApplicationDecisions.autoApply) {
     assertLeaseActive();
     try {
       const result = await createApplication({
@@ -302,6 +339,7 @@ async function executeAutonomousRun(
         applicationId,
         decision,
         profile,
+        resume: activeResume!,
         platformId: jobById.get(decision.jobId)?.platformId,
         branch: "auto_apply",
         approvalId: Number(approval.insertId),
@@ -313,7 +351,7 @@ async function executeAutonomousRun(
     }
   }
 
-  for (const decision of executable.review) {
+  for (const decision of executableApplicationDecisions.review) {
     assertLeaseActive();
     try {
       const result = await createApplication({
@@ -365,6 +403,7 @@ async function executeAutonomousRun(
         applicationId,
         decision,
         profile,
+        resume: activeResume!,
         platformId: jobById.get(decision.jobId)?.platformId,
         branch: "review",
         approvalId: Number(approval.insertId),
@@ -376,7 +415,7 @@ async function executeAutonomousRun(
     }
   }
 
-  for (const decision of executable.manual) {
+  for (const decision of executableApplicationDecisions.manual) {
     assertLeaseActive();
     try {
       const result = await createApplication({
@@ -423,6 +462,7 @@ async function executeAutonomousRun(
         applicationId,
         decision,
         profile,
+        resume: activeResume!,
         platformId: jobById.get(decision.jobId)?.platformId,
         branch: "manual",
         approvalId: Number(approval.insertId),
@@ -502,6 +542,7 @@ async function executeAutonomousRun(
     queuedFollowUps,
     skippedDuplicateFollowUps,
     skippedSafetyBlockedFollowUps,
+    skippedResumeEvidenceActions,
     skippedEvidenceGatedActions: evidenceGatedActions.total,
     evidenceGates,
     failedActions: actionErrors.length,

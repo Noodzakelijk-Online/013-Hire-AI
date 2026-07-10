@@ -1,5 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TrpcContext } from "./_core/context";
+
+const mocks = vi.hoisted(() => ({
+  getActiveResume: vi.fn(),
+}));
+
+vi.mock("./resumeStorage", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./resumeStorage")>()),
+  getActiveResume: mocks.getActiveResume,
+}));
+
 import { appRouter } from "./routers";
 import {
   createApplicationDecision,
@@ -37,6 +47,22 @@ function createContext(userId: number): TrpcContext {
 }
 
 describe("application decision ledger", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getActiveResume.mockImplementation(async (userId: number) => ({
+      id: 97000 + userId,
+      userId,
+      fileName: "active-resume.pdf",
+      fileUrl: `https://storage.example.local/resumes/${userId}/active-resume.pdf`,
+      fileKey: `resumes/${userId}/active-resume.pdf`,
+      fileSize: 1024,
+      mimeType: "application/pdf",
+      version: 1,
+      isActive: true,
+      uploadedAt: new Date(),
+    }));
+  });
+
   it("keeps one latest decision per user and job", async () => {
     const userId = 94001;
     const jobId = 1;
@@ -71,6 +97,28 @@ describe("application decision ledger", () => {
     expect(decisions).toHaveLength(1);
     expect(decisions[0].decision).toBe("save");
     expect(decisions[0].decidedBy).toBe("user");
+  });
+
+  it("requires an active versioned resume before direct or decision-based preparation", async () => {
+    const userId = 94004;
+    mocks.getActiveResume.mockResolvedValue(null);
+    const caller = appRouter.createCaller(createContext(userId));
+
+    await expect(caller.applications.create({ jobId: 1 })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringContaining("active versioned resume"),
+    });
+    await expect(caller.applications.decide({
+      jobId: 1,
+      decision: "review",
+      decisionReason: "Queue this role for review once my current resume is linked.",
+      reviewRequired: true,
+    })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringContaining("active versioned resume"),
+    });
+
+    expect(await getUserApplications(userId)).toHaveLength(0);
   });
 
   it("does not duplicate generated review artifacts when the same job is queued again", async () => {
@@ -115,6 +163,7 @@ describe("application decision ledger", () => {
     expect(second.applicationRecordId).toBe(applicationId);
     expect(second.existing).toBe(true);
     expect(artifacts.attempts.filter((attempt) => attempt.attemptType === "prepare")).toHaveLength(1);
+    expect(artifacts.material?.resumeId).toBe(97000 + userId);
     expect(queuedAuditEvents).toHaveLength(1);
     expect(decisionAuditEvents).toHaveLength(2);
     expect(approvals.filter((approval) =>
