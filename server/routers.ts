@@ -1774,12 +1774,24 @@ export const appRouter = router({
       .input(z.object({
         intervalMinutes: z.number().min(5).max(1440).optional(),
         maxJobsPerRun: z.number().min(10).max(1000).optional(),
+        enabledPlatforms: z.array(z.string().trim().min(1).max(255)).max(100).optional(),
       }).optional())
       .mutation(async ({ input }) => {
         const { getScheduler } = await import("./scrapers/scheduler");
+        const { getSupportedPlatforms } = await import("./scrapers/index");
+        const unsupportedPlatforms = input?.enabledPlatforms?.filter(
+          (platformName) => !getSupportedPlatforms().includes(platformName)
+        ) ?? [];
+        if (unsupportedPlatforms.length > 0) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `No supported scraper is available for: ${unsupportedPlatforms.join(", ")}`,
+          });
+        }
         const scheduler = getScheduler(input ? {
           intervalMinutes: input.intervalMinutes || 60,
           maxJobsPerRun: input.maxJobsPerRun || 100,
+          enabledPlatforms: input.enabledPlatforms ?? null,
         } : undefined);
         
         scheduler.start();

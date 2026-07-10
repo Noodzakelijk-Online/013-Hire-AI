@@ -6,6 +6,13 @@ import { and, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { samplePlatforms } from "../sampleData";
 import { findBestJobDuplicateCandidate } from "../jobDeduplication";
 
+export interface ScrapeOptions {
+  keywords?: string;
+  location?: string;
+  limit?: number;
+  platformNames?: string[];
+}
+
 /**
  * Scraper Manager
  * Coordinates scraping across all platforms and manages job deduplication
@@ -108,20 +115,33 @@ export class ScraperManager {
   /**
    * Scrape jobs from all platforms
    */
-  async scrapeAll(options?: {
-    keywords?: string;
-    location?: string;
-    limit?: number;
-  }): Promise<{
+  async scrapeAll(options?: ScrapeOptions): Promise<{
     totalJobs: number;
     platformResults: Record<string, ScrapeResult>;
   }> {
     const platformResults: Record<string, ScrapeResult> = {};
     let totalJobs = 0;
 
-    console.log(`[ScraperManager] Starting scrape of all ${this.scrapers.size} platforms`);
+    const requestedPlatformNames = Array.from(new Set(
+      options?.platformNames?.map((platformName) => platformName.trim()).filter(Boolean) ?? []
+    ));
+    const selectedScrapers = requestedPlatformNames.length > 0
+      ? Array.from(this.scrapers.entries()).filter(([platformName]) => requestedPlatformNames.includes(platformName))
+      : Array.from(this.scrapers.entries());
 
-    for (const [platformName, scraper] of Array.from(this.scrapers.entries())) {
+    console.log(`[ScraperManager] Starting scrape of ${selectedScrapers.length} platforms`);
+
+    for (const platformName of requestedPlatformNames) {
+      if (!this.scrapers.has(platformName)) {
+        platformResults[platformName] = {
+          jobs: [],
+          errors: [`No scraper available for platform: ${platformName}`],
+          scrapedAt: new Date(),
+        };
+      }
+    }
+
+    for (const [platformName, scraper] of selectedScrapers) {
       try {
         const result = await scraper.scrape(options);
         if (result.errors.length === 0) {
@@ -238,11 +258,7 @@ export class ScraperManager {
   /**
    * Run a full scraping cycle
    */
-  async runScrapingCycle(options?: {
-    keywords?: string;
-    location?: string;
-    limit?: number;
-  }): Promise<{
+  async runScrapingCycle(options?: ScrapeOptions): Promise<{
     totalScraped: number;
     totalSaved: number;
     totalDuplicates: number;

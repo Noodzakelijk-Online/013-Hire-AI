@@ -77,6 +77,7 @@ async function startServer() {
     jobScrapingScheduler = getScheduler({
       intervalMinutes: ENV.jobScrapingIntervalMinutes,
       maxJobsPerRun: ENV.jobScrapingMaxJobsPerRun,
+      enabledPlatforms: ENV.jobScrapingEnabledPlatforms,
     });
   }
 

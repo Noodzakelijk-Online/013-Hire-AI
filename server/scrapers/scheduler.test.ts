@@ -41,6 +41,22 @@ describe("job scraping scheduler", () => {
     });
   });
 
+  it("passes an explicit platform allowlist to a discovery run", async () => {
+    const scheduler = new JobScrapingScheduler({
+      intervalMinutes: 60,
+      maxJobsPerRun: 25,
+      enabledPlatforms: ["RemoteOK", "Remotive"],
+    });
+
+    await scheduler.runScraping();
+
+    expect(mocks.runScrapingCycle).toHaveBeenCalledWith({
+      limit: 25,
+      platformNames: ["RemoteOK", "Remotive"],
+    });
+    expect(scheduler.getStatus().enabledPlatforms).toEqual(["RemoteOK", "Remotive"]);
+  });
+
   it("reports start and stop state for deployment health checks", () => {
     const scheduler = new JobScrapingScheduler({ intervalMinutes: 60, maxJobsPerRun: 25 });
 
@@ -52,14 +68,23 @@ describe("job scraping scheduler", () => {
   });
 
   it("applies a revised runtime configuration before the next discovery run", () => {
-    const scheduler = new JobScrapingScheduler({ intervalMinutes: 60, maxJobsPerRun: 25 });
+    const scheduler = new JobScrapingScheduler({
+      intervalMinutes: 60,
+      maxJobsPerRun: 25,
+      enabledPlatforms: ["RemoteOK"],
+    });
 
-    scheduler.updateConfig({ intervalMinutes: 120, maxJobsPerRun: 80 });
+    scheduler.updateConfig({
+      intervalMinutes: 120,
+      maxJobsPerRun: 80,
+      enabledPlatforms: null,
+    });
 
     expect(scheduler.getStatus()).toMatchObject({
       intervalMinutes: 120,
       maxJobsPerRun: 80,
       isStarted: false,
+      enabledPlatforms: null,
     });
   });
 

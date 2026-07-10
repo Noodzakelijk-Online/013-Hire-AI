@@ -5,6 +5,13 @@ const readBoundedInteger = (name: string, fallback: number, minimum: number, max
   if (!Number.isFinite(value)) return fallback;
   return Math.min(Math.max(value, minimum), maximum);
 };
+const readOptionalCsv = (name: string) => {
+  const values = readEnv(name)
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return values.length > 0 ? values : undefined;
+};
 const readEnvWithLocalFallback = (name: string, fallback: string) => {
   const value = readEnv(name);
   if (value.trim()) return value;
@@ -24,6 +31,7 @@ export const ENV = {
   jobScrapingSchedulerEnabled: readEnv("JOB_SCRAPING_SCHEDULER_ENABLED").toLowerCase() === "true",
   jobScrapingIntervalMinutes: readBoundedInteger("JOB_SCRAPING_INTERVAL_MINUTES", 60, 5, 1440),
   jobScrapingMaxJobsPerRun: readBoundedInteger("JOB_SCRAPING_MAX_JOBS_PER_RUN", 100, 10, 1000),
+  jobScrapingEnabledPlatforms: readOptionalCsv("JOB_SCRAPING_ENABLED_PLATFORMS"),
 };
 
 export function assertRequiredEnv(names: string[]) {

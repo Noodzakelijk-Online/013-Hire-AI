@@ -8,7 +8,8 @@ import { getScraperManager } from "./scraperManager";
 export interface SchedulerConfig {
   intervalMinutes: number;
   maxJobsPerRun: number;
-  enabledPlatforms?: string[];
+  // Undefined preserves an existing runtime configuration; null explicitly enables every source.
+  enabledPlatforms?: string[] | null;
 }
 
 export interface SchedulerStatus {
@@ -16,6 +17,7 @@ export interface SchedulerStatus {
   isRunning: boolean;
   intervalMinutes: number;
   maxJobsPerRun: number;
+  enabledPlatforms: string[] | null;
   lastRunAt: Date | null;
   nextRunAt: Date | null;
   totalJobsScraped: number;
@@ -31,6 +33,7 @@ export class JobScrapingScheduler {
     isRunning: false,
     intervalMinutes: 0,
     maxJobsPerRun: 0,
+    enabledPlatforms: null,
     lastRunAt: null,
     nextRunAt: null,
     totalJobsScraped: 0,
@@ -39,9 +42,13 @@ export class JobScrapingScheduler {
   };
 
   constructor(config: SchedulerConfig) {
-    this.config = config;
-    this.status.intervalMinutes = config.intervalMinutes;
-    this.status.maxJobsPerRun = config.maxJobsPerRun;
+    this.config = {
+      ...config,
+      enabledPlatforms: config.enabledPlatforms?.slice() ?? null,
+    };
+    this.status.intervalMinutes = this.config.intervalMinutes;
+    this.status.maxJobsPerRun = this.config.maxJobsPerRun;
+    this.status.enabledPlatforms = this.config.enabledPlatforms?.slice() ?? null;
   }
 
   /**
@@ -99,9 +106,13 @@ export class JobScrapingScheduler {
     try {
       const manager = await getScraperManager();
       
-      const result = await manager.runScrapingCycle({
+      const scrapingOptions: { limit: number; platformNames?: string[] } = {
         limit: this.config.maxJobsPerRun,
-      });
+      };
+      if (this.config.enabledPlatforms?.length) {
+        scrapingOptions.platformNames = this.config.enabledPlatforms;
+      }
+      const result = await manager.runScrapingCycle(scrapingOptions);
 
       this.status.totalJobsScraped += result.totalSaved;
       this.status.totalRunsCompleted++;
@@ -133,7 +144,11 @@ export class JobScrapingScheduler {
    * Get current scheduler status
    */
   getStatus(): SchedulerStatus {
-    return { ...this.status, errors: [...this.status.errors] };
+    return {
+      ...this.status,
+      enabledPlatforms: this.status.enabledPlatforms?.slice() ?? null,
+      errors: [...this.status.errors],
+    };
   }
 
   /**
@@ -145,9 +160,16 @@ export class JobScrapingScheduler {
       config.intervalMinutes !== undefined &&
       config.intervalMinutes !== this.config.intervalMinutes
     );
-    this.config = { ...this.config, ...config };
+    this.config = {
+      ...this.config,
+      ...config,
+      enabledPlatforms: config.enabledPlatforms === undefined
+        ? this.config.enabledPlatforms
+        : config.enabledPlatforms?.slice() ?? null,
+    };
     this.status.intervalMinutes = this.config.intervalMinutes;
     this.status.maxJobsPerRun = this.config.maxJobsPerRun;
+    this.status.enabledPlatforms = this.config.enabledPlatforms?.slice() ?? null;
     
     // Restart if running with new interval
     if (shouldRestart) {

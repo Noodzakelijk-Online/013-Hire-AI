@@ -19,6 +19,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import {
   Activity,
@@ -114,6 +115,8 @@ export default function AdminPanel() {
   const [evidenceDialog, setEvidenceDialog] = useState<{ open: boolean; itemId: number | null }>({ open: false, itemId: null });
   const [scrapingIntervalMinutes, setScrapingIntervalMinutes] = useState("60");
   const [scrapingMaxJobsPerRun, setScrapingMaxJobsPerRun] = useState("100");
+  const [restrictScrapingSources, setRestrictScrapingSources] = useState(false);
+  const [selectedScrapingSources, setSelectedScrapingSources] = useState<string[]>([]);
   const scrapingScheduleInitialized = useRef(false);
 
   // Data queries
@@ -143,6 +146,10 @@ export default function AdminPanel() {
     if (!scrapingStatus?.scheduler || scrapingScheduleInitialized.current) return;
     setScrapingIntervalMinutes(String(scrapingStatus.scheduler.intervalMinutes));
     setScrapingMaxJobsPerRun(String(scrapingStatus.scheduler.maxJobsPerRun));
+    setRestrictScrapingSources(Boolean(scrapingStatus.scheduler.enabledPlatforms?.length));
+    setSelectedScrapingSources(
+      scrapingStatus.scheduler.enabledPlatforms?.slice() ?? scrapingStatus.platforms.map((platform) => platform.name)
+    );
     scrapingScheduleInitialized.current = true;
   }, [scrapingStatus?.scheduler]);
 
@@ -242,7 +249,15 @@ export default function AdminPanel() {
       toast.error("Choose 10 to 1,000 jobs per run.");
       return;
     }
-    startScrapingScheduler.mutate({ intervalMinutes, maxJobsPerRun });
+    if (restrictScrapingSources && selectedScrapingSources.length === 0) {
+      toast.error("Select at least one source or use all active sources.");
+      return;
+    }
+    startScrapingScheduler.mutate({
+      intervalMinutes,
+      maxJobsPerRun,
+      enabledPlatforms: restrictScrapingSources ? selectedScrapingSources : undefined,
+    });
   };
 
   // Auth guard
@@ -549,6 +564,43 @@ export default function AdminPanel() {
                       />
                     </div>
                   </div>
+                  <div className="rounded-md border border-slate-800 bg-slate-950/50 p-3">
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="restrict-scraping-sources"
+                        data-testid="admin-restrict-scraping-sources"
+                        checked={restrictScrapingSources}
+                        onCheckedChange={(checked) => setRestrictScrapingSources(Boolean(checked))}
+                      />
+                      <Label htmlFor="restrict-scraping-sources" className="text-sm text-slate-200">
+                        Limit discovery to selected sources
+                      </Label>
+                    </div>
+                    {restrictScrapingSources && (
+                      <div data-testid="admin-scraping-source-selector" className="mt-3 grid gap-2 sm:grid-cols-2">
+                        {scrapingStatus?.platforms.map((platform) => {
+                          const selected = selectedScrapingSources.includes(platform.name);
+                          return (
+                            <div key={platform.id} className="flex items-center gap-2 text-sm text-slate-300">
+                              <Checkbox
+                                id={`scraping-source-${platform.id}`}
+                                checked={selected}
+                                onCheckedChange={(checked) => {
+                                  setSelectedScrapingSources((sources) => checked
+                                    ? [...sources, platform.name]
+                                    : sources.filter((source) => source !== platform.name)
+                                  );
+                                }}
+                              />
+                              <Label htmlFor={`scraping-source-${platform.id}`} className="text-sm text-slate-300">
+                                {platform.name}
+                              </Label>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                   <div className="flex flex-wrap gap-2">
                     <Button
                       data-testid="admin-start-scraping-scheduler"
@@ -582,6 +634,9 @@ export default function AdminPanel() {
                   </div>
                   <div className="text-xs text-slate-500">
                     Current: every {scrapingStatus?.scheduler.intervalMinutes ?? 60} minutes, up to {scrapingStatus?.scheduler.maxJobsPerRun ?? 100} jobs per run.
+                    {scrapingStatus?.scheduler.enabledPlatforms?.length
+                      ? ` Restricted to ${scrapingStatus.scheduler.enabledPlatforms.length} selected source${scrapingStatus.scheduler.enabledPlatforms.length === 1 ? "" : "s"}.`
+                      : " All active configured sources are included."}
                   </div>
                 </CardContent>
               </Card>
