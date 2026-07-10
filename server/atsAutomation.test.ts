@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CAPTCHAHandler,
   TaleoAutomation,
   WorkdayAutomation,
   applyWithATS,
@@ -51,5 +52,17 @@ describe("guarded legacy ATS automation", () => {
 
     expect(result.success).toBe(false);
     expect(result.status).toBe("partial");
+    expect(result.nextSteps).toContain("Complete any login or CAPTCHA challenge directly on the employer portal.");
+  });
+
+  it("never solves CAPTCHA challenges or routes them to an external service", async () => {
+    const handler = new CAPTCHAHandler();
+
+    await expect(handler.detectCAPTCHA()).resolves.toEqual({ detected: false });
+    await expect(handler.solveCAPTCHA()).resolves.toMatchObject({
+      solved: false,
+      method: "manual",
+      error: expect.stringContaining("disabled"),
+    });
   });
 });
