@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, gte, inArray, isNull, like, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, like, lte, notInArray, or, sql, type SQL } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { 
   InsertUser, 
@@ -57,6 +57,11 @@ import {
   canTransitionApplicationStatus,
   type ApplicationStatus,
 } from "./applicationLifecycle";
+import {
+  defaultJobSearchFilters,
+  filterJobListings,
+  type JobSearchFilterState,
+} from "@shared/jobSearchFilters";
 
 type InsertJob = InferInsertModel<typeof jobs>;
 type InsertUserProfile = InferInsertModel<typeof userProfiles>;
@@ -267,29 +272,118 @@ const canonicalJobCondition = sql`NOT EXISTS (
 
 const sampleDuplicateJobIds = new Set(sampleJobDuplicateLinks.map((link) => link.duplicateJobId));
 
-export async function getActiveJobs(limit = 100, offset = 0) {
+function resolveJobSearchFilters(filters: Partial<JobSearchFilterState> = {}): JobSearchFilterState {
+  return {
+    ...defaultJobSearchFilters,
+    ...filters,
+    salaryRange: filters.salaryRange ?? defaultJobSearchFilters.salaryRange,
+  };
+}
+
+function addJobSearchFilterConditions(conditions: SQL[], filters: JobSearchFilterState, now: Date) {
+  const queryTerms = filters.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  for (const term of queryTerms) {
+    const value = searchTerm(term);
+    const condition = or(
+      like(jobs.title, value),
+      like(jobs.company, value),
+      like(jobs.description, value),
+      like(jobs.requirements, value),
+      like(jobs.responsibilities, value),
+      like(jobs.benefits, value),
+      like(jobs.skills, value)
+    );
+    if (condition) conditions.push(condition);
+  }
+
+  if (filters.jobType !== "all") conditions.push(eq(jobs.jobType, filters.jobType as "full-time" | "part-time" | "contract" | "temporary"));
+  if (filters.platformId !== "all" && Number.isInteger(Number(filters.platformId)) && Number(filters.platformId) > 0) {
+    conditions.push(eq(jobs.platformId, Number(filters.platformId)));
+  }
+  if (filters.remoteOnly) {
+    const remoteCondition = or(
+      like(jobs.location, "%remote%"),
+      like(jobs.location, "%worldwide%"),
+      like(jobs.location, "%anywhere%"),
+      like(jobs.location, "%distributed%"),
+      like(jobs.location, "%work from home%"),
+      like(jobs.location, "%wfh%")
+    );
+    if (remoteCondition) conditions.push(remoteCondition);
+  }
+  if (filters.visaSponsorshipOnly) conditions.push(eq(jobs.visaSponsorshipAvailable, 1));
+  if (filters.openHiringSupportOnly) conditions.push(eq(jobs.openHiringSupport, 1));
+  if (filters.diversityFriendlyOnly) conditions.push(eq(jobs.diversityFriendly, 1));
+  if (filters.postedWithin !== "all") {
+    conditions.push(gte(jobs.postedDate, new Date(now.getTime() - Number(filters.postedWithin) * 86400000)));
+  }
+
+  if (filters.applicationProcess !== "all") {
+    if (filters.applicationProcess === "other") {
+      const otherProcess = or(
+        isNull(jobs.applicationProcess),
+        notInArray(jobs.applicationProcess, ["greenhouse", "lever", "workday", "email"])
+      );
+      if (otherProcess) conditions.push(otherProcess);
+    } else {
+      conditions.push(eq(jobs.applicationProcess, filters.applicationProcess));
+    }
+  }
+
+  if (filters.experienceLevel !== "all") {
+    const experienceTerms = {
+      entry: ["%intern%", "%graduate%", "%entry%", "%new grad%"],
+      junior: ["%junior%", "%jr.%", "%1+ year%", "%2+ year%"],
+      mid: ["%mid%", "%intermediate%", "%3+ year%", "%4+ year%"],
+      senior: ["%senior%", "%sr.%", "%5+ year%", "%6+ year%"],
+      lead: ["%lead%", "%principal%", "%staff%", "%architect%", "%7+ year%", "%8+ year%"],
+      executive: ["%executive%", "%director%", "%vice president%", "%chief%", "%c-suite%"],
+    } as const;
+    const terms = experienceTerms[filters.experienceLevel];
+    const experienceCondition = or(...terms.flatMap((term) => [like(jobs.title, term), like(jobs.requirements, term)]));
+    if (experienceCondition) conditions.push(experienceCondition);
+  }
+
+  const salaryOverlap = and(
+    or(isNull(jobs.salaryMin), lte(jobs.salaryMin, filters.salaryRange[1])),
+    or(isNull(jobs.salaryMax), gte(jobs.salaryMax, filters.salaryRange[0]))
+  );
+  if (filters.salaryDisclosedOnly) {
+    const hasSalary = or(isNotNull(jobs.salaryMin), isNotNull(jobs.salaryMax));
+    if (hasSalary) conditions.push(hasSalary);
+    if (salaryOverlap) conditions.push(salaryOverlap);
+  } else {
+    const salaryCondition = or(and(isNull(jobs.salaryMin), isNull(jobs.salaryMax)), salaryOverlap);
+    if (salaryCondition) conditions.push(salaryCondition);
+  }
+}
+
+export async function getActiveJobs(limit = 100, offset = 0, filters: Partial<JobSearchFilterState> = {}) {
   const boundedLimit = Math.min(Math.max(limit, 1), 250);
   const boundedOffset = Math.max(offset, 0);
   const now = new Date();
+  const resolvedFilters = resolveJobSearchFilters(filters);
   const db = await getDb();
   if (!db) {
-    return sampleJobs
+    return filterJobListings(sampleJobs
       .filter((job) =>
         job.isActive === 1 &&
         !sampleDuplicateJobIds.has(job.id) &&
         (!job.expiryDate || job.expiryDate > now)
-      )
+      ), resolvedFilters, now)
       .sort((a, b) => (b.postedDate?.getTime() || 0) - (a.postedDate?.getTime() || 0))
       .slice(boundedOffset, boundedOffset + boundedLimit);
   }
+  const conditions: SQL[] = [
+    eq(jobs.isActive, 1),
+    or(isNull(jobs.expiryDate), gt(jobs.expiryDate, now))!,
+    canonicalJobCondition,
+  ];
+  addJobSearchFilterConditions(conditions, resolvedFilters, now);
   return await db
     .select()
     .from(jobs)
-    .where(and(
-      eq(jobs.isActive, 1),
-      or(isNull(jobs.expiryDate), gt(jobs.expiryDate, now)),
-      canonicalJobCondition
-    ))
+    .where(and(...conditions))
     .orderBy(desc(jobs.postedDate), desc(jobs.createdAt))
     .limit(boundedLimit)
     .offset(boundedOffset);

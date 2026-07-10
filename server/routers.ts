@@ -50,6 +50,21 @@ import { MAX_FOLLOW_UP_MESSAGE_CHARS } from "./messageSanitization";
 const boundedPageSize = z.number().int().min(1).max(100);
 const boundedOffset = z.number().int().min(0).max(100_000);
 const boundedFilterText = z.string().trim().min(1).max(200);
+const jobListPageSize = z.number().int().min(1).max(250);
+const jobSearchFiltersInput = z.object({
+  query: z.string().trim().max(200).optional(),
+  jobType: z.enum(["all", "full-time", "part-time", "contract", "temporary"]).optional(),
+  platformId: z.string().trim().max(20).optional(),
+  salaryRange: z.tuple([z.number().min(0).max(10_000_000), z.number().min(0).max(10_000_000)]).optional(),
+  remoteOnly: z.boolean().optional(),
+  experienceLevel: z.enum(["all", "entry", "junior", "mid", "senior", "lead", "executive"]).optional(),
+  applicationProcess: z.enum(["all", "greenhouse", "lever", "workday", "email", "other"]).optional(),
+  visaSponsorshipOnly: z.boolean().optional(),
+  openHiringSupportOnly: z.boolean().optional(),
+  diversityFriendlyOnly: z.boolean().optional(),
+  salaryDisclosedOnly: z.boolean().optional(),
+  postedWithin: z.enum(["all", "1", "3", "7", "30"]).optional(),
+}).optional();
 const auditEntityType = z.enum(["job", "application", "success_fee", "verification", "user", "admin_review"]);
 const connectorProvider = z.enum([
   "gmail",
@@ -252,13 +267,14 @@ export const appRouter = router({
     list: publicProcedure
       .input(
         z.object({
-          limit: boundedPageSize.optional().default(50),
+          limit: jobListPageSize.optional().default(50),
           offset: boundedOffset.optional().default(0),
+          filters: jobSearchFiltersInput,
         })
       )
       .query(async ({ input }) => {
         const { getActiveJobs } = await import("./db");
-        return await getActiveJobs(input.limit, input.offset);
+        return await getActiveJobs(input.limit, input.offset, input.filters);
       }),
     search: publicProcedure
       .input(

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
@@ -15,6 +15,8 @@ import {
   type JobApplicationProcessFilter,
   type JobExperienceLevel,
   type JobPostedWithin,
+  type JobSearchFilterState,
+  type JobTypeFilter,
 } from "@/lib/jobSearchFilters";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -55,7 +57,7 @@ export default function JobSearch() {
   const { user, loading: authLoading } = useAuth();
   const [, setLocation] = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedJobType, setSelectedJobType] = useState<string>("all");
+  const [selectedJobType, setSelectedJobType] = useState<JobTypeFilter>("all");
   const [selectedPlatform, setSelectedPlatform] = useState<string>("all");
   const [salaryRange, setSalaryRange] = useState<[number, number]>([0, 300000]);
   const [showRemoteOnly, setShowRemoteOnly] = useState(true);
@@ -73,10 +75,40 @@ export default function JobSearch() {
   const [allowUnsupportedATS, setAllowUnsupportedATS] = useState(false);
   const [createFollowUps, setCreateFollowUps] = useState(false);
 
-  // Fetch jobs - returns array directly
+  const jobSearchFilters = useMemo<JobSearchFilterState>(() => ({
+    query: searchQuery,
+    jobType: selectedJobType,
+    platformId: selectedPlatform,
+    salaryRange,
+    remoteOnly: showRemoteOnly,
+    experienceLevel: selectedExperienceLevel,
+    applicationProcess: selectedApplicationProcess,
+    visaSponsorshipOnly,
+    openHiringSupportOnly,
+    diversityFriendlyOnly,
+    salaryDisclosedOnly,
+    postedWithin,
+  }), [
+    diversityFriendlyOnly,
+    openHiringSupportOnly,
+    postedWithin,
+    salaryDisclosedOnly,
+    salaryRange,
+    searchQuery,
+    selectedApplicationProcess,
+    selectedExperienceLevel,
+    selectedJobType,
+    selectedPlatform,
+    showRemoteOnly,
+    visaSponsorshipOnly,
+  ]);
+  const deferredJobSearchFilters = useDeferredValue(jobSearchFilters);
+
+  // The API applies the same canonical filter contract before pagination.
   const { data: jobsList, isLoading: jobsLoading, refetch: refetchJobs } = trpc.jobs.list.useQuery({
-    limit: 100,
+    limit: 250,
     offset: 0,
+    filters: deferredJobSearchFilters,
   });
 
   // Fetch platforms
@@ -173,63 +205,13 @@ export default function JobSearch() {
   // Filter jobs
   const filteredJobs = useMemo(() => {
     if (!jobsList) return [];
-    return filterJobListings(jobsList, {
-      query: searchQuery,
-      jobType: selectedJobType,
-      platformId: selectedPlatform,
-      salaryRange,
-      remoteOnly: showRemoteOnly,
-      experienceLevel: selectedExperienceLevel,
-      applicationProcess: selectedApplicationProcess,
-      visaSponsorshipOnly,
-      openHiringSupportOnly,
-      diversityFriendlyOnly,
-      salaryDisclosedOnly,
-      postedWithin,
-    });
-  }, [
-    diversityFriendlyOnly,
-    jobsList,
-    openHiringSupportOnly,
-    postedWithin,
-    salaryDisclosedOnly,
-    salaryRange,
-    searchQuery,
-    selectedApplicationProcess,
-    selectedExperienceLevel,
-    selectedJobType,
-    selectedPlatform,
-    showRemoteOnly,
-    visaSponsorshipOnly,
-  ]);
+    return filterJobListings(jobsList, jobSearchFilters);
+  }, [jobSearchFilters, jobsList]);
 
-  const activeFilterCount = useMemo(() => countActiveJobSearchFilters({
-    query: searchQuery,
-    jobType: selectedJobType,
-    platformId: selectedPlatform,
-    salaryRange,
-    remoteOnly: showRemoteOnly,
-    experienceLevel: selectedExperienceLevel,
-    applicationProcess: selectedApplicationProcess,
-    visaSponsorshipOnly,
-    openHiringSupportOnly,
-    diversityFriendlyOnly,
-    salaryDisclosedOnly,
-    postedWithin,
-  }), [
-    diversityFriendlyOnly,
-    openHiringSupportOnly,
-    postedWithin,
-    salaryDisclosedOnly,
-    salaryRange,
-    searchQuery,
-    selectedApplicationProcess,
-    selectedExperienceLevel,
-    selectedJobType,
-    selectedPlatform,
-    showRemoteOnly,
-    visaSponsorshipOnly,
-  ]);
+  const activeFilterCount = useMemo(
+    () => countActiveJobSearchFilters(jobSearchFilters),
+    [jobSearchFilters]
+  );
 
   const resetFilters = () => {
     setSearchQuery(defaultJobSearchFilters.query);
@@ -766,7 +748,7 @@ export default function JobSearch() {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <Select value={selectedJobType} onValueChange={setSelectedJobType}>
+                <Select value={selectedJobType} onValueChange={(value) => setSelectedJobType(value as JobTypeFilter)}>
                   <SelectTrigger className="w-[140px] bg-slate-800 border-slate-700">
                     <SelectValue placeholder="Job Type" />
                   </SelectTrigger>
