@@ -25,7 +25,6 @@ import {
 import { savedJobs, applicationNotes, interviewSchedules, followUps, applications, applicationAttempts, employerResponses, applicationNotifications, auditEvents, adminReviewItems, applicationApprovals, jobs, jobAlerts, type FollowUp, type InterviewSchedule } from "../drizzle/schema";
 import { generateInterviewPreparation as generateAiInterviewPreparation } from "./aiMatching";
 import { invokeLLM } from "./_core/llm";
-import { notifyOwner } from "./_core/notification";
 import {
   canTransitionApplicationStatus,
   canTransitionInterviewStatus,
@@ -2328,10 +2327,10 @@ export async function deleteJobAlert(userId: number, alertId: number) {
   return { success: true };
 }
 
-// Process job alerts and send notifications
+// Refresh job alerts without interrupting job seekers for ordinary job matches.
 export async function processJobAlerts() {
   const db = await getDb();
-  if (!db) return { processed: 0 };
+  if (!db) return { processed: 0, externalNotifications: 0 as const };
 
   // Get all active alerts
   const alerts = await db
@@ -2372,13 +2371,8 @@ export async function processJobAlerts() {
       const matchingJobs = await query.limit(10);
 
       if (matchingJobs.length > 0) {
-        // Send notification (using owner notification for now)
-        await notifyOwner({
-          title: `Job Alert: ${alert.name}`,
-          content: `Found ${matchingJobs.length} new jobs matching your alert "${alert.name}"`,
-        });
-
-        // Update last triggered
+        // Matching jobs remain available in the command center. External alerts are
+        // reserved for deterministic interview-invite evidence.
         await db
           .update(jobAlerts)
           .set({ lastTriggered: now })
@@ -2389,7 +2383,7 @@ export async function processJobAlerts() {
     }
   }
 
-  return { processed };
+  return { processed, externalNotifications: 0 as const };
 }
 
 // ==================== INTERVIEW PREPARATION ====================
