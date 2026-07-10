@@ -69,7 +69,9 @@ export function calculateProfileReadiness(input: {
   const skills = input.skills || [];
 
   const signals = {
-    hasResume: Boolean(hasText(profile?.resumeUrl) || hasText(profile?.resumeFileKey)),
+    // A display URL is not enough to support a repeatable application handoff.
+    // Require the storage key as well so the active resume is a durable artifact.
+    hasResume: Boolean(hasText(profile?.resumeUrl) && hasText(profile?.resumeFileKey)),
     hasSkills: Boolean(hasText(profile?.skills) || hasAnyStructuredSkill(skills)),
     hasExperience: Boolean(hasText(profile?.experience)),
     hasWorkHistory: workExperiences.some((item) => hasText(item.jobTitle) && hasText(item.company)),
@@ -112,9 +114,9 @@ export function calculateProfileReadiness(input: {
   };
 
   if (!signals.hasResume) {
-    addGap("resume", "Resume missing", "blocker", "Upload or connect a resume before Hire.AI prepares applications.");
+    addGap("resume", "Active resume artifact missing", "blocker", "Upload and select a versioned resume before Hire.AI prepares applications.");
   } else {
-    strengths.push("Resume connected");
+    strengths.push("Active resume artifact available");
   }
 
   if (!signals.hasSkills) {

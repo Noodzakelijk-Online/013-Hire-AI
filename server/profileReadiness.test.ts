@@ -49,4 +49,29 @@ describe("profile readiness", () => {
     expect(readiness.autoApplyEligible).toBe(true);
     expect(readiness.level).toBe("strong");
   });
+
+  it("does not treat a standalone resume URL as an application-ready artifact", () => {
+    const readiness = calculateProfileReadiness({
+      profile: {
+        skills: "TypeScript, React, Node.js",
+        experience: "5 years building SaaS products.",
+        education: "BSc Computer Science",
+        desiredJobTypes: "Full Stack Engineer",
+        desiredLocations: "Remote, Europe",
+        salaryExpectationMin: 8000,
+        salaryExpectationMax: 12000,
+        resumeUrl: "https://example.com/resume.pdf",
+        resumeFileKey: null,
+        linkedinUrl: "https://linkedin.com/in/example",
+        githubUrl: null,
+        portfolioUrl: null,
+      },
+      workExperiences: [{ jobTitle: "Engineer", company: "Acme", description: "Built product." }],
+      skills: [{ skillName: "TypeScript" }],
+    });
+
+    expect(readiness.signals.hasResume).toBe(false);
+    expect(readiness.autoApplyEligible).toBe(false);
+    expect(readiness.blockers.map((gap) => gap.key)).toContain("resume");
+  });
 });

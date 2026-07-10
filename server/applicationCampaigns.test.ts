@@ -30,6 +30,7 @@ describe("application campaign operating ledger", () => {
       desiredLocations: "Remote",
       salaryExpectationMin: 100000,
       resumeUrl: "https://example.com/resume.pdf",
+      resumeFileKey: "resumes/99001/resume.pdf",
       preferences: JSON.stringify({
         createFollowUps: true,
         dailyApplicationLimit: 4,
@@ -179,6 +180,7 @@ describe("application campaign operating ledger", () => {
       desiredJobTypes: "Frontend Engineer",
       desiredLocations: "Remote",
       resumeUrl: "https://example.com/resume.pdf",
+      resumeFileKey: "resumes/99009/resume.pdf",
     });
     await requestUserConnectorConnection({
       userId,
@@ -316,6 +318,7 @@ describe("application campaign operating ledger", () => {
       desiredJobTypes: "Product Engineer",
       desiredLocations: "Remote",
       resumeUrl: "https://example.com/product-engineer.pdf",
+      resumeFileKey: "resumes/99004/product-engineer.pdf",
       preferences: JSON.stringify({ createFollowUps: true }),
     });
     const application = await createApplication({
@@ -360,6 +363,7 @@ describe("application campaign operating ledger", () => {
       desiredJobTypes: "Frontend Engineer",
       desiredLocations: "Remote",
       resumeUrl: "https://example.com/frontend-resume.pdf",
+      resumeFileKey: "resumes/99005/frontend-resume.pdf",
       preferences: JSON.stringify({ createFollowUps: true }),
     });
     const application = await createApplication({
@@ -399,6 +403,7 @@ describe("application campaign operating ledger", () => {
       desiredJobTypes: "Backend Engineer",
       desiredLocations: "Remote",
       resumeUrl: "https://example.com/backend-resume.pdf",
+      resumeFileKey: "resumes/99006/backend-resume.pdf",
       preferences: JSON.stringify({ createFollowUps: true }),
     });
     const application = await createApplication({
@@ -443,6 +448,7 @@ describe("application campaign operating ledger", () => {
       desiredJobTypes: "Frontend Engineer",
       desiredLocations: "Remote",
       resumeUrl: "https://example.com/frontend-resume.pdf",
+      resumeFileKey: "resumes/99007/frontend-resume.pdf",
       preferences: JSON.stringify({ createFollowUps: true }),
     });
     const application = await createApplication({
@@ -507,6 +513,7 @@ describe("application campaign operating ledger", () => {
       desiredJobTypes: "Frontend Engineer",
       desiredLocations: "Remote",
       resumeUrl: "https://example.com/frontend-resume.pdf",
+      resumeFileKey: "resumes/99010/frontend-resume.pdf",
       preferences: JSON.stringify({ createFollowUps: true }),
     });
     const application = await createApplication({

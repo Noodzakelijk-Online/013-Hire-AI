@@ -3,6 +3,7 @@ import {
   applyToJob,
   detectATSType,
   getVerifiedApplicationSubmissionEvidence,
+  validateApplicationData,
 } from "./applicationAutomation";
 
 const applicationData = {
@@ -10,6 +11,7 @@ const applicationData = {
   lastName: "Example",
   email: "alex@example.com",
   resumeUrl: "https://example.com/resume.pdf",
+  resumeFileKey: "resumes/alex/resume.pdf",
 };
 
 describe("guarded application preparation", () => {
@@ -45,5 +47,15 @@ describe("guarded application preparation", () => {
       message: "Prepared application.",
       confirmationId: "unverified-123",
     })).toBeNull();
+  });
+
+  it("requires a versioned resume key before preparation can be trusted", () => {
+    const validation = validateApplicationData({
+      ...applicationData,
+      resumeFileKey: "",
+    });
+
+    expect(validation.valid).toBe(false);
+    expect(validation.errors).toContain("Active versioned resume is required");
   });
 });

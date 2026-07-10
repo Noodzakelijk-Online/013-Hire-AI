@@ -17,6 +17,8 @@ export interface ApplicationData {
   email: string;
   phone?: string;
   resumeUrl: string;
+  /** Versioned storage key for the resume selected for this application. */
+  resumeFileKey: string;
   coverLetter?: string;
   linkedinUrl?: string;
   githubUrl?: string;
@@ -144,6 +146,10 @@ export function validateApplicationData(data: ApplicationData): {
     errors.push("Resume URL is required");
   }
 
+  if (!data.resumeFileKey || data.resumeFileKey.trim() === "") {
+    errors.push("Active versioned resume is required");
+  }
+
   return {
     valid: errors.length === 0,
     errors,
@@ -157,6 +163,7 @@ export function prepareApplicationData(
   user: { name?: string | null; email?: string | null },
   profile: {
     resumeUrl?: string | null;
+    resumeFileKey?: string | null;
     linkedinUrl?: string | null;
     githubUrl?: string | null;
     portfolioUrl?: string | null;
@@ -168,7 +175,7 @@ export function prepareApplicationData(
   const firstName = nameParts[0] || "";
   const lastName = nameParts.slice(1).join(" ") || "";
 
-  if (!firstName || !user.email || !profile.resumeUrl) {
+  if (!firstName || !user.email || !profile.resumeUrl || !profile.resumeFileKey) {
     return null;
   }
 
@@ -177,6 +184,7 @@ export function prepareApplicationData(
     lastName,
     email: user.email,
     resumeUrl: profile.resumeUrl,
+    resumeFileKey: profile.resumeFileKey,
     coverLetter,
     linkedinUrl: profile.linkedinUrl || undefined,
     githubUrl: profile.githubUrl || undefined,

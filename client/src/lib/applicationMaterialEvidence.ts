@@ -124,8 +124,7 @@ export function getApplicationMaterialEvidenceSummary(
   const resumeConnected = Boolean(
     material?.resumeId ||
     material?.customResume ||
-    stringValue(profile, "resumeUrl") ||
-    stringValue(profile, "resumeFileKey")
+    (stringValue(profile, "resumeUrl") && stringValue(profile, "resumeFileKey"))
   );
 
   return {

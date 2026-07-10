@@ -604,9 +604,7 @@ export class WorkdayAutomation {
   private async uploadResume(page: Page, data: ApplicationData): Promise<void> {
     const fileInput = await page.$('input[type="file"][data-automation-id*="resume"], input[type="file"][accept*="pdf"]');
     if (fileInput && data.resume.url) {
-      // Download the resume first, then upload
-      // This is a simplified version - actual implementation would handle file download
-      console.log(`Would upload resume from: ${data.resume.url}`);
+      throw new Error("Resume upload requires a resolved local artifact. Final ATS submission remains disabled.");
     }
   }
 
@@ -671,7 +669,10 @@ export class WorkdayAutomation {
         return { success: false, message: `Submission error: ${errorText}` };
       }
 
-      return { success: true, message: "Application appears to be submitted" };
+      return {
+        success: false,
+        message: "Submission could not be confirmed. Record deterministic portal evidence before marking this application as submitted.",
+      };
     } catch (error) {
       return { success: false, message: `Submit failed: ${error}` };
     }
@@ -860,7 +861,7 @@ export class TaleoAutomation {
   private async uploadTaleoResume(page: Page, data: ApplicationData): Promise<void> {
     const fileInput = await page.$('input[type="file"], #ResumeUpload');
     if (fileInput && data.resume.url) {
-      console.log(`Would upload resume from: ${data.resume.url}`);
+      throw new Error("Resume upload requires a resolved local artifact. Final ATS submission remains disabled.");
     }
   }
 
@@ -919,7 +920,10 @@ export class TaleoAutomation {
         };
       }
 
-      return { success: true, message: "Application appears to be submitted" };
+      return {
+        success: false,
+        message: "Submission could not be confirmed. Record deterministic portal evidence before marking this application as submitted.",
+      };
     } catch (error) {
       return { success: false, message: `Submit failed: ${error}` };
     }

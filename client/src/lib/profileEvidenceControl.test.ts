@@ -23,6 +23,7 @@ describe("profile evidence control", () => {
   it("treats saved resume and professional links as usable evidence", () => {
     const summary = getProfileEvidenceControlSummary({
       profile: {
+        resumeUrl: "https://storage.example.local/resumes/1/current.pdf",
         resumeFileKey: "resumes/1/current.pdf",
         linkedinUrl: "https://linkedin.com/in/example",
         githubUrl: "https://github.com/example",
@@ -43,7 +44,7 @@ describe("profile evidence control", () => {
     expect(summary.headline).toContain("external sources");
   });
 
-  it("routes limited evidence work to social links when profile proof is incomplete", () => {
+  it("blocks a standalone resume URL because it cannot be attached as a versioned artifact", () => {
     const summary = getProfileEvidenceControlSummary({
       profile: {
         resumeUrl: "https://cdn.example.com/resume.pdf",
@@ -56,14 +57,15 @@ describe("profile evidence control", () => {
       },
     });
 
-    expect(summary.status).toBe("limited");
-    expect(summary.primarySection).toBe("social");
-    expect(summary.missingCount).toBe(3);
+    expect(summary.status).toBe("blocked");
+    expect(summary.primarySection).toBe("import");
+    expect(summary.missingCount).toBe(4);
   });
 
   it("tracks requested and authorized connector state without treating requests as access", () => {
     const summary = getProfileEvidenceControlSummary({
       profile: {
+        resumeUrl: "https://storage.example.local/resumes/1/current.pdf",
         resumeFileKey: "resumes/1/current.pdf",
         linkedinUrl: "https://linkedin.com/in/example",
         githubUrl: "https://github.com/example",
@@ -106,6 +108,7 @@ describe("profile evidence control", () => {
   it("tracks professional profile connector requests without treating them as imported evidence", () => {
     const summary = getProfileEvidenceControlSummary({
       profile: {
+        resumeUrl: "https://storage.example.local/resumes/1/current.pdf",
         resumeFileKey: "resumes/1/current.pdf",
       },
       readiness: {

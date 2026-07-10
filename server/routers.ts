@@ -2254,8 +2254,20 @@ export const appRouter = router({
           throw new Error("User profile not found. Please complete your profile first.");
         }
 
+        // The versioned resume record is the source of truth for prepared application
+        // material. Profile URL fields alone cannot prove that a resumable upload exists.
+        const activeResume = await getActiveResume(ctx.user.id);
+        if (!activeResume) {
+          throw new Error("An active versioned resume is required before Hire.AI can prepare an application. Upload or select a resume on your profile first.");
+        }
+        const profileForApplication = {
+          ...profile,
+          resumeUrl: activeResume.fileUrl,
+          resumeFileKey: activeResume.fileKey,
+        };
+
         // Prepare application data
-        const applicationData = prepareApplicationData(ctx.user, profile, input.coverLetter);
+        const applicationData = prepareApplicationData(ctx.user, profileForApplication, input.coverLetter);
         if (!applicationData) {
           throw new Error("Unable to prepare application data. Please ensure your profile is complete.");
         }
@@ -2286,9 +2298,10 @@ export const appRouter = router({
         const applicationRecordId = Number(applicationRecord.insertId);
         await createApplicationMaterial({
           applicationId: applicationRecordId,
+          resumeId: activeResume.id,
           coverLetter: input.coverLetter,
           customAnswers: applicationData.answers ? JSON.stringify(applicationData.answers) : undefined,
-          sourceProfileSnapshot: profileSnapshotForApplication(ctx.user, profile),
+          sourceProfileSnapshot: profileSnapshotForApplication(ctx.user, profileForApplication),
         });
         await createApplicationAttempt({
           applicationId: applicationRecordId,
@@ -2327,6 +2340,12 @@ export const appRouter = router({
             reviewRequired: result.reviewRequired,
             externalSubmissionPerformed: submissionRecorded,
             status: submissionRecorded ? "applied" : "pending",
+            resume: {
+              id: activeResume.id,
+              version: activeResume.version,
+              fileName: activeResume.fileName,
+              fileKey: activeResume.fileKey,
+            },
           }),
           riskLevel: submissionRecorded ? "high" : result.reviewRequired ? "medium" : "low",
         });
@@ -2356,6 +2375,8 @@ export const appRouter = router({
               atsType: result.atsType,
               prepared: result.prepared,
               submissionAttempted: result.submissionAttempted,
+              resumeId: activeResume.id,
+              resumeVersion: activeResume.version,
               source: "automation.applyToJob",
             }),
           });

@@ -222,6 +222,7 @@ export function getProfileEvidenceControlSummary(
   input: ProfileEvidenceControlInput = {}
 ): ProfileEvidenceControlSummary {
   const profile = input.profile;
+  const hasVersionedResume = hasText(profile?.resumeUrl) && hasText(profile?.resumeFileKey);
   const score = clampScore(input.readiness?.score);
   const blockerCount = input.readiness?.blockers?.length ?? 0;
   const autoApplyEligible = input.readiness?.autoApplyEligible === true;
@@ -290,10 +291,10 @@ export function getProfileEvidenceControlSummary(
       id: "resume",
       label: "Resume",
       category: "document",
-      status: hasText(profile?.resumeUrl) || hasText(profile?.resumeFileKey) ? "connected" : "missing",
-      detail: hasText(profile?.resumeUrl) || hasText(profile?.resumeFileKey)
-        ? "A resume is linked for matching and application material preparation."
-        : "Upload or import a resume before Hire.AI prepares applications.",
+      status: hasVersionedResume ? "connected" : "missing",
+      detail: hasVersionedResume
+        ? "An active versioned resume is linked for matching and application material preparation."
+        : "Upload and select a versioned resume before Hire.AI prepares applications.",
       section: "import",
     },
     {

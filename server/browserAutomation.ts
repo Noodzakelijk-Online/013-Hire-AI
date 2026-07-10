@@ -14,6 +14,8 @@ export interface ApplicationData {
   email: string;
   phone?: string;
   resumeUrl?: string;
+  /** A server-resolved local file path. Remote URLs cannot be uploaded by Puppeteer. */
+  resumeFilePath?: string;
   coverLetter?: string;
   linkedinUrl?: string;
   portfolioUrl?: string;
@@ -35,6 +37,18 @@ export interface AutomationResult {
   error?: string;
   screenshot?: string;
   logs: string[];
+}
+
+export function getResumeUploadBlocker(data: ApplicationData): string | null {
+  if (!data.resumeUrl) {
+    return "A resume is required before Hire.AI can prepare this application.";
+  }
+
+  if (!data.resumeFilePath) {
+    return "Resume upload is blocked because no server-resolved local resume artifact is available.";
+  }
+
+  return null;
 }
 
 /**
@@ -298,6 +312,11 @@ export class BrowserAutomation {
       if (data.portfolioUrl) await this.fillField(mappings.portfolio, data.portfolioUrl);
       if (data.coverLetter) await this.fillField(mappings.coverLetter, data.coverLetter);
 
+      const resumeUploaded = await this.uploadFile(mappings.resume, data.resumeFilePath!);
+      if (!resumeUploaded) {
+        throw new Error("Resume upload could not be verified in the Greenhouse form");
+      }
+
       // Handle custom questions (would need to be detected dynamically)
       
       // Take screenshot before submission
@@ -343,6 +362,11 @@ export class BrowserAutomation {
       if (data.phone) await this.fillField(mappings.phone, data.phone);
       if (data.coverLetter) await this.fillField(mappings.coverLetter, data.coverLetter);
 
+      const resumeUploaded = await this.uploadFile(mappings.resume, data.resumeFilePath!);
+      if (!resumeUploaded) {
+        throw new Error("Resume upload could not be verified in the Lever form");
+      }
+
       result.screenshot = await this.takeScreenshot() || undefined;
       result.prepared = true;
       result.logs = this.getLogs();
@@ -365,6 +389,16 @@ export async function automateApplication(
   data: ApplicationData
 ): Promise<AutomationResult> {
   const atsType = detectATSType(url);
+  const resumeBlocker = getResumeUploadBlocker(data);
+
+  if (resumeBlocker) {
+    return {
+      success: false,
+      prepared: false,
+      error: resumeBlocker,
+      logs: [`Detected ATS: ${atsType}`, resumeBlocker],
+    };
+  }
   
   if (!isPreparationSupported(atsType)) {
     return {

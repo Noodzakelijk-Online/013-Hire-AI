@@ -39,6 +39,7 @@ describe("profile evidence readiness router", () => {
       desiredLocations: "Remote",
       salaryExpectationMin: 90000,
       salaryExpectationMax: 140000,
+      resumeUrl: "https://storage.example.local/resumes/99601/resume.pdf",
       resumeFileKey: "resumes/99601/resume.pdf",
       linkedinUrl: "https://linkedin.com/in/example",
       githubUrl: "https://github.com/example",

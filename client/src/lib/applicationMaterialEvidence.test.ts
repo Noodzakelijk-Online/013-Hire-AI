@@ -32,6 +32,7 @@ describe("application material evidence summary", () => {
           salaryExpectationMin: 90000,
           salaryExpectationMax: 130000,
           resumeUrl: "https://example.com/resume.pdf",
+          resumeFileKey: "resumes/42/resume.pdf",
         },
       }),
     });
