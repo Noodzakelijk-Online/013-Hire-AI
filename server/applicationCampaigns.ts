@@ -457,6 +457,8 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
     listUserConnectorAccounts(userId),
   ]);
   const approvals = allApprovals.filter((approval) => approval.status === "pending");
+  const existingCampaign = await getApplicationCampaign(userId);
+  const campaignStatus = existingCampaign?.status ?? "active";
 
   const readiness = calculateProfileReadiness({
     profile: profile ?? undefined,
@@ -529,6 +531,9 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
   });
 
   const nextActions = unique([
+    campaignStatus === "paused"
+      ? "Resume the paused campaign before autonomous work can run."
+      : "",
     ...readiness.nextActions,
     ...plan.nextActions,
     approvals.length > 0 ? `Resolve ${approvals.length} pending user approval${approvals.length === 1 ? "" : "s"}.` : "",
@@ -564,6 +569,7 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
       : "",
   ]).slice(0, 8);
   const blockers = unique([
+    campaignStatus === "paused" ? "Campaign is paused" : "",
     ...readiness.blockers.map((gap) => gap.label),
     ...plan.policyWarnings,
     ...evidenceGates
@@ -576,7 +582,7 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
 
   const campaignWrite = await upsertApplicationCampaign({
     userId,
-    status: "active",
+    status: campaignStatus,
     title: campaignTitle(profile),
     targetRoles: profile?.desiredJobTypes ?? null,
     targetLocations: profile?.desiredLocations ?? null,
@@ -592,7 +598,7 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
     nextActions: JSON.stringify(nextActions),
     lastPlanSummary: JSON.stringify(plan.summary),
     lastSyncedAt: new Date(),
-  });
+  }, { preserveStatus: true });
   const campaign = await getApplicationCampaign(userId);
 
   return {

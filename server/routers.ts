@@ -967,6 +967,33 @@ export const appRouter = router({
         includeAdminReviews: ctx.user.role === "admin",
       });
     }),
+    setCampaignStatus: protectedProcedure
+      .input(z.object({ status: z.enum(["active", "paused"]) }))
+      .mutation(async ({ ctx, input }) => {
+        const { getUserOperatingLedger } = await import("./applicationCampaigns");
+        const { createAuditEvent, updateApplicationCampaignStatus } = await import("./db");
+
+        const ledger = await getUserOperatingLedger(ctx.user.id, {
+          includeAdminReviews: ctx.user.role === "admin",
+        });
+        const previousStatus = ledger.campaign.status;
+        const campaign = await updateApplicationCampaignStatus(ctx.user.id, input.status);
+        if (previousStatus !== campaign.status) {
+          await createAuditEvent({
+            userId: ctx.user.id,
+            entityType: "user",
+            entityId: ctx.user.id,
+            action: "application_campaign_status_changed",
+            actor: "user",
+            source: "applications.setCampaignStatus",
+            beforeState: JSON.stringify({ campaignId: campaign.id, status: previousStatus }),
+            afterState: JSON.stringify({ campaignId: campaign.id, status: campaign.status }),
+            riskLevel: "medium",
+          });
+        }
+
+        return { success: true, campaign };
+      }),
     listInterviewNotifications: protectedProcedure
       .input(z.object({ limit: boundedPageSize.optional().default(25) }).optional())
       .query(async ({ ctx, input }) => {

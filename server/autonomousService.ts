@@ -17,6 +17,7 @@ import {
   completeAutonomousRunLease,
   getActiveJobs,
   getAutonomousUserEligibility,
+  getApplicationCampaign,
   getEmployerResponses,
   getUserApplications,
   getUserProfile,
@@ -54,6 +55,12 @@ const activeRuns = new AutonomousRunRegistry<AutonomousRunResult | null>();
 
 function wasNewApplication(result: unknown): boolean {
   return !(result && typeof result === "object" && "existing" in result && result.existing === true);
+}
+
+async function getCampaignExecutionBlock(userId: number): Promise<string | null> {
+  const campaign = await getApplicationCampaign(userId);
+  if (!campaign || campaign.status === "active") return null;
+  return `The ${campaign.status} job-search campaign must be resumed before autonomous work can run.`;
 }
 
 function profileSnapshotForAutonomousRun(profile: unknown) {
@@ -554,6 +561,12 @@ async function runWithLease(
     throw new Error(eligibility.reason || "This account is not eligible for autonomous actions.");
   }
 
+  const campaignBlock = await getCampaignExecutionBlock(userId);
+  if (campaignBlock) {
+    if (skipIfUnavailable) return null;
+    throw new Error(campaignBlock);
+  }
+
   if (skipIfUnavailable) {
     const profile = await getUserProfile(userId);
     const preferences = parseAutonomousPreferences(profile?.preferences);
@@ -567,6 +580,13 @@ async function runWithLease(
   if (!acquired) {
     if (skipIfUnavailable) return null;
     throw new Error("An autonomous run is already active for this account.");
+  }
+
+  const campaignBlockAfterLease = await getCampaignExecutionBlock(userId);
+  if (campaignBlockAfterLease) {
+    await completeAutonomousRunLease(userId, leaseToken, campaignBlockAfterLease);
+    if (skipIfUnavailable) return null;
+    throw new Error(campaignBlockAfterLease);
   }
 
   if (skipIfUnavailable) {

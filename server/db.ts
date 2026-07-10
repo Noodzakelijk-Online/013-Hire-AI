@@ -1990,14 +1990,19 @@ export async function getApplicationCampaign(userId: number) {
   return result[0];
 }
 
-export async function upsertApplicationCampaign(campaign: InsertApplicationCampaign) {
+export async function upsertApplicationCampaign(
+  campaign: InsertApplicationCampaign,
+  options: { preserveStatus?: boolean } = {}
+) {
   const db = await getDb();
   const now = new Date();
 
   if (!db) {
     const existing = memoryApplicationCampaigns.find((item) => item.userId === campaign.userId);
     if (existing) {
-      existing.status = campaign.status ?? existing.status ?? "active";
+      existing.status = options.preserveStatus
+        ? existing.status ?? "active"
+        : campaign.status ?? existing.status ?? "active";
       existing.title = campaign.title ?? existing.title;
       existing.targetRoles = campaign.targetRoles ?? existing.targetRoles ?? null;
       existing.targetLocations = campaign.targetLocations ?? existing.targetLocations ?? null;
@@ -2048,7 +2053,9 @@ export async function upsertApplicationCampaign(campaign: InsertApplicationCampa
     .onDuplicateKeyUpdate({
       set: {
         id: sql`LAST_INSERT_ID(${applicationCampaigns.id})`,
-        status: sql`VALUES(${applicationCampaigns.status})`,
+        status: options.preserveStatus
+          ? sql`${applicationCampaigns.status}`
+          : sql`VALUES(${applicationCampaigns.status})`,
         title: sql`VALUES(${applicationCampaigns.title})`,
         targetRoles: sql`VALUES(${applicationCampaigns.targetRoles})`,
         targetLocations: sql`VALUES(${applicationCampaigns.targetLocations})`,
@@ -2072,6 +2079,33 @@ export async function upsertApplicationCampaign(campaign: InsertApplicationCampa
     insertId: Number(result[0].insertId),
     existing: Number(result[0].affectedRows) !== 1,
   };
+}
+
+export async function updateApplicationCampaignStatus(
+  userId: number,
+  status: ApplicationCampaign["status"]
+) {
+  const db = await getDb();
+  const now = new Date();
+  if (!db) {
+    const campaign = memoryApplicationCampaigns.find((item) => item.userId === userId);
+    if (!campaign) throw new Error("Application campaign not found.");
+    campaign.status = status;
+    campaign.updatedAt = now;
+    return campaign as ApplicationCampaign;
+  }
+
+  const result = await db
+    .update(applicationCampaigns)
+    .set({ status, updatedAt: now })
+    .where(eq(applicationCampaigns.userId, userId));
+  if (Number(result[0].affectedRows) === 0) {
+    throw new Error("Application campaign not found.");
+  }
+
+  const campaign = await getApplicationCampaign(userId);
+  if (!campaign) throw new Error("Application campaign not found.");
+  return campaign;
 }
 
 export async function upsertInterviewPreparation(preparation: InsertInterviewPreparation) {

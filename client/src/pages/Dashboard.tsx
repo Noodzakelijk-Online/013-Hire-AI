@@ -2,7 +2,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Activity, Heart, TrendingUp, Briefcase, Send, Eye, Calendar, Target, Settings, LogOut, Search, FileText, Rocket, User, Bell, RefreshCw, Clock, CheckCircle, XCircle, MessageSquare, Building2, MapPin, DollarSign, ExternalLink, Loader2, AlertCircle, Mail } from "lucide-react";
+import { Activity, Heart, TrendingUp, Briefcase, Send, Eye, Calendar, Target, Settings, LogOut, Search, FileText, Rocket, User, Bell, RefreshCw, Clock, CheckCircle, XCircle, MessageSquare, Building2, MapPin, DollarSign, ExternalLink, Loader2, AlertCircle, Mail, Pause, Play } from "lucide-react";
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
 import { getLoginUrl } from "@/const";
@@ -104,6 +104,15 @@ export default function Dashboard() {
       toast.error(error.message || "Unable to update interview notification");
     },
   });
+  const setCampaignStatus = trpc.applications.setCampaignStatus.useMutation({
+    onSuccess: async ({ campaign }) => {
+      toast.success(campaign.status === "paused"
+        ? "Campaign paused. New autonomous work is stopped."
+        : "Campaign resumed. Autonomous work can run under the current policy.");
+      await Promise.all([refetchAutonomousPlan(), refetchOperatingLedger()]);
+    },
+    onError: (error) => toast.error(error.message || "Unable to update campaign status"),
+  });
 
   // Calculate real stats
   const totalApplications = applications?.length || 0;
@@ -160,8 +169,18 @@ export default function Dashboard() {
   };
 
   const handleScanJobs = () => {
+    if (operatingLedger?.campaign.status !== "active") {
+      toast.info("Resume the campaign before running autonomous work.");
+      return;
+    }
     toast.info("Evaluating jobs against your saved automation policy...");
     runAutonomousAgent.mutate();
+  };
+  const toggleCampaignStatus = () => {
+    if (!operatingLedger) return;
+    setCampaignStatus.mutate({
+      status: operatingLedger.campaign.status === "active" ? "paused" : "active",
+    });
   };
 
   const handleResolveApproval = (
@@ -542,6 +561,14 @@ export default function Dashboard() {
                   <Badge variant="outline" className="border-slate-600 text-slate-300">
                     {operatingLedger.metrics.dailyRemaining} slots left
                   </Badge>
+                  <Badge
+                    variant="outline"
+                    className={operatingLedger.campaign.status === "active"
+                      ? "border-emerald-500/40 text-emerald-300"
+                      : "border-amber-500/40 text-amber-300"}
+                  >
+                    {operatingLedger.campaign.status}
+                  </Badge>
                 </div>
               </div>
             </CardHeader>
@@ -566,6 +593,25 @@ export default function Dashboard() {
                   ))}
                 </div>
                 <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
+                  <Button
+                    data-testid="campaign-status-toggle"
+                    variant="outline"
+                    size="sm"
+                    className={operatingLedger.campaign.status === "active"
+                      ? "border-amber-500/50 text-amber-300 hover:bg-amber-500/10"
+                      : "border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/10"}
+                    onClick={toggleCampaignStatus}
+                    disabled={setCampaignStatus.isPending}
+                  >
+                    {setCampaignStatus.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : operatingLedger.campaign.status === "active" ? (
+                      <Pause className="mr-2 h-4 w-4" />
+                    ) : (
+                      <Play className="mr-2 h-4 w-4" />
+                    )}
+                    {operatingLedger.campaign.status === "active" ? "Pause campaign" : "Resume campaign"}
+                  </Button>
                   <Button
                     variant="outline"
                     size="sm"
