@@ -43,6 +43,21 @@ describe("autonomous run summary", () => {
     );
   });
 
+  it("explains when application preparation is blocked by missing resume evidence", () => {
+    const result = {
+      skippedResumeEvidenceActions: 2,
+      evidenceGates: [{ id: "profile-core-evidence", label: "Evidence blocked", severity: "high" }],
+    };
+
+    expect(getAutonomousRunCounts(result)).toMatchObject({
+      resumeEvidenceBlockedActions: 2,
+      evidenceGates: 1,
+    });
+    expect(formatAutonomousRunSummary(result)).toBe(
+      "Autonomous run completed with no new tasks; 2 application preparations blocked until an active resume is linked; 1 evidence gate active"
+    );
+  });
+
   it("reports expired postings excluded from preparation", () => {
     expect(formatAutonomousRunSummary({
       summary: { expiredJobsSkipped: 2 },

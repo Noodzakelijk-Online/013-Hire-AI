@@ -5,6 +5,7 @@ export interface AutonomousRunSummaryInput {
   queuedFollowUps?: number;
   skippedDuplicateFollowUps?: number;
   skippedSafetyBlockedFollowUps?: number;
+  skippedResumeEvidenceActions?: number;
   skippedEvidenceGatedActions?: number;
   evidenceGates?: Array<{ id?: string; label?: string; severity?: string }>;
   failedActions?: number;
@@ -29,6 +30,7 @@ export function getAutonomousRunCounts(result: AutonomousRunSummaryInput) {
     followUpDrafts,
     skippedFollowUps: result.skippedDuplicateFollowUps || 0,
     safetyBlockedFollowUps: result.skippedSafetyBlockedFollowUps || 0,
+    resumeEvidenceBlockedActions: result.skippedResumeEvidenceActions || 0,
     evidenceGatedActions: result.skippedEvidenceGatedActions || 0,
     evidenceGates: result.evidenceGates?.length || 0,
     expiredJobsSkipped: result.summary?.expiredJobsSkipped || 0,
@@ -58,6 +60,9 @@ export function formatAutonomousRunSummary(result: AutonomousRunSummaryInput) {
   }
   if (counts.safetyBlockedFollowUps > 0) {
     notes.push(`${plural(counts.safetyBlockedFollowUps, "follow-up")} paused for higher-priority review`);
+  }
+  if (counts.resumeEvidenceBlockedActions > 0) {
+    notes.push(`${plural(counts.resumeEvidenceBlockedActions, "application preparation")} blocked until an active resume is linked`);
   }
   if (counts.evidenceGatedActions > 0) {
     notes.push(`${plural(counts.evidenceGatedActions, "external action")} gated by profile or connector evidence`);
