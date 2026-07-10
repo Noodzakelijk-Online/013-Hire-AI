@@ -94,7 +94,7 @@ export default function TosAcceptanceDialog({ open, onAccepted }: TosAcceptanceD
             <ScrollArea className="h-40 border border-slate-700 rounded-lg p-3 bg-slate-950/50">
               <div className="text-xs text-slate-400 space-y-3 pr-2">
                 <p><strong className="text-slate-300">1. Introduction:</strong> By using Hire.AI, you agree to these Terms. These Terms constitute a legally binding agreement.</p>
-                <p><strong className="text-slate-300">2. Service:</strong> Hire.AI automates job applications on your behalf across 50+ platforms. The service is free to use.</p>
+                <p><strong className="text-slate-300">2. Service:</strong> Hire.AI provides job discovery, application preparation, and operating-ledger tools. External application or follow-up delivery requires explicit approval and confirmation.</p>
                 <p><strong className="text-slate-300">3. Success Fee:</strong> You agree to pay 5% of your gross monthly salary for each position obtained through the Platform, payable monthly for the entire duration of employment. Minimum salary threshold: $300/month.</p>
                 <p><strong className="text-slate-300">4. Reporting Obligation:</strong> You must report successful placements within 14 calendar days of accepting an offer. Failure to report is a material breach.</p>
                 <p><strong className="text-slate-300">5. Verification:</strong> You must provide an offer letter at placement and quarterly re-verification (paystub, employment letter, or equivalent) thereafter.</p>

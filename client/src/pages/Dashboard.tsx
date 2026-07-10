@@ -265,7 +265,7 @@ export default function Dashboard() {
               Welcome to Hire.AI!
             </DialogTitle>
             <DialogDescription className="text-slate-400">
-              Let's get you set up to start receiving job matches automatically.
+              Set up your evidence and policy so Hire.AI can prepare reviewable job-search work.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -292,8 +292,8 @@ export default function Dashboard() {
                 <Send className="h-5 w-5 text-purple-400" />
               </div>
               <div>
-                <h4 className="font-medium text-white">Step 3: Relax & Get Hired</h4>
-                <p className="text-sm text-slate-400">We'll find and apply to matching jobs automatically!</p>
+                <h4 className="font-medium text-white">Step 3: Review Prepared Work</h4>
+                <p className="text-sm text-slate-400">Review matches and materials before confirming any external application handoff.</p>
               </div>
             </div>
           </div>
@@ -1342,7 +1342,7 @@ export default function Dashboard() {
                 {jobs?.length || 0}
               </div>
               <p className="text-xs text-slate-400">
-                Across 50+ platforms
+                From configured supported sources
               </p>
             </CardContent>
           </Card>

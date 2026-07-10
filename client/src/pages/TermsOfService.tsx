@@ -41,7 +41,7 @@ export default function TermsOfService() {
           <section>
             <h2 className="text-xl font-semibold text-white mb-3">1. Introduction and Acceptance</h2>
             <p>
-              Welcome to Hire.AI ("the Platform," "we," "us," or "our"). By creating an account, accessing, or using the Hire.AI platform and its automated job application services, you ("User," "you") agree to be legally bound by these Terms of Service ("Terms"). If you do not agree to these Terms in their entirety, you must not use the Platform.
+              Welcome to Hire.AI ("the Platform," "we," "us," or "our"). By creating an account, accessing, or using the Hire.AI job-search operating tools, you ("User," "you") agree to be legally bound by these Terms of Service ("Terms"). If you do not agree to these Terms in their entirety, you must not use the Platform.
             </p>
             <p className="mt-3">
               These Terms constitute a legally binding agreement between you and Hire.AI. They govern your use of the Platform and, critically, your financial obligations to Hire.AI upon successful employment placement. Please read these Terms carefully before proceeding.
@@ -52,7 +52,7 @@ export default function TermsOfService() {
           <section>
             <h2 className="text-xl font-semibold text-white mb-3">2. Description of Service</h2>
             <p>
-              Hire.AI is an automated remote job aggregation and application platform. The Platform uses artificial intelligence to scan job listings across 50+ remote job platforms, match opportunities to your profile, and automatically submit job applications on your behalf. The Platform is provided free of charge to use, subject to the success fee obligations described in Section 4.
+              Hire.AI is a job-search operating platform that can discover listings from configured supported sources, prepare application materials, and maintain a reviewable application ledger. External application and follow-up delivery require explicit user approval and confirmation. Source availability and workflow support vary by configuration. The Platform is provided subject to the success fee obligations described in Section 4.
             </p>
           </section>
 

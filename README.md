@@ -1,6 +1,6 @@
 # Hire.AI — Automated Remote Job Aggregation Platform
 
-> **Job hunting done right.** Hire.AI is a fully automated, AI-powered job application platform that scans 50+ job boards, matches opportunities to your profile, and applies on your behalf — completely hands-free.
+> **Job hunting done right.** Hire.AI is an AI-assisted job-search operating platform. It discovers listings from configured supported sources, prepares reviewable application materials, and keeps decisions, evidence, follow-ups, and responses in one ledger. External applications and follow-ups remain explicitly approved and confirmed by the user.
 
 ---
 
