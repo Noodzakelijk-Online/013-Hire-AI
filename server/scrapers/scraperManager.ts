@@ -1,6 +1,6 @@
 import type { BaseScraper, ScrapeResult } from "./baseScraper";
 import { getScraperForPlatform, getSupportedPlatforms, hasScraper } from "./index";
-import { getDb } from "../db";
+import { getDb, updatePlatformLastScraped } from "../db";
 import { jobDuplicates, jobs, jobPlatforms } from "../../drizzle/schema";
 import { and, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { samplePlatforms } from "../sampleData";
@@ -95,6 +95,9 @@ export class ScraperManager {
 
     console.log(`[ScraperManager] Scraping ${platformName}...`);
     const result = await scraper.scrape(options);
+    if (result.errors.length === 0) {
+      await updatePlatformLastScraped(scraper.getPlatformId());
+    }
     console.log(
       `[ScraperManager] Scraped ${result.jobs.length} jobs from ${platformName} (${result.errors.length} errors)`
     );
@@ -121,6 +124,9 @@ export class ScraperManager {
     for (const [platformName, scraper] of Array.from(this.scrapers.entries())) {
       try {
         const result = await scraper.scrape(options);
+        if (result.errors.length === 0) {
+          await updatePlatformLastScraped(scraper.getPlatformId());
+        }
         platformResults[platformName] = result;
         totalJobs += result.jobs.length;
       } catch (error) {

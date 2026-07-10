@@ -27,6 +27,10 @@ export abstract class BaseScraper {
     this.config = config;
   }
 
+  getPlatformId(): number {
+    return this.config.platformId;
+  }
+
   /**
    * Main scraping method - must be implemented by each platform scraper
    */

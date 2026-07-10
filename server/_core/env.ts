@@ -1,5 +1,10 @@
 const isProduction = process.env.NODE_ENV === "production";
 const readEnv = (name: string) => process.env[name] ?? "";
+const readBoundedInteger = (name: string, fallback: number, minimum: number, maximum: number) => {
+  const value = Number.parseInt(readEnv(name), 10);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(Math.max(value, minimum), maximum);
+};
 const readEnvWithLocalFallback = (name: string, fallback: string) => {
   const value = readEnv(name);
   if (value.trim()) return value;
@@ -16,6 +21,9 @@ export const ENV = {
   forgeApiUrl: readEnv("BUILT_IN_FORGE_API_URL"),
   forgeApiKey: readEnv("BUILT_IN_FORGE_API_KEY"),
   autonomousSchedulerEnabled: readEnv("AUTONOMOUS_SCHEDULER_ENABLED").toLowerCase() === "true",
+  jobScrapingSchedulerEnabled: readEnv("JOB_SCRAPING_SCHEDULER_ENABLED").toLowerCase() === "true",
+  jobScrapingIntervalMinutes: readBoundedInteger("JOB_SCRAPING_INTERVAL_MINUTES", 60, 5, 1440),
+  jobScrapingMaxJobsPerRun: readBoundedInteger("JOB_SCRAPING_MAX_JOBS_PER_RUN", 100, 10, 1000),
 };
 
 export function assertRequiredEnv(names: string[]) {

@@ -5,13 +5,14 @@ import { getScraperManager } from "./scraperManager";
  * Manages automated job scraping on a schedule
  */
 
-interface SchedulerConfig {
+export interface SchedulerConfig {
   intervalMinutes: number;
   maxJobsPerRun: number;
   enabledPlatforms?: string[];
 }
 
-interface SchedulerStatus {
+export interface SchedulerStatus {
+  isStarted: boolean;
   isRunning: boolean;
   lastRunAt: Date | null;
   nextRunAt: Date | null;
@@ -20,10 +21,11 @@ interface SchedulerStatus {
   errors: string[];
 }
 
-class JobScrapingScheduler {
+export class JobScrapingScheduler {
   private config: SchedulerConfig;
   private intervalId: NodeJS.Timeout | null = null;
   private status: SchedulerStatus = {
+    isStarted: false,
     isRunning: false,
     lastRunAt: null,
     nextRunAt: null,
@@ -45,14 +47,15 @@ class JobScrapingScheduler {
       return;
     }
 
+    this.status.isStarted = true;
     console.log(`[Scheduler] Starting with ${this.config.intervalMinutes} minute interval`);
     
     // Run immediately
-    this.runScraping();
+    void this.runScraping();
 
     // Schedule recurring runs
     this.intervalId = setInterval(
-      () => this.runScraping(),
+      () => void this.runScraping(),
       this.config.intervalMinutes * 60 * 1000
     );
 
@@ -69,6 +72,7 @@ class JobScrapingScheduler {
       this.status.nextRunAt = null;
       console.log("[Scheduler] Stopped");
     }
+    this.status.isStarted = false;
   }
 
   /**
@@ -123,7 +127,7 @@ class JobScrapingScheduler {
    * Get current scheduler status
    */
   getStatus(): SchedulerStatus {
-    return { ...this.status };
+    return { ...this.status, errors: [...this.status.errors] };
   }
 
   /**

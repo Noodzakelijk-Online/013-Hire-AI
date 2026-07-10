@@ -1770,7 +1770,7 @@ export const appRouter = router({
         } : undefined);
         
         scheduler.start();
-        return { success: true, message: "Scheduler started" };
+        return { success: true, message: "Scheduler started", scheduler: scheduler.getStatus() };
       }),
 
     // Stop the scheduler
@@ -1778,7 +1778,7 @@ export const appRouter = router({
       const { getScheduler } = await import("./scrapers/scheduler");
       const scheduler = getScheduler();
       scheduler.stop();
-      return { success: true, message: "Scheduler stopped" };
+      return { success: true, message: "Scheduler stopped", scheduler: scheduler.getStatus() };
     }),
 
     // Run scraping manually
@@ -1786,7 +1786,7 @@ export const appRouter = router({
       const { getScheduler } = await import("./scrapers/scheduler");
       const scheduler = getScheduler();
       await scheduler.runScraping();
-      return { success: true, message: "Scraping run completed" };
+      return { success: true, message: "Scraping run completed", scheduler: scheduler.getStatus() };
     }),
   }),
 
