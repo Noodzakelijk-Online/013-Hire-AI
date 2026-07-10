@@ -9,6 +9,7 @@ import {
   listUserApplicationApprovals,
   resolveApplicationApproval,
 } from "./db";
+import { getFollowUps } from "./applicationFeatures";
 import { appRouter } from "./routers";
 
 function createContext(userId: number): TrpcContext {
@@ -222,6 +223,26 @@ describe("application approval ledger", () => {
       event.action === "approval_resolved" &&
       event.afterState?.includes("handoffAttemptId")
     )).toBe(true);
+  });
+
+  it("rejects forged delivery timestamps from the public follow-up draft procedure", async () => {
+    const userId = 98007;
+    const application = await createApplication({
+      userId,
+      jobId: 4,
+      status: "applied",
+      notes: "A submitted application needs a reviewable follow-up draft.",
+    });
+    const applicationId = Number(application.insertId);
+    const caller = appRouter.createCaller(createContext(userId));
+
+    await expect(caller.applications.createFollowUp({
+      applicationId,
+      message: "Checking in on my submitted application.",
+      sendDate: new Date().toISOString(),
+    } as never)).rejects.toThrow();
+
+    expect(await getFollowUps(applicationId, userId)).toHaveLength(0);
   });
 
   it("surfaces pending offer attribution reviews with linked application evidence", async () => {

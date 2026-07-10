@@ -1315,10 +1315,9 @@ export const appRouter = router({
       .input(z.object({
         applicationId: z.number(),
         message: z.string().trim().min(1).max(MAX_FOLLOW_UP_MESSAGE_CHARS),
-        sendDate: z.string().datetime().transform((s) => new Date(s)).optional(),
         purpose: z.enum(["routine_follow_up", "employer_reply"]).optional(),
         sourceResponseId: z.number().optional(),
-      }))
+      }).strict())
       .mutation(async ({ ctx, input }) => {
         try {
           return await createFollowUp(input, ctx.user.id);

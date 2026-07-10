@@ -83,6 +83,25 @@ describe("follow-up memory fallback", () => {
     }, userId)).rejects.toThrow("after an application has been submitted");
   });
 
+  it("never lets a draft creation forge a sent follow-up", async () => {
+    const userId = 98104;
+    const application = await createApplication({
+      userId,
+      jobId: 4,
+      status: "applied",
+      notes: "Submitted application awaiting a controlled follow-up.",
+    });
+    const applicationId = Number(application.insertId);
+
+    await expect(createFollowUp({
+      applicationId,
+      message: "Checking in on my submitted application.",
+      sendDate: new Date(),
+    } as any, userId)).rejects.toThrow("delivery cannot be recorded while creating a draft");
+
+    expect(await getFollowUps(applicationId, userId)).toHaveLength(0);
+  });
+
   it("creates employer question reply drafts with source response metadata and approval gates", async () => {
     const userId = 98103;
     const application = await createApplication({

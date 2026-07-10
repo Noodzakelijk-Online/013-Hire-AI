@@ -1798,7 +1798,6 @@ export async function rescheduleInterview(interviewId: number, newDate: Date, us
 export interface FollowUpInput {
   applicationId: number;
   message: string;
-  sendDate?: Date;
   purpose?: "routine_follow_up" | "employer_reply";
   sourceResponseId?: number;
 }
@@ -1874,7 +1873,6 @@ function getFollowUpApprovalCopy(purpose: "routine_follow_up" | "employer_reply"
       title: "Approve employer reply before sending",
       description: "Review and approve this employer reply draft before any external message is sent.",
       draftAction: "employer_reply_draft_created",
-      sentAction: "employer_reply_sent_with_user_confirmation",
     };
   }
 
@@ -1882,11 +1880,16 @@ function getFollowUpApprovalCopy(purpose: "routine_follow_up" | "employer_reply"
     title: "Approve follow-up before sending",
     description: "Review and approve this follow-up draft before any external message is sent.",
     draftAction: "follow_up_draft_created",
-    sentAction: "follow_up_sent_with_user_confirmation",
   };
 }
 
 export async function createFollowUp(input: FollowUpInput, userId: number) {
+  // A draft is not delivery evidence. Keep recording a send behind the
+  // explicit approval and post-delivery confirmation path in markFollowUpSent.
+  if ("sendDate" in (input as unknown as Record<string, unknown>)) {
+    throw new Error("Follow-up delivery cannot be recorded while creating a draft. Approve the draft, send it externally, then mark it sent.");
+  }
+
   const db = await getDb();
   const message = sanitizeFollowUpMessage(input.message);
   const sourceResponse = input.purpose === "employer_reply"
@@ -1898,15 +1901,12 @@ export async function createFollowUp(input: FollowUpInput, userId: number) {
   if (!db) {
     const application = await getFollowUpApplication(input.applicationId, userId);
     assertFollowUpAllowed(application.status || "pending");
-    if (input.sendDate && input.sendDate.getTime() > Date.now()) {
-      throw new Error("Future follow-up delivery is not supported.");
-    }
 
     const record = {
       id: nextMemoryFollowUpId(),
       applicationId: input.applicationId,
       message,
-      sentDate: input.sendDate || null,
+      sentDate: null,
       responseReceived: 0,
       createdAt: new Date(),
     };
@@ -1918,25 +1918,25 @@ export async function createFollowUp(input: FollowUpInput, userId: number) {
       entityType: "follow_up",
       entityId: record.id,
       approvalType: "follow_up_send",
-      status: input.sendDate ? "approved" : "pending",
+      status: "pending",
       riskLevel: "medium",
       requestedBy: "system",
-      decidedBy: input.sendDate ? "user" : null,
+      decidedBy: null,
       title: approvalCopy.title,
       description: approvalCopy.description,
       payload: JSON.stringify({ message, ...metadata }),
-      decidedAt: input.sendDate || null,
+      decidedAt: null,
     });
     await createAuditEvent({
       userId,
       entityType: "application",
       entityId: input.applicationId,
-      action: input.sendDate ? approvalCopy.sentAction : approvalCopy.draftAction,
+      action: approvalCopy.draftAction,
       actor: "user",
       source: "applications.createFollowUp",
       afterState: JSON.stringify({
         followUpId: record.id,
-        approvalStatus: input.sendDate ? "approved" : "pending",
+        approvalStatus: "pending",
         ...metadata,
       }),
       riskLevel: "medium",
@@ -1948,24 +1948,13 @@ export async function createFollowUp(input: FollowUpInput, userId: number) {
   const application = await assertUserOwnsApplication(input.applicationId, userId);
   assertFollowUpAllowed(application.status);
 
-  if (input.sendDate && input.sendDate.getTime() > Date.now()) {
-    throw new Error("Future follow-up delivery is not supported.");
-  }
-
   return await db.transaction(async (tx) => {
     const result = await tx.insert(followUps).values({
       applicationId: input.applicationId,
       message,
-      sentDate: input.sendDate || null,
+      sentDate: null,
       responseReceived: 0,
     });
-
-    if (input.sendDate) {
-      await tx
-        .update(applications)
-        .set({ lastActivity: input.sendDate })
-        .where(and(eq(applications.id, input.applicationId), eq(applications.userId, userId)));
-    }
 
     const followUpId = Number(result[0].insertId);
     await tx.insert(applicationApprovals).values({
@@ -1974,25 +1963,25 @@ export async function createFollowUp(input: FollowUpInput, userId: number) {
       entityType: "follow_up",
       entityId: followUpId,
       approvalType: "follow_up_send",
-      status: input.sendDate ? "approved" : "pending",
+      status: "pending",
       riskLevel: "medium",
       requestedBy: "system",
-      decidedBy: input.sendDate ? "user" : null,
+      decidedBy: null,
       title: approvalCopy.title,
       description: approvalCopy.description,
       payload: JSON.stringify({ message, ...metadata }),
-      decidedAt: input.sendDate || null,
+      decidedAt: null,
     });
     await tx.insert(auditEvents).values({
       userId,
       entityType: "application",
       entityId: input.applicationId,
-      action: input.sendDate ? approvalCopy.sentAction : approvalCopy.draftAction,
+      action: approvalCopy.draftAction,
       actor: "user",
       source: "applications.createFollowUp",
       afterState: JSON.stringify({
         followUpId,
-        approvalStatus: input.sendDate ? "approved" : "pending",
+        approvalStatus: "pending",
         ...metadata,
       }),
       riskLevel: "medium",

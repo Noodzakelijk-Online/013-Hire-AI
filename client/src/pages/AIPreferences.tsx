@@ -309,7 +309,7 @@ export default function AIPreferences() {
                       Queue Follow-ups
                     </Label>
                     <p className="text-sm text-slate-400">
-                      Draft timely follow-ups for stale applications
+                      Draft timely follow-ups for stale applications; every send needs your approval
                     </p>
                   </div>
                   <Switch id="follow-ups" checked={createFollowUps} onCheckedChange={setCreateFollowUps} />
