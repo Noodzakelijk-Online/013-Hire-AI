@@ -1850,7 +1850,7 @@ export const appRouter = router({
           return result;
         }
       }),
-    status: protectedProcedure.query(async () => {
+    status: adminProcedure.query(async () => {
       const { getScraperManager } = await import("./scrapers/scraperManager");
       const { getSupportedPlatforms } = await import("./scrapers/index");
       const { getScheduler } = await import("./scrapers/scheduler");

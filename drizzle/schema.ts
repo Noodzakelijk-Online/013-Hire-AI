@@ -746,7 +746,10 @@ export const successFees = mysqlTable("success_fees", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => [
+  uniqueIndex("success_fees_stripe_subscription_unique").on(table.stripeSubscriptionId),
+  index("success_fees_user_status_idx").on(table.userId, table.status),
+]);
 
 /**
  * Employment Verifications
@@ -784,9 +787,33 @@ export const feePayments = mysqlTable("fee_payments", {
   periodStart: timestamp("period_start"),
   periodEnd: timestamp("period_end"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  uniqueIndex("fee_payments_stripe_invoice_unique").on(table.stripeInvoiceId),
+  index("fee_payments_success_fee_status_idx").on(table.successFeeId, table.status),
+]);
+
+/**
+ * Stripe Webhook Events
+ * A durable event ledger prevents duplicate delivery from repeating payment writes
+ * or success-fee state changes.
+ */
+export const stripeWebhookEvents = mysqlTable("stripe_webhook_events", {
+  id: int("id").autoincrement().primaryKey(),
+  stripeEventId: varchar("stripe_event_id", { length: 255 }).notNull(),
+  eventType: varchar("event_type", { length: 120 }).notNull(),
+  status: mysqlEnum("status", ["processing", "processed", "failed"]).default("processing").notNull(),
+  errorMessage: text("error_message"),
+  receivedAt: timestamp("received_at").defaultNow().notNull(),
+  processedAt: timestamp("processed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("stripe_webhook_events_event_id_unique").on(table.stripeEventId),
+  index("stripe_webhook_events_status_received_idx").on(table.status, table.receivedAt),
+]);
 
 export type SuccessFee = typeof successFees.$inferSelect;
 export type InsertSuccessFee = typeof successFees.$inferInsert;
 export type EmploymentVerification = typeof employmentVerifications.$inferSelect;
 export type FeePayment = typeof feePayments.$inferSelect;
+export type StripeWebhookEvent = typeof stripeWebhookEvents.$inferSelect;

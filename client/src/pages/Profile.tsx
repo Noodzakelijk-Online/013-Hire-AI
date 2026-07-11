@@ -95,6 +95,9 @@ export default function Profile() {
   const resumeVersionsQuery = trpc.resume.getVersions.useQuery(undefined, {
     enabled: isAuthenticated,
   });
+  const resumeDownload = trpc.resume.getDownloadUrl.useQuery({}, {
+    enabled: false,
+  });
   const updateProfile = trpc.profile.update.useMutation({
     onSuccess: () => {
       toast.success("Profile evidence saved");
@@ -445,14 +448,21 @@ export default function Profile() {
                       Active version {activeResumeQuery.data.version} used for application preparation
                     </p>
                   </div>
-                  <a
-                    href={activeResumeQuery.data.fileUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    type="button"
                     className="text-sm font-medium text-cyan-300 hover:text-cyan-200"
+                    disabled={resumeDownload.isFetching}
+                    onClick={async () => {
+                      const result = await resumeDownload.refetch();
+                      if (result.data?.url) {
+                        window.open(result.data.url, "_blank", "noopener,noreferrer");
+                      } else {
+                        toast.error("A secure download link could not be created");
+                      }
+                    }}
                   >
                     View resume
-                  </a>
+                  </button>
                 </div>
               ) : (
                 <p className="text-sm text-slate-400">No active resume yet. Importing a resume creates the version used for future application preparation.</p>

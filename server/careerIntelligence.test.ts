@@ -23,14 +23,14 @@ vi.mock("./_core/llm", () => ({
 
 type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
 
-function createAuthContext(): TrpcContext {
+function createAuthContext(role: "user" | "admin" = "user"): TrpcContext {
   const user: AuthenticatedUser = {
     id: 1,
     openId: "test-user",
     email: "test@example.com",
     name: "Test User",
     loginMethod: "manus",
-    role: "user",
+    role,
     createdAt: new Date(),
     updatedAt: new Date(),
     lastSignedIn: new Date(),
@@ -152,7 +152,7 @@ describe("Social Connections API", () => {
 describe("Scraping API", () => {
   describe("scraping.status", () => {
     it("should return scraping status with supported platforms", async () => {
-      const ctx = createAuthContext();
+      const ctx = createAuthContext("admin");
       const caller = appRouter.createCaller(ctx);
 
       const result = await caller.scraping.status();
@@ -170,6 +170,14 @@ describe("Scraping API", () => {
       // Check that some common platforms are present
       const platformNames = result.supportedPlatforms.map((p: any) => p.name);
       expect(platformNames.length).toBeGreaterThan(0);
+    });
+
+    it("rejects scraper visibility and controls for a regular user", async () => {
+      const caller = appRouter.createCaller(createAuthContext());
+
+      await expect(caller.scraping.status()).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(caller.scraping.listScrapers()).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(caller.scraping.runNow()).rejects.toMatchObject({ code: "FORBIDDEN" });
     });
   });
 });

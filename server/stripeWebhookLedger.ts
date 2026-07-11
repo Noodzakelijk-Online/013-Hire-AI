@@ -1,0 +1,74 @@
+import { eq } from "drizzle-orm";
+import { getDb } from "./db";
+import { stripeWebhookEvents } from "../drizzle/schema";
+
+type WebhookStatus = "processing" | "processed" | "failed";
+
+const memoryEvents = new Map<string, { eventType: string; status: WebhookStatus; errorMessage: string | null }>();
+
+export async function claimStripeWebhookEvent(eventId: string, eventType: string) {
+  const db = await getDb();
+  if (!db) {
+    const existing = memoryEvents.get(eventId);
+    if (existing?.status === "processed" || existing?.status === "processing") {
+      return { claimed: false, duplicate: true };
+    }
+    memoryEvents.set(eventId, { eventType, status: "processing", errorMessage: null });
+    return { claimed: true, duplicate: false };
+  }
+
+  const existing = await db
+    .select()
+    .from(stripeWebhookEvents)
+    .where(eq(stripeWebhookEvents.stripeEventId, eventId))
+    .limit(1);
+  if (existing[0]) {
+    if (existing[0].status === "failed") {
+      await db.update(stripeWebhookEvents)
+        .set({ status: "processing", errorMessage: null, processedAt: null })
+        .where(eq(stripeWebhookEvents.id, existing[0].id));
+      return { claimed: true, duplicate: false };
+    }
+    return { claimed: false, duplicate: true };
+  }
+
+  try {
+    await db.insert(stripeWebhookEvents).values({ stripeEventId: eventId, eventType, status: "processing" });
+    return { claimed: true, duplicate: false };
+  } catch {
+    // A concurrent delivery may have inserted the unique event id after the read.
+    return { claimed: false, duplicate: true };
+  }
+}
+
+export async function completeStripeWebhookEvent(eventId: string) {
+  const db = await getDb();
+  if (!db) {
+    const event = memoryEvents.get(eventId);
+    if (event) event.status = "processed";
+    return;
+  }
+  await db.update(stripeWebhookEvents)
+    .set({ status: "processed", processedAt: new Date(), errorMessage: null })
+    .where(eq(stripeWebhookEvents.stripeEventId, eventId));
+}
+
+export async function failStripeWebhookEvent(eventId: string, error: unknown) {
+  const errorMessage = error instanceof Error ? error.message : "Webhook processing failed";
+  const db = await getDb();
+  if (!db) {
+    const event = memoryEvents.get(eventId);
+    if (event) {
+      event.status = "failed";
+      event.errorMessage = errorMessage;
+    }
+    return;
+  }
+  await db.update(stripeWebhookEvents)
+    .set({ status: "failed", errorMessage })
+    .where(eq(stripeWebhookEvents.stripeEventId, eventId));
+}
+
+export function clearStripeWebhookLedgerForTests() {
+  memoryEvents.clear();
+}

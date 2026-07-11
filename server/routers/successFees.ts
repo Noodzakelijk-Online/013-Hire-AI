@@ -6,7 +6,7 @@ import { applicationApprovals, applications, successFees, employmentVerification
 import { eq, desc, and } from "drizzle-orm";
 import { isOfferEligibleApplicationStatus } from "@shared/offerEligibility";
 import { storagePut } from "../storage";
-import { validateUploadedFile, VERIFICATION_MIME_TYPES } from "../uploadValidation";
+import { scanSensitiveUpload, validateUploadedFile, VERIFICATION_MIME_TYPES } from "../uploadValidation";
 import Stripe from "stripe";
 import { getStripeClient } from "../stripeClient";
 import { calculateNextVerificationDue } from "../successFeeDates";
@@ -131,8 +131,10 @@ export const successFeesRouter = router({
         mimeType: input.offerLetterMimeType,
         allowedMimeTypes: VERIFICATION_MIME_TYPES,
       });
+      await scanSensitiveUpload({ data: fileBuffer, fileName: validation.fileName, mimeType: input.offerLetterMimeType });
       const fileKey = `offer-letters/${userId}-${Date.now()}-${validation.fileName}`;
-      const { url: offerLetterUrl } = await storagePut(fileKey, fileBuffer, input.offerLetterMimeType);
+      await storagePut(fileKey, fileBuffer, input.offerLetterMimeType);
+      const offerLetterUrl = `private://${fileKey}`;
 
       // Calculate fee
       const monthlyFeeAmount = calculateMonthlyFee(input.monthlySalary);
@@ -432,8 +434,10 @@ export const successFeesRouter = router({
         mimeType: input.documentMimeType,
         allowedMimeTypes: VERIFICATION_MIME_TYPES,
       });
+      await scanSensitiveUpload({ data: fileBuffer, fileName: validation.fileName, mimeType: input.documentMimeType });
       const fileKey = `verifications/${userId}-${Date.now()}-${validation.fileName}`;
-      const { url: documentUrl } = await storagePut(fileKey, fileBuffer, input.documentMimeType);
+      await storagePut(fileKey, fileBuffer, input.documentMimeType);
+      const documentUrl = `private://${fileKey}`;
 
       // Create verification record. Do not extend the next verification due date here.
       // The deadline should only move after an admin approves the submitted document.

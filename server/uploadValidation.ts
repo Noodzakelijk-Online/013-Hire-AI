@@ -1,5 +1,10 @@
 const DEFAULT_MAX_BYTES = 10 * 1024 * 1024;
 
+export interface SensitiveUploadScanResult {
+  scanned: boolean;
+  provider: string;
+}
+
 export const RESUME_MIME_TYPES = new Set([
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -56,6 +61,42 @@ export function validateUploadedFile(input: {
     fileName: sanitizedFileName,
     size: data.length,
   };
+}
+
+/**
+ * Optional malware-scanner handoff. Production uploads fail closed until a scanner
+ * endpoint is configured; local development remains explicitly unscanned.
+ */
+export async function scanSensitiveUpload(input: {
+  data: Buffer | Uint8Array;
+  fileName: string;
+  mimeType: string;
+}): Promise<SensitiveUploadScanResult> {
+  const endpoint = process.env.FILE_MALWARE_SCAN_URL?.trim();
+  if (!endpoint) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("Sensitive uploads require FILE_MALWARE_SCAN_URL in production");
+    }
+    return { scanned: false, provider: "not_configured" };
+  }
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "content-type": input.mimeType,
+      "x-file-name": sanitizeUploadFileName(input.fileName),
+    },
+    body: Buffer.from(input.data),
+  });
+  if (!response.ok) {
+    throw new Error(`Malware scan failed with status ${response.status}`);
+  }
+
+  const result = await response.json() as { clean?: boolean; provider?: string };
+  if (result.clean !== true) {
+    throw new Error("Sensitive upload was rejected by the malware scanner");
+  }
+  return { scanned: true, provider: result.provider?.trim() || "configured_scanner" };
 }
 
 function hasExpectedSignature(data: Buffer, mimeType: string): boolean {

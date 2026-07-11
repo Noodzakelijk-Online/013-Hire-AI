@@ -1,6 +1,6 @@
 # Hire.AI Current Status
 
-Last updated: 2026-06-06
+Last updated: 2026-07-12
 
 ## Plain-English status
 
@@ -14,7 +14,7 @@ The repository contains useful foundations for:
 - resume upload and parsing flows;
 - success-fee reporting and billing flows;
 - admin review and compliance workflows;
-- scraper and browser-automation scaffolding.
+- controlled job discovery, approval, and manual-handoff flows.
 
 However, several public-facing claims and status documents previously described features as complete even when the implementation was still partial, simulated, untested, or framework-level only.
 
@@ -36,7 +36,7 @@ Hardcoded impact numbers, fake live activity, and unverified testimonials should
 
 ### Payments and legal compliance
 
-The success-fee model handles sensitive salary, employment, and payment information. It needs legal review, a proper privacy policy, GDPR data-retention rules, webhook idempotency, and a stricter state machine before launch.
+The success-fee model handles sensitive salary, employment, and payment information. It now records duplicate-resistant webhook events and uses an explicit transition policy, but it still needs legal review, a privacy policy, and operational data-retention approval before launch.
 
 ## Hardening completed in this branch
 
@@ -47,16 +47,17 @@ The success-fee model handles sensitive salary, employment, and payment informat
 - Added production environment validation helpers.
 - Added `.env.example`.
 - Added GitHub Actions CI for install, type-check, tests, and build.
+- Restricted every scraper control and status endpoint to administrators and added regular-user denial coverage.
+- Added application ownership regressions for cross-user status mutation and preserved user scoping for notes, interviews, and follow-ups.
+- Replaced public landing-page claims with review-first, evidence-backed product language.
+- Added a migration for core ownership foreign keys, payment uniqueness, and the Stripe webhook event ledger.
+- Added duplicate-resistant Stripe webhook claims, retry handling, payment audit events, and a success-fee state machine.
+- Enforced sensitive-upload size, MIME, and signature validation; production uploads now require a configured malware scanner and retain only private storage references.
 
 ## Still required before production
 
-1. Update public marketing copy to remove unverified claims.
-2. Make scraping controls admin-only in the router.
-3. Add ownership checks for application notes, interviews, follow-ups, and application status updates at the router/service level.
-4. Add file-size, MIME, file-signature, malware-scan, and private-S3 enforcement for sensitive uploads.
-5. Add Stripe webhook idempotency and a payment/compliance state machine.
-6. Add database foreign keys, unique constraints, and audit tables.
-7. Add real scraper tests and verified platform coverage.
-8. Replace or complete failing/outdated tests.
-9. Add human review before any application submission.
-10. Obtain legal and privacy review before accepting real users.
+1. Apply the new database migration in each environment and verify existing records satisfy the foreign-key constraints.
+2. Configure a malware-scanner endpoint before accepting production document uploads.
+3. Add real scraper tests and verified platform coverage.
+4. Keep human review before any application submission or external handoff.
+5. Obtain legal and privacy review before accepting real users.

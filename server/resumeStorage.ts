@@ -8,7 +8,7 @@ import { getDb } from "./db";
 import { userResumes } from "../drizzle/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { RESUME_MIME_TYPES, validateUploadedFile } from "./uploadValidation";
+import { RESUME_MIME_TYPES, scanSensitiveUpload, validateUploadedFile } from "./uploadValidation";
 
 // ============================================================================
 // TYPES
@@ -36,6 +36,12 @@ export interface ResumeVersion {
   mimeType: string;
   isActive: boolean;
   uploadedAt: Date;
+}
+
+const PRIVATE_FILE_REFERENCE_PREFIX = "private://";
+
+function privateFileReference(fileKey: string) {
+  return `${PRIVATE_FILE_REFERENCE_PREFIX}${fileKey}`;
 }
 
 // ============================================================================
@@ -109,6 +115,7 @@ export async function uploadResume(
     mimeType: detectedMimeType,
     allowedMimeTypes: RESUME_MIME_TYPES,
   });
+  await scanSensitiveUpload({ data: fileData, fileName: validation.fileName, mimeType: detectedMimeType });
 
   // Get current version count for this user
   const existingResumes = await db
@@ -127,7 +134,8 @@ export async function uploadResume(
   const fileKey = `resumes/${userId}/${fileId}-v${newVersion}-${sanitizedFileName}`;
 
   // Upload to S3
-  const { url: fileUrl } = await storagePut(fileKey, fileData, detectedMimeType);
+  await storagePut(fileKey, fileData, detectedMimeType);
+  const fileUrl = privateFileReference(fileKey);
 
   // Deactivate previous versions
   await db
@@ -325,7 +333,7 @@ export async function getResumeDownloadUrl(userId: number, version?: number): Pr
     return url;
   } catch (error) {
     console.error("[ResumeStorage] Error getting download URL:", error);
-    return resume.fileUrl; // Fall back to stored URL
+    return null;
   }
 }
 
