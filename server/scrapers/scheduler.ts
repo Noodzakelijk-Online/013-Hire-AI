@@ -1,21 +1,23 @@
 import { getScraperManager } from "./scraperManager";
-import { getDb } from "../db";
-import { jobs, jobPlatforms } from "../../drizzle/schema";
-import { eq, sql } from "drizzle-orm";
 
 /**
  * Job Scraping Scheduler
  * Manages automated job scraping on a schedule
  */
 
-interface SchedulerConfig {
+export interface SchedulerConfig {
   intervalMinutes: number;
   maxJobsPerRun: number;
-  enabledPlatforms?: string[];
+  // Undefined preserves an existing runtime configuration; null explicitly enables every source.
+  enabledPlatforms?: string[] | null;
 }
 
-interface SchedulerStatus {
+export interface SchedulerStatus {
+  isStarted: boolean;
   isRunning: boolean;
+  intervalMinutes: number;
+  maxJobsPerRun: number;
+  enabledPlatforms: string[] | null;
   lastRunAt: Date | null;
   nextRunAt: Date | null;
   totalJobsScraped: number;
@@ -23,11 +25,15 @@ interface SchedulerStatus {
   errors: string[];
 }
 
-class JobScrapingScheduler {
+export class JobScrapingScheduler {
   private config: SchedulerConfig;
   private intervalId: NodeJS.Timeout | null = null;
   private status: SchedulerStatus = {
+    isStarted: false,
     isRunning: false,
+    intervalMinutes: 0,
+    maxJobsPerRun: 0,
+    enabledPlatforms: null,
     lastRunAt: null,
     nextRunAt: null,
     totalJobsScraped: 0,
@@ -36,7 +42,13 @@ class JobScrapingScheduler {
   };
 
   constructor(config: SchedulerConfig) {
-    this.config = config;
+    this.config = {
+      ...config,
+      enabledPlatforms: config.enabledPlatforms?.slice() ?? null,
+    };
+    this.status.intervalMinutes = this.config.intervalMinutes;
+    this.status.maxJobsPerRun = this.config.maxJobsPerRun;
+    this.status.enabledPlatforms = this.config.enabledPlatforms?.slice() ?? null;
   }
 
   /**
@@ -48,14 +60,15 @@ class JobScrapingScheduler {
       return;
     }
 
+    this.status.isStarted = true;
     console.log(`[Scheduler] Starting with ${this.config.intervalMinutes} minute interval`);
     
     // Run immediately
-    this.runScraping();
+    void this.runScraping();
 
     // Schedule recurring runs
     this.intervalId = setInterval(
-      () => this.runScraping(),
+      () => void this.runScraping(),
       this.config.intervalMinutes * 60 * 1000
     );
 
@@ -72,6 +85,7 @@ class JobScrapingScheduler {
       this.status.nextRunAt = null;
       console.log("[Scheduler] Stopped");
     }
+    this.status.isStarted = false;
   }
 
   /**
@@ -92,9 +106,13 @@ class JobScrapingScheduler {
     try {
       const manager = await getScraperManager();
       
-      const result = await manager.runScrapingCycle({
+      const scrapingOptions: { limit: number; platformNames?: string[] } = {
         limit: this.config.maxJobsPerRun,
-      });
+      };
+      if (this.config.enabledPlatforms?.length) {
+        scrapingOptions.platformNames = this.config.enabledPlatforms;
+      }
+      const result = await manager.runScrapingCycle(scrapingOptions);
 
       this.status.totalJobsScraped += result.totalSaved;
       this.status.totalRunsCompleted++;
@@ -126,17 +144,35 @@ class JobScrapingScheduler {
    * Get current scheduler status
    */
   getStatus(): SchedulerStatus {
-    return { ...this.status };
+    return {
+      ...this.status,
+      enabledPlatforms: this.status.enabledPlatforms?.slice() ?? null,
+      errors: [...this.status.errors],
+    };
   }
 
   /**
    * Update scheduler configuration
    */
   updateConfig(config: Partial<SchedulerConfig>): void {
-    this.config = { ...this.config, ...config };
+    const shouldRestart = Boolean(
+      this.intervalId &&
+      config.intervalMinutes !== undefined &&
+      config.intervalMinutes !== this.config.intervalMinutes
+    );
+    this.config = {
+      ...this.config,
+      ...config,
+      enabledPlatforms: config.enabledPlatforms === undefined
+        ? this.config.enabledPlatforms
+        : config.enabledPlatforms?.slice() ?? null,
+    };
+    this.status.intervalMinutes = this.config.intervalMinutes;
+    this.status.maxJobsPerRun = this.config.maxJobsPerRun;
+    this.status.enabledPlatforms = this.config.enabledPlatforms?.slice() ?? null;
     
     // Restart if running with new interval
-    if (this.intervalId && config.intervalMinutes) {
+    if (shouldRestart) {
       this.stop();
       this.start();
     }
@@ -152,169 +188,10 @@ export function getScheduler(config?: SchedulerConfig): JobScrapingScheduler {
       intervalMinutes: 60, // Default: every hour
       maxJobsPerRun: 100,
     });
+  } else if (config) {
+    schedulerInstance.updateConfig(config);
   }
   return schedulerInstance;
-}
-
-/**
- * Job deduplication service
- * Uses TF-IDF and cosine similarity for advanced deduplication
- */
-export class JobDeduplicator {
-  private vocabulary: Map<string, number> = new Map();
-  private idfScores: Map<string, number> = new Map();
-
-  /**
-   * Calculate TF-IDF vector for a job
-   */
-  private calculateTFIDF(text: string): Map<string, number> {
-    const words = this.tokenize(text);
-    const tf = new Map<string, number>();
-    
-    // Calculate term frequency
-    for (const word of words) {
-      tf.set(word, (tf.get(word) || 0) + 1);
-    }
-    
-    // Normalize by document length
-    for (const [word, count] of Array.from(tf.entries())) {
-      tf.set(word, count / words.length);
-    }
-    
-    // Apply IDF
-    const tfidf = new Map<string, number>();
-    for (const [word, tfScore] of Array.from(tf.entries())) {
-      const idf = this.idfScores.get(word) || 1;
-      tfidf.set(word, tfScore * idf);
-    }
-    
-    return tfidf;
-  }
-
-  /**
-   * Calculate cosine similarity between two TF-IDF vectors
-   */
-  private cosineSimilarity(vec1: Map<string, number>, vec2: Map<string, number>): number {
-    let dotProduct = 0;
-    let norm1 = 0;
-    let norm2 = 0;
-    
-    for (const [word, score] of Array.from(vec1.entries())) {
-      norm1 += score * score;
-      if (vec2.has(word)) {
-        dotProduct += score * vec2.get(word)!;
-      }
-    }
-    
-    for (const score of Array.from(vec2.values())) {
-      norm2 += score * score;
-    }
-    
-    if (norm1 === 0 || norm2 === 0) return 0;
-    return dotProduct / (Math.sqrt(norm1) * Math.sqrt(norm2));
-  }
-
-  /**
-   * Tokenize text into words
-   */
-  private tokenize(text: string): string[] {
-    return text
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, " ")
-      .split(/\s+/)
-      .filter(word => word.length > 2);
-  }
-
-  /**
-   * Build vocabulary and IDF scores from existing jobs
-   */
-  async buildVocabulary(): Promise<void> {
-    const db = await getDb();
-    if (!db) return;
-
-    const existingJobs = await db
-      .select({ title: jobs.title, description: jobs.description })
-      .from(jobs)
-      .limit(10000);
-
-    const documentCount = existingJobs.length;
-    const wordDocCount = new Map<string, number>();
-
-    // Count documents containing each word
-    for (const job of existingJobs) {
-      const text = `${job.title || ""} ${job.description || ""}`;
-      const uniqueWords = new Set(this.tokenize(text));
-      
-      for (const word of Array.from(uniqueWords)) {
-        wordDocCount.set(word, (wordDocCount.get(word) || 0) + 1);
-      }
-    }
-
-    // Calculate IDF scores
-    for (const [word, count] of Array.from(wordDocCount.entries())) {
-      this.idfScores.set(word, Math.log(documentCount / count));
-      this.vocabulary.set(word, this.vocabulary.size);
-    }
-
-    console.log(`[Deduplicator] Built vocabulary with ${this.vocabulary.size} terms from ${documentCount} jobs`);
-  }
-
-  /**
-   * Check if a job is a duplicate of existing jobs
-   */
-  async isDuplicate(newJob: { title?: string | null; description?: string | null; company?: string | null }): Promise<{
-    isDuplicate: boolean;
-    similarity: number;
-    matchedJobId?: number;
-  }> {
-    const db = await getDb();
-    if (!db) return { isDuplicate: false, similarity: 0 };
-
-    const newText = `${newJob.title || ""} ${newJob.description || ""}`;
-    const newVector = this.calculateTFIDF(newText);
-
-    // Get recent jobs from same company for comparison
-    const recentJobs = await db
-      .select()
-      .from(jobs)
-      .where(newJob.company ? eq(jobs.company, newJob.company) : sql`1=1`)
-      .limit(100);
-
-    let maxSimilarity = 0;
-    let matchedJobId: number | undefined;
-
-    for (const existingJob of recentJobs) {
-      const existingText = `${existingJob.title || ""} ${existingJob.description || ""}`;
-      const existingVector = this.calculateTFIDF(existingText);
-      
-      const similarity = this.cosineSimilarity(newVector, existingVector);
-      
-      if (similarity > maxSimilarity) {
-        maxSimilarity = similarity;
-        matchedJobId = existingJob.id;
-      }
-    }
-
-    // Consider duplicate if similarity > 0.85
-    const isDuplicate = maxSimilarity > 0.85;
-
-    return {
-      isDuplicate,
-      similarity: maxSimilarity,
-      matchedJobId: isDuplicate ? matchedJobId : undefined,
-    };
-  }
-}
-
-// Singleton deduplicator
-let deduplicatorInstance: JobDeduplicator | null = null;
-
-export async function getDeduplicator(): Promise<JobDeduplicator> {
-  if (!deduplicatorInstance) {
-    deduplicatorInstance = new JobDeduplicator();
-    await deduplicatorInstance.buildVocabulary();
-  }
-  return deduplicatorInstance;
 }
 
 /**

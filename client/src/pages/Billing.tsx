@@ -4,14 +4,22 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ReportHireDialog } from "@/components/ReportHireDialog";
+import {
+  getEmploymentEndCompletionSummary,
+  getEmploymentEndControlSummary,
+  type EmploymentEndReportResultLike,
+} from "@/lib/employmentEndControl";
+import { getSuccessFeeComplianceAction, getSuccessFeeComplianceSummary, type SuccessFeeComplianceRisk } from "@/lib/successFeeCompliance";
+import { useLocation } from "wouter";
 import { toast } from "sonner";
 import {
   DollarSign, FileText, CheckCircle, Clock, AlertTriangle,
-  XCircle, Upload, ExternalLink, RefreshCw, Briefcase, Calendar
+  XCircle, Upload, ExternalLink, RefreshCw, Briefcase, Calendar, Shield, ClipboardCheck
 } from "lucide-react";
 
 function StatusBadge({ status }: { status: string }) {
@@ -35,6 +43,27 @@ function PaymentStatusBadge({ status }: { status: string }) {
     refunded: { label: "Refunded", className: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
   };
   const cfg = map[status] ?? { label: status, className: "bg-gray-500/20 text-gray-400" };
+  return <Badge className={`text-xs border ${cfg.className}`}>{cfg.label}</Badge>;
+}
+
+function ComplianceRiskBadge({ risk }: { risk: SuccessFeeComplianceRisk }) {
+  const map: Record<SuccessFeeComplianceRisk, string> = {
+    low: "border-green-500/30 bg-green-500/10 text-green-300",
+    medium: "border-yellow-500/30 bg-yellow-500/10 text-yellow-300",
+    high: "border-orange-500/30 bg-orange-500/10 text-orange-300",
+    critical: "border-red-500/30 bg-red-500/10 text-red-300",
+  };
+  return <Badge className={`text-xs border ${map[risk]}`}>{risk}</Badge>;
+}
+
+function ComplianceStatusBadge({ status }: { status: string }) {
+  const map: Record<string, { label: string; className: string }> = {
+    needs_attention: { label: "Needs Attention", className: "bg-red-500/20 text-red-400 border-red-500/30" },
+    due_soon: { label: "Verification Due", className: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" },
+    clear: { label: "Current", className: "bg-green-500/20 text-green-400 border-green-500/30" },
+    none: { label: "No Active Fee", className: "bg-gray-500/20 text-gray-400 border-gray-500/30" },
+  };
+  const cfg = map[status] ?? { label: status, className: "bg-gray-500/20 text-gray-400 border-gray-500/30" };
   return <Badge className={`text-xs border ${cfg.className}`}>{cfg.label}</Badge>;
 }
 
@@ -128,15 +157,22 @@ function VerificationUploadDialog({ open, onOpenChange, successFeeId, onSuccess 
 
 export default function Billing() {
   const { user, loading: authLoading } = useAuth();
+  const [, setLocation] = useLocation();
   const [reportHireOpen, setReportHireOpen] = useState(false);
+  const [reportHireApplicationId, setReportHireApplicationId] = useState<number | undefined>(undefined);
   const [verifyDialogFeeId, setVerifyDialogFeeId] = useState<number | null>(null);
+  const [employmentEndFeeId, setEmploymentEndFeeId] = useState<number | null>(null);
+  const [employmentEndDate, setEmploymentEndDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [employmentEndResult, setEmploymentEndResult] = useState<EmploymentEndReportResultLike | null>(null);
 
   const { data: fees = [], refetch: refetchFees } = trpc.successFees.getMyFees.useQuery();
   const { data: payments = [] } = trpc.successFees.getPaymentHistory.useQuery();
+  const { data: offerAttributionReviews = [] } = trpc.successFees.getOfferAttributionReviews.useQuery();
 
   const reportEmploymentEnded = trpc.successFees.reportEmploymentEnded.useMutation({
-    onSuccess: () => {
-      toast.success("Employment end reported. Your subscription has been cancelled.");
+    onSuccess: (data) => {
+      setEmploymentEndResult(data);
+      toast.success("Employment end recorded for admin review.");
       refetchFees();
     },
     onError: (err) => toast.error(err.message || "Failed to report employment end"),
@@ -150,6 +186,51 @@ export default function Billing() {
   const activeFees = fees.filter(f => ["active", "pending_verification"].includes(f.status));
   const totalMonthlyFees = activeFees.reduce((sum, f) => sum + f.monthlyFeeAmount, 0);
   const totalPaid = payments.filter(p => p.status === "paid").reduce((sum, p) => sum + p.amount, 0);
+  const complianceSummary = getSuccessFeeComplianceSummary(fees, offerAttributionReviews);
+  const complianceAction = getSuccessFeeComplianceAction(complianceSummary);
+  const employmentEndFee = employmentEndFeeId
+    ? fees.find((fee) => fee.id === employmentEndFeeId) ?? null
+    : null;
+  const employmentEndControl = getEmploymentEndControlSummary(employmentEndFee, employmentEndDate);
+  const employmentEndCompletion = employmentEndResult
+    ? getEmploymentEndCompletionSummary(employmentEndResult)
+    : null;
+
+  const openEmploymentEndDialog = (feeId: number) => {
+    setEmploymentEndFeeId(feeId);
+    setEmploymentEndDate(new Date().toISOString().slice(0, 10));
+    setEmploymentEndResult(null);
+  };
+
+  const closeEmploymentEndDialog = () => {
+    setEmploymentEndFeeId(null);
+    setEmploymentEndResult(null);
+  };
+
+  const handleComplianceAction = () => {
+    if (complianceAction.id === "report_hire") {
+      setReportHireApplicationId(undefined);
+      setReportHireOpen(true);
+      return;
+    }
+
+    if (complianceAction.id === "submit_verification") {
+      const targetFee = fees.find((fee) => {
+        if (!["active", "pending_verification"].includes(fee.status)) return false;
+        if (!fee.nextVerificationDue) return false;
+        return new Date(fee.nextVerificationDue).getTime() <= Date.now();
+      }) || activeFees[0];
+
+      if (targetFee) {
+        setVerifyDialogFeeId(targetFee.id);
+        return;
+      }
+    }
+
+    if (complianceAction.route !== "/billing") {
+      setLocation(complianceAction.route);
+    }
+  };
 
   if (authLoading) {
     return (
@@ -171,25 +252,28 @@ export default function Billing() {
     <div className="min-h-screen bg-[#0d1117] text-white">
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-8">
           <div>
             <h1 className="text-2xl font-bold text-white">Billing & Success Fees</h1>
             <p className="text-gray-400 mt-1">Manage your success fee arrangements and payment history</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">
             {fees.some(f => f.stripeSubscriptionId) && (
               <Button
                 variant="outline"
                 onClick={() => getBillingPortal.mutate()}
                 disabled={getBillingPortal.isPending}
-                className="border-[#30363d] text-gray-300 hover:bg-[#21262d] gap-1.5"
+                className="flex-1 border-[#30363d] text-gray-300 hover:bg-[#21262d] gap-1.5 sm:flex-none"
               >
                 <ExternalLink className="w-4 h-4" /> Billing Portal
               </Button>
             )}
             <Button
-              onClick={() => setReportHireOpen(true)}
-              className="bg-cyan-500 hover:bg-cyan-600 text-black font-semibold gap-1.5"
+              onClick={() => {
+                setReportHireApplicationId(undefined);
+                setReportHireOpen(true);
+              }}
+              className="flex-1 bg-cyan-500 hover:bg-cyan-600 text-black font-semibold gap-1.5 sm:flex-none"
             >
               🎉 Report a Hire
             </Button>
@@ -197,7 +281,7 @@ export default function Billing() {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-1 gap-4 mb-8 sm:grid-cols-3">
           <Card className="bg-[#161b22] border-[#21262d]">
             <CardContent className="p-4">
               <div className="flex items-center gap-2 mb-2">
@@ -227,11 +311,70 @@ export default function Billing() {
           </Card>
         </div>
 
+        <Card data-testid="billing-compliance-control" className="bg-[#161b22] border-cyan-500/30 mb-6">
+          <CardHeader>
+            <CardTitle className="text-white flex flex-wrap items-center gap-2">
+              <Shield className="h-4 w-4 text-cyan-300" />
+              Success-fee operating control
+              <ComplianceStatusBadge status={complianceSummary.status} />
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-medium text-cyan-200">{complianceAction.label}</p>
+                  <ComplianceRiskBadge risk={complianceAction.risk} />
+                  <Badge className="border-[#30363d] bg-[#0d1117] text-gray-300">
+                    {complianceAction.approvalGated ? "Approval-gated" : "Internal"}
+                  </Badge>
+                  {complianceAction.proofRequired && (
+                    <Badge className="border-amber-500/30 bg-amber-500/10 text-amber-300">
+                      Proof required
+                    </Badge>
+                  )}
+                </div>
+                <p className="mt-2 text-sm text-gray-400">{complianceAction.detail}</p>
+                <p className="mt-2 text-xs text-gray-500">{complianceSummary.nextAction}</p>
+              </div>
+              <Button
+                data-testid="billing-compliance-primary"
+                variant="outline"
+                className="border-cyan-500/40 text-cyan-200 hover:bg-cyan-500/10"
+                onClick={handleComplianceAction}
+              >
+                <ClipboardCheck className="mr-2 h-4 w-4" />
+                {complianceAction.cta}
+              </Button>
+            </div>
+
+            <div className="grid gap-2 text-xs text-gray-400 sm:grid-cols-2 lg:grid-cols-5">
+              {[
+                ["Offer reviews", complianceSummary.pendingOfferAttributions],
+                ["Pending proof", complianceSummary.pendingVerification],
+                ["Overdue", complianceSummary.overdueVerifications],
+                ["Due soon", complianceSummary.dueSoonVerifications],
+                [
+                  "Next due",
+                  complianceSummary.nextVerificationDue
+                    ? complianceSummary.nextVerificationDue.toLocaleDateString()
+                    : "None",
+                ],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-md border border-[#30363d] bg-[#0d1117] p-3">
+                  <p className="text-gray-500">{label}</p>
+                  <p className="mt-1 font-semibold text-white">{value}</p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
         {/* How It Works */}
         <Card className="bg-[#161b22] border-[#21262d] mb-6">
           <CardContent className="p-4">
             <p className="text-sm font-semibold text-cyan-400 mb-2">How Hire.AI Success Fees Work</p>
-            <div className="grid grid-cols-3 gap-4 text-xs text-gray-400">
+            <div className="grid grid-cols-1 gap-4 text-xs text-gray-400 sm:grid-cols-3">
               <div className="flex flex-col gap-1">
                 <span className="text-white font-medium">1. Free to Use</span>
                 <span>Use Hire.AI to automate your job search at no upfront cost.</span>
@@ -248,6 +391,61 @@ export default function Billing() {
           </CardContent>
         </Card>
 
+        {offerAttributionReviews.length > 0 && (
+          <Card className="bg-[#161b22] border-amber-500/30 mb-6">
+            <CardHeader>
+              <CardTitle className="text-white flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-400" />
+                Offer Attribution Reviews
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {offerAttributionReviews.map((review) => {
+                const application = review.application as any;
+                const response = review.latestEmployerResponse;
+                const job = application?.job;
+                const applicationId = review.approval.applicationId ?? application?.id;
+
+                return (
+                  <div key={review.approval.id} className="rounded-md border border-[#30363d] bg-[#0d1117] p-4">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge className="border-amber-500/30 bg-amber-500/10 text-amber-300">
+                            {review.approval.riskLevel}
+                          </Badge>
+                          <span className="text-sm text-gray-400">Pending success-fee attribution</span>
+                        </div>
+                        <p className="mt-2 font-medium text-white">
+                          {job?.title || "Application"}{job?.company ? ` at ${job.company}` : ""}
+                        </p>
+                        {response?.summary ? (
+                          <p className="mt-1 text-sm text-gray-400">{response.summary}</p>
+                        ) : review.approval.description ? (
+                          <p className="mt-1 text-sm text-gray-400">{review.approval.description}</p>
+                        ) : null}
+                        <p className="mt-2 text-xs text-gray-500">
+                          Approval #{review.approval.id}
+                          {response?.receivedAt ? ` - Response received ${new Date(response.receivedAt).toLocaleDateString()}` : ""}
+                        </p>
+                      </div>
+                      <Button
+                        className="bg-cyan-500 hover:bg-cyan-600 text-black font-semibold"
+                        onClick={() => {
+                          setReportHireApplicationId(applicationId ?? undefined);
+                          setReportHireOpen(true);
+                        }}
+                      >
+                        Report Hire
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+        )}
+
         {/* Active Success Fees */}
         <div className="mb-8">
           <h2 className="text-lg font-semibold text-white mb-4">Success Fee Arrangements</h2>
@@ -258,7 +456,10 @@ export default function Billing() {
                 <p className="text-gray-400 font-medium">No success fees yet</p>
                 <p className="text-gray-500 text-sm mt-1">When you land a job through Hire.AI, report it here to set up your success fee arrangement.</p>
                 <Button
-                  onClick={() => setReportHireOpen(true)}
+                  onClick={() => {
+                    setReportHireApplicationId(undefined);
+                    setReportHireOpen(true);
+                  }}
                   className="mt-4 bg-cyan-500 hover:bg-cyan-600 text-black font-semibold"
                 >
                   🎉 I Got Hired!
@@ -337,11 +538,8 @@ export default function Billing() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => {
-                              if (confirm("Are you sure you want to report that your employment has ended? This will cancel your success fee subscription.")) {
-                                reportEmploymentEnded.mutate({ successFeeId: fee.id, endDate: new Date().toISOString() });
-                              }
-                            }}
+                            data-testid="open-employment-end-dialog"
+                            onClick={() => openEmploymentEndDialog(fee.id)}
                             className="border-red-500/30 text-red-400 hover:bg-red-500/10 text-xs gap-1"
                           >
                             <XCircle className="w-3 h-3" /> Report Employment Ended
@@ -401,6 +599,7 @@ export default function Billing() {
       <ReportHireDialog
         open={reportHireOpen}
         onOpenChange={setReportHireOpen}
+        applicationId={reportHireApplicationId}
         onSuccess={() => refetchFees()}
       />
 
@@ -412,6 +611,144 @@ export default function Billing() {
           onSuccess={() => refetchFees()}
         />
       )}
+
+      <Dialog
+        open={employmentEndFeeId !== null}
+        onOpenChange={(open) => {
+          if (!open) closeEmploymentEndDialog();
+        }}
+      >
+        <DialogContent className="max-w-xl bg-[#0d1117] border-[#21262d] text-white">
+          <DialogHeader>
+            <DialogTitle>Report Employment Ended</DialogTitle>
+            <DialogDescription className="text-gray-400">
+              Record the end date and send the final success-fee obligation to admin review.
+            </DialogDescription>
+          </DialogHeader>
+
+          {employmentEndCompletion ? (
+            <div data-testid="employment-end-completion-control" className="space-y-4">
+              <div className="rounded-md border border-cyan-500/30 bg-cyan-500/10 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge className="border-cyan-500/30 bg-cyan-500/10 text-cyan-200">
+                    {employmentEndCompletion.label}
+                  </Badge>
+                  <Badge className="border-amber-500/30 bg-amber-500/10 text-amber-200">
+                    Admin review
+                  </Badge>
+                </div>
+                <p className="mt-3 font-medium text-white">{employmentEndCompletion.headline}</p>
+                <p className="mt-1 text-sm text-gray-400">{employmentEndCompletion.detail}</p>
+              </div>
+
+              <div className="grid gap-2">
+                {employmentEndCompletion.checkpoints.map((checkpoint) => (
+                  <div
+                    key={checkpoint.label}
+                    className="flex items-start gap-2 rounded-md border border-[#30363d] bg-[#161b22] p-3 text-sm text-gray-300"
+                  >
+                    {checkpoint.state === "complete" ? (
+                      <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-green-400" />
+                    ) : checkpoint.state === "not_required" ? (
+                      <Clock className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                    ) : (
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+                    )}
+                    <span>{checkpoint.label}</span>
+                  </div>
+                ))}
+              </div>
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  onClick={closeEmploymentEndDialog}
+                  className="bg-cyan-500 hover:bg-cyan-600 text-black font-semibold"
+                >
+                  Done
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : employmentEndFee ? (
+            <div data-testid="employment-end-evidence-control" className="space-y-4">
+              <div className="rounded-md border border-[#30363d] bg-[#161b22] p-4">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="font-medium text-white">{employmentEndFee.jobTitle}</p>
+                    <p className="text-sm text-gray-400">{employmentEndFee.employerName}</p>
+                  </div>
+                  <StatusBadge status={employmentEndFee.status} />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="employment-end-date" className="text-gray-300">Employment End Date</Label>
+                <Input
+                  id="employment-end-date"
+                  type="date"
+                  value={employmentEndDate}
+                  onChange={(event) => setEmploymentEndDate(event.target.value)}
+                  className="bg-[#161b22] border-[#30363d] text-white"
+                />
+              </div>
+
+              <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <Badge className="border-amber-500/30 bg-amber-500/10 text-amber-200">
+                    {employmentEndControl.label}
+                  </Badge>
+                  <Badge className="border-[#30363d] bg-[#0d1117] text-gray-300">
+                    {employmentEndControl.risk}
+                  </Badge>
+                </div>
+                <p className="font-medium text-white">{employmentEndControl.headline}</p>
+                <p className="mt-1 text-sm text-gray-400">{employmentEndControl.detail}</p>
+              </div>
+
+              <div className="grid gap-2">
+                {employmentEndControl.checkpoints.map((checkpoint) => (
+                  <div
+                    key={checkpoint}
+                    className="flex items-start gap-2 rounded-md border border-[#30363d] bg-[#161b22] p-3 text-sm text-gray-300"
+                  >
+                    <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
+                    <span>{checkpoint}</span>
+                  </div>
+                ))}
+              </div>
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={closeEmploymentEndDialog}
+                  className="border-[#30363d] text-gray-300 hover:bg-[#21262d]"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  data-testid="confirm-employment-ended"
+                  disabled={!employmentEndControl.canReport || !employmentEndDate || reportEmploymentEnded.isPending}
+                  onClick={() => {
+                    reportEmploymentEnded.mutate({
+                      successFeeId: employmentEndFee.id,
+                      endDate: new Date(`${employmentEndDate}T00:00:00.000Z`).toISOString(),
+                    });
+                  }}
+                  className="bg-red-500 hover:bg-red-600 text-white"
+                >
+                  {reportEmploymentEnded.isPending ? "Recording..." : "Record Employment End"}
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <div className="rounded-md border border-[#30363d] bg-[#161b22] p-4 text-sm text-gray-400">
+              Select an active success-fee record before reporting employment ended.
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

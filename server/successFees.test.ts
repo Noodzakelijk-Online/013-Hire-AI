@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { calculateNextVerificationDue } from "./successFeeDates";
 
 // ─── Mock getDb ────────────────────────────────────────────────────────────────
 const mockDb = {
@@ -60,15 +61,6 @@ function isBelowMinimumSalary(monthlySalaryUsd: number): boolean {
 function isVerificationOverdue(nextVerificationDue: Date | null): boolean {
   if (!nextVerificationDue) return false;
   return nextVerificationDue < new Date();
-}
-
-/**
- * Calculate the next verification due date (90 days from now).
- */
-function calculateNextVerificationDue(fromDate: Date = new Date()): Date {
-  const next = new Date(fromDate);
-  next.setDate(next.getDate() + 90);
-  return next;
 }
 
 /**

@@ -1,6 +1,6 @@
 # Hire.AI — Automated Remote Job Aggregation Platform
 
-> **Job hunting done right.** Hire.AI is a fully automated, AI-powered job application platform that scans 50+ job boards, matches opportunities to your profile, and applies on your behalf — completely hands-free.
+> **Job hunting done right.** Hire.AI is an AI-assisted job-search operating platform. It discovers listings from configured supported sources, prepares reviewable application materials, and keeps decisions, evidence, follow-ups, and responses in one ledger. External applications and follow-ups remain explicitly approved and confirmed by the user.
 
 ---
 
@@ -112,7 +112,7 @@ Express 4 Server (Node.js 22 ESM)
 - **Resume Parsing** — Upload PDF or DOCX; AI extracts and populates the profile automatically
 - **Unified Dashboard** — Single view of all metrics: applications sent, response rate, interview conversion, recent activity, and full application history
 - **Saved Jobs** — Bookmark interesting listings for manual review
-- **AI Preferences** — Configure auto-apply toggle, max applications per day, scan frequency, and job preferences
+- **AI Preferences** — Configure application preparation, daily review limits, scan frequency, and job preferences
 - **Job Alerts** — Email/notification alerts for new high-match listings
 - **Career Intelligence** — Salary benchmarking, skill gap analysis, and market insights
 
@@ -176,7 +176,7 @@ hire_ai_v2/
 │   ├── db.ts                    # Drizzle query helpers
 │   ├── aiMatching.ts            # AI job matching engine
 │   ├── applicationAutomation.ts # Autonomous application submission
-│   ├── browserAutomation.ts     # Headless browser for job platforms
+│   ├── browserAutomation.ts     # Approval-gated manual employer-portal handoff
 │   ├── careerIntelligence.ts    # Salary benchmarking, skill gap analysis
 │   ├── jobNormalization.ts      # Normalise job data across platforms
 │   ├── realTimeDiscovery.ts     # Live job board scanning

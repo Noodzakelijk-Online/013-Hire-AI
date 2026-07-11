@@ -1,46 +1,39 @@
 import type { BaseScraper, ScrapeResult } from "./baseScraper";
 import { getScraperForPlatform, getSupportedPlatforms, hasScraper } from "./index";
-import { getDb } from "../db";
-import { jobs, jobPlatforms } from "../../drizzle/schema";
-import { and, eq } from "drizzle-orm";
+import { getDb, updatePlatformLastScraped } from "../db";
+import { jobDuplicates, jobs, jobPlatforms } from "../../drizzle/schema";
+import { and, eq, gt, isNull, or, sql } from "drizzle-orm";
+import { samplePlatforms } from "../sampleData";
+import { findBestJobDuplicateCandidate } from "../jobDeduplication";
+
+export interface ScrapeOptions {
+  keywords?: string;
+  location?: string;
+  limit?: number;
+  platformNames?: string[];
+}
 
 /**
  * Scraper Manager
- * Coordinates scraping across all platforms and manages job deduplication.
- *
- * The manager can initialize without a database so status endpoints and tests can
- * still report supported scraper coverage. Persistence still requires a database.
+ * Coordinates scraping across all platforms and manages job deduplication
  */
+
 export class ScraperManager {
   private scrapers: Map<string, BaseScraper> = new Map();
 
   /**
-   * Initialize all scrapers.
+   * Initialize all scrapers
    */
   async initialize(): Promise<void> {
     const db = await getDb();
     const supportedPlatformNames = getSupportedPlatforms();
+    const platforms = db
+      ? await db.select().from(jobPlatforms).where(eq(jobPlatforms.isActive, 1))
+      : samplePlatforms.filter((platform) => platform.isActive === 1);
 
-    if (!db) {
-      console.warn("[ScraperManager] Database unavailable; initializing supported scrapers without platform records");
-      supportedPlatformNames.forEach((platformName, index) => {
-        const scraper = this.createScraper(platformName, index + 1);
-        if (scraper) {
-          this.scrapers.set(platformName, scraper);
-        }
-      });
-      console.log(`[ScraperManager] Initialized ${this.scrapers.size} scrapers without database backing`);
-      return;
-    }
+    console.log(`[ScraperManager] Initializing scrapers for ${platforms.length} platforms`);
 
-    // Get all active platforms from the database when available.
-    const platforms = await db
-      .select()
-      .from(jobPlatforms)
-      .where(eq(jobPlatforms.isActive, 1));
-
-    console.log(`[ScraperManager] Initializing scrapers for ${platforms.length} database platforms`);
-
+    // Initialize scrapers for platforms we have implemented
     for (const platform of platforms) {
       try {
         const scraper = this.createScraper(platform.name, platform.id);
@@ -53,7 +46,6 @@ export class ScraperManager {
       }
     }
 
-    // If the database exists but is not seeded yet, still expose supported scrapers.
     if (this.scrapers.size === 0) {
       supportedPlatformNames.forEach((platformName, index) => {
         const scraper = this.createScraper(platformName, index + 1);
@@ -67,28 +59,28 @@ export class ScraperManager {
   }
 
   /**
-   * Create a scraper instance for a platform.
+   * Create a scraper instance for a platform
    */
   private createScraper(platformName: string, platformId: number): BaseScraper | null {
     return getScraperForPlatform(platformName, platformId);
   }
 
   /**
-   * Get list of supported platforms.
+   * Get list of supported platforms
    */
   getSupportedPlatforms(): string[] {
     return getSupportedPlatforms();
   }
 
   /**
-   * Check if a platform has a scraper.
+   * Check if a platform has a scraper
    */
   hasScraper(platformName: string): boolean {
     return hasScraper(platformName);
   }
 
   /**
-   * Scrape jobs from a specific platform.
+   * Scrape jobs from a specific platform
    */
   async scrapePlatform(
     platformName: string,
@@ -110,6 +102,9 @@ export class ScraperManager {
 
     console.log(`[ScraperManager] Scraping ${platformName}...`);
     const result = await scraper.scrape(options);
+    if (result.errors.length === 0) {
+      await updatePlatformLastScraped(scraper.getPlatformId());
+    }
     console.log(
       `[ScraperManager] Scraped ${result.jobs.length} jobs from ${platformName} (${result.errors.length} errors)`
     );
@@ -118,24 +113,40 @@ export class ScraperManager {
   }
 
   /**
-   * Scrape jobs from all platforms.
+   * Scrape jobs from all platforms
    */
-  async scrapeAll(options?: {
-    keywords?: string;
-    location?: string;
-    limit?: number;
-  }): Promise<{
+  async scrapeAll(options?: ScrapeOptions): Promise<{
     totalJobs: number;
     platformResults: Record<string, ScrapeResult>;
   }> {
     const platformResults: Record<string, ScrapeResult> = {};
     let totalJobs = 0;
 
-    console.log(`[ScraperManager] Starting scrape of all ${this.scrapers.size} platforms`);
+    const requestedPlatformNames = Array.from(new Set(
+      options?.platformNames?.map((platformName) => platformName.trim()).filter(Boolean) ?? []
+    ));
+    const selectedScrapers = requestedPlatformNames.length > 0
+      ? Array.from(this.scrapers.entries()).filter(([platformName]) => requestedPlatformNames.includes(platformName))
+      : Array.from(this.scrapers.entries());
 
-    for (const [platformName, scraper] of Array.from(this.scrapers.entries())) {
+    console.log(`[ScraperManager] Starting scrape of ${selectedScrapers.length} platforms`);
+
+    for (const platformName of requestedPlatformNames) {
+      if (!this.scrapers.has(platformName)) {
+        platformResults[platformName] = {
+          jobs: [],
+          errors: [`No scraper available for platform: ${platformName}`],
+          scrapedAt: new Date(),
+        };
+      }
+    }
+
+    for (const [platformName, scraper] of selectedScrapers) {
       try {
         const result = await scraper.scrape(options);
+        if (result.errors.length === 0) {
+          await updatePlatformLastScraped(scraper.getPlatformId());
+        }
         platformResults[platformName] = result;
         totalJobs += result.jobs.length;
       } catch (error) {
@@ -157,7 +168,7 @@ export class ScraperManager {
   }
 
   /**
-   * Save scraped jobs to database with deduplication.
+   * Save scraped jobs to database with deduplication
    */
   async saveJobs(scrapedJobs: any[]): Promise<{
     saved: number;
@@ -166,16 +177,17 @@ export class ScraperManager {
   }> {
     const db = await getDb();
     if (!db) {
-      throw new Error("Database not available");
+      return { saved: 0, duplicates: scrapedJobs.length, errors: 0 };
     }
 
     let saved = 0;
     let duplicates = 0;
     let errors = 0;
+    const now = new Date();
 
     for (const job of scrapedJobs) {
       try {
-        // Check for duplicates by external ID and platform when both are present.
+        // Check for duplicates by external ID and platform
         if (job.externalId && job.platformId) {
           const existing = await db
             .select()
@@ -189,10 +201,49 @@ export class ScraperManager {
           }
         }
 
+        const duplicateCandidates = job.company && job.title
+          ? await db
+              .select({
+                id: jobs.id,
+                applicationUrl: jobs.applicationUrl,
+                sourceUrl: jobs.sourceUrl,
+                title: jobs.title,
+                company: jobs.company,
+                description: jobs.description,
+              })
+              .from(jobs)
+              .where(and(
+                or(
+                  eq(jobs.company, job.company),
+                  eq(jobs.title, job.title)
+                ),
+                eq(jobs.isActive, 1),
+                or(isNull(jobs.expiryDate), gt(jobs.expiryDate, now)),
+                sql`NOT EXISTS (
+                  SELECT 1 FROM ${jobDuplicates}
+                  WHERE ${jobDuplicates.duplicateJobId} = ${jobs.id}
+                )`
+              ))
+              .limit(100)
+          : [];
+        const crossPlatformDuplicate = findBestJobDuplicateCandidate(job, duplicateCandidates);
+        if (crossPlatformDuplicate) {
+          const duplicateWrite = await db.insert(jobs).values(job);
+          const duplicateJobId = Number(duplicateWrite[0].insertId);
+          await db.insert(jobDuplicates).values({
+            primaryJobId: crossPlatformDuplicate.job.id,
+            duplicateJobId,
+            similarityScore: Math.round(crossPlatformDuplicate.match.similarity * 100),
+          });
+          duplicates++;
+          continue;
+        }
+
+        // Insert new job
         await db.insert(jobs).values(job);
         saved++;
       } catch (error) {
-        console.error("[ScraperManager] Failed to save job:", error);
+        console.error(`[ScraperManager] Failed to save job:`, error);
         errors++;
       }
     }
@@ -205,13 +256,9 @@ export class ScraperManager {
   }
 
   /**
-   * Run a full scraping cycle.
+   * Run a full scraping cycle
    */
-  async runScrapingCycle(options?: {
-    keywords?: string;
-    location?: string;
-    limit?: number;
-  }): Promise<{
+  async runScrapingCycle(options?: ScrapeOptions): Promise<{
     totalScraped: number;
     totalSaved: number;
     totalDuplicates: number;
@@ -220,8 +267,13 @@ export class ScraperManager {
   }> {
     console.log("[ScraperManager] Starting scraping cycle");
 
+    // Scrape all platforms
     const { totalJobs, platformResults } = await this.scrapeAll(options);
+
+    // Collect all jobs
     const allJobs = Object.values(platformResults).flatMap((result) => result.jobs);
+
+    // Save to database
     const { saved, duplicates, errors } = await this.saveJobs(allJobs);
 
     console.log("[ScraperManager] Scraping cycle complete");
@@ -236,6 +288,7 @@ export class ScraperManager {
   }
 }
 
+// Singleton instance
 let scraperManagerInstance: ScraperManager | null = null;
 
 export async function getScraperManager(): Promise<ScraperManager> {

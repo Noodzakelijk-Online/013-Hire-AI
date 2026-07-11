@@ -2,11 +2,23 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Activity, Heart, TrendingUp, Briefcase, Send, Eye, Calendar, Target, Settings, LogOut, Search, FileText, Rocket, User, Bell, RefreshCw, Clock, CheckCircle, XCircle, MessageSquare, Building2, MapPin, DollarSign, ExternalLink, Loader2 } from "lucide-react";
+import { Activity, Heart, TrendingUp, Briefcase, Send, Eye, Calendar, Target, Settings, LogOut, Search, FileText, Rocket, User, Bell, RefreshCw, Clock, CheckCircle, XCircle, MessageSquare, Building2, MapPin, DollarSign, ExternalLink, Loader2, AlertCircle, Mail, Pause, Play } from "lucide-react";
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
 import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
+import { formatAutonomousRunSummary, getAutonomousRunCounts } from "@/lib/autonomousRunSummary";
+import { getApplicationDeepLink } from "@/lib/applicationDeepLinks";
+import { getCommandCenterSummary } from "@/lib/commandCenterSummary";
+import { getSuccessFeeComplianceAction, getSuccessFeeComplianceSummary } from "@/lib/successFeeCompliance";
+import {
+  formatApplicationDecision,
+  formatApprovalType,
+  getApprovalDecisionNote,
+  getOperatingReviewQueueCounts,
+  getReviewQueueActionSummary,
+  getReviewRiskBadgeClass,
+} from "@/lib/operatingReviewQueue";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -32,12 +44,79 @@ export default function Dashboard() {
   const [showTos, setShowTos] = useState(false);
 
   // Fetch real data from API
-  const { data: applications, isLoading: appsLoading } = trpc.applications.list.useQuery();
+  const { data: applications, isLoading: appsLoading, refetch: refetchApplications } = trpc.applications.list.useQuery();
   const { data: profile } = trpc.profile.get.useQuery();
-  const { data: jobs } = trpc.jobs.list.useQuery({ limit: 100 });
+  const { data: profileReadiness } = trpc.profile.getReadiness.useQuery(undefined, {
+    enabled: isAuthenticated,
+  });
+  const { data: jobs, refetch: refetchJobs } = trpc.jobs.list.useQuery({ limit: 100 });
+  const { data: autonomousPlan, refetch: refetchAutonomousPlan } = trpc.automation.plan.useQuery(undefined, {
+    enabled: isAuthenticated,
+  });
+  const { data: operatingLedger, refetch: refetchOperatingLedger } = trpc.applications.getOperatingLedger.useQuery(undefined, {
+    enabled: isAuthenticated,
+  });
+  const { data: successFees = [] } = trpc.successFees.getMyFees.useQuery(undefined, {
+    enabled: isAuthenticated,
+  });
+  const { data: offerAttributionReviews = [] } = trpc.successFees.getOfferAttributionReviews.useQuery(undefined, {
+    enabled: isAuthenticated,
+  });
+  const runAutonomousAgent = trpc.automation.run.useMutation({
+    onSuccess: async (result) => {
+      const counts = getAutonomousRunCounts(result);
+      const message = formatAutonomousRunSummary(result);
+      if (counts.failures > 0 || counts.resumeEvidenceBlockedActions > 0) {
+        toast.warning(message);
+      } else {
+        toast.success(message);
+      }
+      await Promise.all([
+        refetchApplications(),
+        refetchJobs(),
+        refetchAutonomousPlan(),
+        refetchOperatingLedger(),
+      ]);
+    },
+    onError: (error) => {
+      toast.error(error.message || "Autonomous scan failed");
+    },
+  });
+  const resolveApproval = trpc.applications.resolveApproval.useMutation({
+    onSuccess: async (_, variables) => {
+      toast.success(`Approval ${variables.status}`);
+      await Promise.all([
+        refetchApplications(),
+        refetchAutonomousPlan(),
+        refetchOperatingLedger(),
+      ]);
+    },
+    onError: (error) => {
+      toast.error(error.message || "Unable to resolve approval");
+    },
+  });
+  const markInterviewNotificationRead = trpc.applications.markInterviewNotificationRead.useMutation({
+    onSuccess: async (result) => {
+      if (result.changed) toast.success("Interview notification marked read");
+      await refetchOperatingLedger();
+    },
+    onError: (error) => {
+      toast.error(error.message || "Unable to update interview notification");
+    },
+  });
+  const setCampaignStatus = trpc.applications.setCampaignStatus.useMutation({
+    onSuccess: async ({ campaign }) => {
+      toast.success(campaign.status === "paused"
+        ? "Campaign paused. New autonomous work is stopped."
+        : "Campaign resumed. Autonomous work can run under the current policy.");
+      await Promise.all([refetchAutonomousPlan(), refetchOperatingLedger()]);
+    },
+    onError: (error) => toast.error(error.message || "Unable to update campaign status"),
+  });
 
   // Calculate real stats
   const totalApplications = applications?.length || 0;
+  const submittedApplications = applications?.filter(a => a.status !== "pending") || [];
   const activeApplications = applications?.filter(a => 
     a.status === 'applied' || a.status === 'viewed' || a.status === 'interview'
   ).length || 0;
@@ -45,11 +124,11 @@ export default function Dashboard() {
   const offeredCount = applications?.filter(a => a.status === 'offer').length || 0;
   
   // Calculate rates
-  const responseRate = totalApplications > 0 
-    ? Math.round((applications?.filter(a => a.status !== 'applied').length || 0) / totalApplications * 100) 
+  const responseRate = submittedApplications.length > 0
+    ? Math.round(submittedApplications.filter(a => !["applied", "pending"].includes(a.status || "")).length / submittedApplications.length * 100)
     : 0;
-  const interviewRate = totalApplications > 0 
-    ? Math.round(interviewInvites / totalApplications * 100) 
+  const interviewRate = submittedApplications.length > 0
+    ? Math.round(interviewInvites / submittedApplications.length * 100)
     : 0;
   const offerRate = interviewInvites > 0 
     ? Math.round(offeredCount / interviewInvites * 100) 
@@ -90,8 +169,29 @@ export default function Dashboard() {
   };
 
   const handleScanJobs = () => {
-    toast.info("Job scan started! This may take a few minutes...");
-    // In a real implementation, this would trigger the scraper
+    if (operatingLedger?.campaign.status !== "active") {
+      toast.info("Resume the campaign before running autonomous work.");
+      return;
+    }
+    toast.info("Evaluating jobs against your saved automation policy...");
+    runAutonomousAgent.mutate();
+  };
+  const toggleCampaignStatus = () => {
+    if (!operatingLedger) return;
+    setCampaignStatus.mutate({
+      status: operatingLedger.campaign.status === "active" ? "paused" : "active",
+    });
+  };
+
+  const handleResolveApproval = (
+    approval: { id: number; approvalType?: string | null },
+    status: "approved" | "rejected"
+  ) => {
+    resolveApproval.mutate({
+      approvalId: approval.id,
+      status,
+      decisionNote: getApprovalDecisionNote(approval.approvalType, status),
+    });
   };
 
   if (loading) {
@@ -110,6 +210,43 @@ export default function Dashboard() {
   }
 
   const isNewUser = totalApplications === 0 && !profile?.skills;
+  const reviewQueueCount = getOperatingReviewQueueCounts(operatingLedger).total;
+  const canReviewAdminItems = operatingLedger?.canReviewAdminItems === true;
+  const successFeeCompliance = getSuccessFeeComplianceSummary(successFees, offerAttributionReviews);
+  const successFeeComplianceAction = getSuccessFeeComplianceAction(successFeeCompliance);
+  const commandCenterSummary = operatingLedger
+    ? getCommandCenterSummary(operatingLedger, successFeeCompliance)
+    : null;
+  const commandCenterTone = commandCenterSummary ? {
+    blocked: "border-red-500/40 bg-red-500/10 text-red-200",
+    approval_required: "border-amber-500/40 bg-amber-500/10 text-amber-200",
+    attention: "border-blue-500/40 bg-blue-500/10 text-blue-200",
+    ready: "border-emerald-500/40 bg-emerald-500/10 text-emerald-200",
+    clear: "border-slate-700 bg-slate-900/60 text-slate-200",
+  }[commandCenterSummary.status] : "";
+  const operatingMetricItems = operatingLedger
+    ? [
+        ["Prepared", operatingLedger.metrics.preparedApplications],
+        ["Submitted", operatingLedger.metrics.submittedApplications],
+        ["Responses", operatingLedger.metrics.employerResponses],
+        ["Interview alerts", operatingLedger.metrics.unreadInterviewNotifications],
+        ["Replies", operatingLedger.metrics.employerResponsesNeedingReply],
+        ["Interviews", operatingLedger.metrics.interviews],
+        ["Scheduling", operatingLedger.metrics.interviewSchedulingNeeded],
+        ["Prep", operatingLedger.metrics.interviewPreparationNeeded],
+        ["Connectors", operatingLedger.metrics.connectorReadiness],
+        ["Offers", operatingLedger.metrics.offers],
+        ["Approvals", operatingLedger.metrics.pendingApprovals],
+        ...(canReviewAdminItems ? [["Admin reviews", operatingLedger.metrics.openAdminReviews]] : []),
+      ]
+    : [];
+  const runCommandCenterAction = (route: string) => {
+    if (route === "/dashboard") {
+      handleScanJobs();
+      return;
+    }
+    setLocation(route);
+  };
 
   return (
     <div className="min-h-screen bg-slate-950">
@@ -128,7 +265,7 @@ export default function Dashboard() {
               Welcome to Hire.AI!
             </DialogTitle>
             <DialogDescription className="text-slate-400">
-              Let's get you set up to start receiving job matches automatically.
+              Set up your evidence and policy so Hire.AI can prepare reviewable job-search work.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -155,8 +292,8 @@ export default function Dashboard() {
                 <Send className="h-5 w-5 text-purple-400" />
               </div>
               <div>
-                <h4 className="font-medium text-white">Step 3: Relax & Get Hired</h4>
-                <p className="text-sm text-slate-400">We'll find and apply to matching jobs automatically!</p>
+                <h4 className="font-medium text-white">Step 3: Review Prepared Work</h4>
+                <p className="text-sm text-slate-400">Review matches and materials before confirming any external application handoff.</p>
               </div>
             </div>
           </div>
@@ -287,9 +424,14 @@ export default function Dashboard() {
             variant="outline"
             className="border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/10"
             onClick={handleScanJobs}
+            disabled={runAutonomousAgent.isPending}
           >
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Scan for Jobs
+            {runAutonomousAgent.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-2 h-4 w-4" />
+            )}
+            {runAutonomousAgent.isPending ? "Scanning..." : "Scan for Jobs"}
           </Button>
         </div>
 
@@ -319,6 +461,828 @@ export default function Dashboard() {
           </Card>
         )}
 
+        {commandCenterSummary && (
+          <Card data-testid="command-center-card" className={`mb-8 border ${commandCenterTone}`}>
+            <CardContent className="p-5">
+              <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0 space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" className={commandCenterTone}>
+                      {commandCenterSummary.label}
+                    </Badge>
+                    <Badge variant="outline" className="border-slate-700 text-slate-300">
+                      {commandCenterSummary.openActions} open action{commandCenterSummary.openActions === 1 ? "" : "s"}
+                    </Badge>
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-semibold text-white">Command Center</h2>
+                    <p className="mt-1 text-sm text-slate-300">{commandCenterSummary.headline}</p>
+                    <p className="mt-2 max-w-3xl text-sm text-slate-400">{commandCenterSummary.nextAction}</p>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row lg:w-60 lg:flex-col">
+                  <Button
+                    data-testid="command-center-primary"
+                    className="bg-cyan-600 hover:bg-cyan-500"
+                    onClick={() => runCommandCenterAction(commandCenterSummary.primaryRoute)}
+                    disabled={runAutonomousAgent.isPending && commandCenterSummary.primaryRoute === "/dashboard"}
+                  >
+                    {runAutonomousAgent.isPending && commandCenterSummary.primaryRoute === "/dashboard" ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Target className="mr-2 h-4 w-4" />
+                    )}
+                    {commandCenterSummary.primaryCta}
+                  </Button>
+                  <Button
+                    data-testid="command-center-secondary"
+                    variant="outline"
+                    className="border-slate-700 text-slate-300"
+                    onClick={() => runCommandCenterAction(commandCenterSummary.secondaryRoute)}
+                  >
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    {commandCenterSummary.secondaryCta}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-5 xl:grid-cols-10">
+                {[
+                  ["Approvals", commandCenterSummary.approvalItems, "/review-queue"],
+                  ["Reviews", commandCenterSummary.reviewItems, "/review-queue"],
+                  ["Profile gaps", commandCenterSummary.profileBlockers, "/profile"],
+                  ["Connectors", commandCenterSummary.connectorReadiness, "/profile"],
+                  ["Interviews", commandCenterSummary.interviewSchedulingNeeded, "/review-queue"],
+                  ["Prep", commandCenterSummary.interviewPreparationNeeded, "/review-queue"],
+                  ["Replies", commandCenterSummary.employerResponsesNeedingReply, "/review-queue"],
+                  ["Send handoffs", commandCenterSummary.approvedFollowUpsReadyToSend, "/review-queue"],
+                  ["Follow-ups", commandCenterSummary.followUpsDue, "/applications"],
+                  ["Compliance", commandCenterSummary.complianceItems, successFeeComplianceAction.route],
+                  ["Prepared", commandCenterSummary.preparedApplications, "/applications"],
+                ].map(([label, value, route]) => (
+                  <button
+                    key={String(label)}
+                    data-testid={`command-center-metric-${String(label).toLowerCase().replace(/\s+/g, "-")}`}
+                    type="button"
+                    className="rounded-md border border-slate-800 bg-slate-950/40 p-3 text-left transition hover:border-cyan-500/50 hover:bg-slate-900"
+                    onClick={() => runCommandCenterAction(String(route))}
+                  >
+                    <p className="text-xs text-slate-500">{label}</p>
+                    <p className="mt-1 text-lg font-semibold text-white">{value}</p>
+                  </button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {operatingLedger && (
+          <Card className="bg-slate-900/50 border-slate-800/50 mb-8">
+            <CardHeader>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <CardTitle className="text-white flex items-center gap-2">
+                    <Shield className="h-5 w-5 text-emerald-400" />
+                    Operating Ledger
+                  </CardTitle>
+                  <CardDescription className="text-slate-400 mt-1">
+                    {operatingLedger.campaign.title} · {operatingLedger.campaign.automationMode.replace("_", " ")}
+                  </CardDescription>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Badge
+                    variant="outline"
+                    className={operatingLedger.readiness.autoApplyEligible
+                      ? "border-emerald-500/40 text-emerald-300"
+                      : "border-amber-500/40 text-amber-300"}
+                  >
+                    {operatingLedger.readiness.score}% ready
+                  </Badge>
+                  <Badge variant="outline" className="border-slate-600 text-slate-300">
+                    {operatingLedger.metrics.dailyRemaining} slots left
+                  </Badge>
+                  <Badge
+                    variant="outline"
+                    className={operatingLedger.campaign.status === "active"
+                      ? "border-emerald-500/40 text-emerald-300"
+                      : "border-amber-500/40 text-amber-300"}
+                  >
+                    {operatingLedger.campaign.status}
+                  </Badge>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-8">
+                {operatingMetricItems.map(([label, value]) => (
+                  <div key={label} className="border-l border-slate-700 pl-3">
+                    <p className="text-xs text-slate-500">{label}</p>
+                    <p className="text-xl font-semibold text-white">{value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+                <div className="space-y-2">
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Next operating actions</p>
+                  {operatingLedger.nextActions.slice(0, 4).map((action) => (
+                    <div key={action} className="flex items-start gap-2 text-sm text-slate-300">
+                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+                      <span>{action}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
+                  <Button
+                    data-testid="campaign-status-toggle"
+                    variant="outline"
+                    size="sm"
+                    className={operatingLedger.campaign.status === "active"
+                      ? "border-amber-500/50 text-amber-300 hover:bg-amber-500/10"
+                      : "border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/10"}
+                    onClick={toggleCampaignStatus}
+                    disabled={setCampaignStatus.isPending}
+                  >
+                    {setCampaignStatus.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : operatingLedger.campaign.status === "active" ? (
+                      <Pause className="mr-2 h-4 w-4" />
+                    ) : (
+                      <Play className="mr-2 h-4 w-4" />
+                    )}
+                    {operatingLedger.campaign.status === "active" ? "Pause campaign" : "Resume campaign"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-slate-700 text-slate-300"
+                    onClick={() => setLocation("/applications")}
+                  >
+                    <Briefcase className="mr-2 h-4 w-4" />
+                    Open Ledger
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-slate-700 text-slate-300"
+                    onClick={() => setLocation("/review-queue")}
+                  >
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                    Review Queue
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-slate-700 text-slate-300"
+                    onClick={() => setLocation("/ai-preferences")}
+                  >
+                    <Settings className="mr-2 h-4 w-4" />
+                    Adjust Policy
+                  </Button>
+                </div>
+              </div>
+
+              <Separator className="bg-slate-800" />
+
+              {operatingLedger.queues.interviewNotifications.length > 0 && (
+                <section
+                  data-testid="dashboard-interview-notifications"
+                  aria-live="polite"
+                  className="border-b border-slate-800 pb-5"
+                >
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-white">Interview notifications</p>
+                      <p className="text-xs text-slate-500">
+                        Shown only after a recorded employer interview invitation.
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="w-fit border-blue-500/40 text-blue-300">
+                      {operatingLedger.metrics.unreadInterviewNotifications} unread
+                    </Badge>
+                  </div>
+                  <div className="mt-3 space-y-3">
+                    {operatingLedger.queues.interviewNotifications.map((notification) => (
+                      <div
+                        key={notification.notificationId}
+                        className="flex flex-col gap-3 border-l-2 border-blue-400 bg-slate-950/30 py-2 pl-3 sm:flex-row sm:items-start sm:justify-between"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Bell className="h-4 w-4 text-blue-300" aria-hidden="true" />
+                            <p className="text-sm font-medium text-white">
+                              {notification.job?.title || `Application #${notification.applicationId}`}
+                            </p>
+                            <Badge variant="outline" className="border-blue-500/40 text-blue-300">
+                              Verified interview invite
+                            </Badge>
+                          </div>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {notification.job?.company || "Employer"}
+                            {notification.job?.location ? ` - ${notification.job.location}` : ""}
+                          </p>
+                          <p className="mt-2 line-clamp-2 text-sm text-slate-300">
+                            {notification.summary}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 flex-wrap gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="border-blue-500/40 text-blue-200"
+                            onClick={() => setLocation(getApplicationDeepLink(notification.applicationId, "schedule-interview"))}
+                          >
+                            <Calendar className="mr-2 h-4 w-4" />
+                            Schedule
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-slate-300 hover:text-white"
+                            disabled={markInterviewNotificationRead.isPending}
+                            onClick={() => markInterviewNotificationRead.mutate({ notificationId: notification.notificationId })}
+                          >
+                            <CheckCircle className="mr-2 h-4 w-4" />
+                            Mark read
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              <div className="space-y-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-white">Review Queue</p>
+                    <p className="text-xs text-slate-500">
+                      Consequential actions and blockers waiting for a human decision
+                    </p>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className={reviewQueueCount > 0
+                      ? "w-fit border-amber-500/40 text-amber-300"
+                      : "w-fit border-emerald-500/40 text-emerald-300"}
+                  >
+                    {reviewQueueCount} item{reviewQueueCount === 1 ? "" : "s"}
+                  </Badge>
+                </div>
+
+                {reviewQueueCount > 0 ? (
+                  <div className="grid gap-3 xl:grid-cols-2">
+                    {operatingLedger.queues.pendingApprovals.map((approval) => (
+                      <div
+                        key={`approval-${approval.id}`}
+                        className="rounded-md border border-slate-800 bg-slate-950/40 p-3"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-sm font-medium text-white">{approval.title}</p>
+                              <Badge
+                                variant="outline"
+                                className={getReviewRiskBadgeClass(approval.riskLevel)}
+                              >
+                                {approval.riskLevel}
+                              </Badge>
+                            </div>
+                            <p className="mt-1 text-xs text-slate-500">
+                              {formatApprovalType(approval.approvalType)}
+                            </p>
+                            {approval.description && (
+                              <p className="mt-2 line-clamp-2 text-sm text-slate-300">
+                                {approval.description}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            className="bg-emerald-600 hover:bg-emerald-500"
+                            disabled={resolveApproval.isPending}
+                            onClick={() => handleResolveApproval(approval, "approved")}
+                          >
+                            <CheckCircle className="mr-2 h-4 w-4" />
+                            Approve
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="border-red-500/40 text-red-300 hover:bg-red-500/10"
+                            disabled={resolveApproval.isPending}
+                            onClick={() => handleResolveApproval(approval, "rejected")}
+                          >
+                            <XCircle className="mr-2 h-4 w-4" />
+                            Reject
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+
+                    {operatingLedger.queues.reviewDecisions.map((decision) => {
+                      const actionSummary = getReviewQueueActionSummary("job_decision", decision);
+                      const jobTitle = decision.job?.title || `Job #${decision.jobId}`;
+
+                      return (
+                      <div
+                        key={`decision-${decision.id}`}
+                        data-testid="dashboard-review-decision-card"
+                        className="rounded-md border border-slate-800 bg-slate-950/40 p-3"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-medium text-white">
+                            {jobTitle} needs decision review
+                          </p>
+                          <Badge
+                            variant="outline"
+                            className={getReviewRiskBadgeClass(decision.riskLevel)}
+                          >
+                            {decision.riskLevel}
+                          </Badge>
+                          {actionSummary.approvalGated && (
+                            <Badge variant="outline" className="border-cyan-500/40 text-cyan-300">
+                              Blocks execution
+                            </Badge>
+                          )}
+                          {actionSummary.externalAction === "manual_handoff" && (
+                            <Badge variant="outline" className="border-blue-500/40 text-blue-300">
+                              Manual handoff
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {formatApplicationDecision(decision.decision)}
+                          {decision.applicationId ? ` - Application #${decision.applicationId}` : ""}
+                          {decision.matchScore != null ? ` · ${decision.matchScore}% match` : ""}
+                        </p>
+                        <p className="mt-2 line-clamp-2 text-sm text-slate-300">
+                          {decision.reviewReason || decision.decisionReason || "Review the saved application decision before execution."}
+                        </p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-3 border-slate-700 text-slate-300"
+                          onClick={() => setLocation(actionSummary.route)}
+                        >
+                          <Search className="mr-2 h-4 w-4" />
+                          {actionSummary.cta}
+                        </Button>
+                      </div>
+                      );
+                    })}
+
+                    {operatingLedger.queues.connectorReadiness.map((item) => (
+                      <div
+                        key={`connector-${item.id}`}
+                        data-testid={`dashboard-connector-readiness-${item.id}`}
+                        className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-medium text-white">{item.label}</p>
+                          <Badge
+                            variant="outline"
+                            className={getReviewRiskBadgeClass(item.riskLevel)}
+                          >
+                            {String(item.status).replace(/_/g, " ")}
+                          </Badge>
+                        </div>
+                        <p className="mt-2 line-clamp-3 text-sm text-slate-300">
+                          {item.detail}
+                        </p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-3 border-amber-500/40 text-amber-200"
+                          onClick={() => setLocation("/profile")}
+                        >
+                          <User className="mr-2 h-4 w-4" />
+                          Open Profile
+                        </Button>
+                      </div>
+                    ))}
+
+                    {operatingLedger.queues.interviewScheduling.map((item) => (
+                      <div
+                        key={`interview-scheduling-${item.applicationId}`}
+                        className="rounded-md border border-blue-500/30 bg-blue-500/5 p-3"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-medium text-white">
+                            {item.job?.title || `Application #${item.applicationId}`}
+                          </p>
+                          <Badge variant="outline" className="border-blue-500/40 text-blue-300">
+                            Interview invite
+                          </Badge>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {item.job?.company || "Employer"}{item.job?.location ? ` - ${item.job.location}` : ""}
+                        </p>
+                        <p className="mt-2 line-clamp-2 text-sm text-slate-300">
+                          Add time, channel, interviewer, and notes before Hire.AI continues interview follow-up work.
+                        </p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-3 border-slate-700 text-slate-300"
+                          onClick={() => setLocation(getApplicationDeepLink(item.applicationId, "schedule-interview"))}
+                        >
+                          <Calendar className="mr-2 h-4 w-4" />
+                          Schedule Interview
+                        </Button>
+                      </div>
+                    ))}
+
+                    {operatingLedger.queues.employerResponsesNeedingReply.map((item) => (
+                      <div
+                        key={`employer-response-${item.responseId}`}
+                        className="rounded-md border border-blue-500/30 bg-blue-500/5 p-3"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-medium text-white">
+                            {item.job?.title || `Application #${item.applicationId}`}
+                          </p>
+                          <Badge variant="outline" className="border-blue-500/40 text-blue-300">
+                            {String(item.responseType || "response").replace(/_/g, " ")}
+                          </Badge>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {item.job?.company || "Employer"}{item.job?.location ? ` - ${item.job.location}` : ""}
+                        </p>
+                        <p className="mt-2 line-clamp-2 text-sm text-slate-300">
+                          {item.summary || "Review this employer response before drafting any follow-up."}
+                        </p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-3 border-slate-700 text-slate-300"
+                          onClick={() => setLocation(getApplicationDeepLink(item.applicationId, "employer-response"))}
+                        >
+                          <MessageSquare className="mr-2 h-4 w-4" />
+                          Open Response
+                        </Button>
+                      </div>
+                    ))}
+
+                    {operatingLedger.queues.followUpsDue.map((item) => (
+                      <div
+                        key={`follow-up-due-${item.applicationId}`}
+                        className="rounded-md border border-cyan-500/30 bg-cyan-500/5 p-3"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-medium text-white">
+                            {item.job?.title || `Application #${item.applicationId}`}
+                          </p>
+                          <Badge variant="outline" className="border-cyan-500/40 text-cyan-300">
+                            {String(item.messageType || "follow-up").replace(/_/g, " ")}
+                          </Badge>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {item.job?.company || "Employer"}{item.job?.location ? ` - ${item.job.location}` : ""}
+                        </p>
+                        <p className="mt-2 line-clamp-2 text-sm text-slate-300">
+                          {item.reason || "Draft a timely follow-up before the application goes cold."}
+                        </p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-3 border-slate-700 text-slate-300"
+                          onClick={() => setLocation(getApplicationDeepLink(item.applicationId, "follow-up"))}
+                        >
+                          <Mail className="mr-2 h-4 w-4" />
+                          Open Follow-up
+                        </Button>
+                      </div>
+                    ))}
+
+                    {operatingLedger.readiness.blockers.slice(0, 2).map((blocker) => (
+                      <div
+                        key={`blocker-${blocker.key}`}
+                        className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3"
+                      >
+                        <p className="text-sm font-medium text-amber-100">{blocker.label}</p>
+                        <p className="mt-1 text-sm text-amber-200/80">{blocker.recommendation}</p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-3 border-amber-500/40 text-amber-200"
+                          onClick={() => setLocation("/profile")}
+                        >
+                          <User className="mr-2 h-4 w-4" />
+                          Fix Profile
+                        </Button>
+                      </div>
+                    ))}
+
+                    {operatingLedger.readiness.warnings.slice(0, 2).map((warning) => (
+                      <div
+                        key={`warning-${warning.key}`}
+                        className="rounded-md border border-slate-800 bg-slate-950/40 p-3"
+                      >
+                        <p className="text-sm font-medium text-white">{warning.label}</p>
+                        <p className="mt-1 text-sm text-slate-300">{warning.recommendation}</p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-3 border-slate-700 text-slate-300"
+                          onClick={() => setLocation("/profile")}
+                        >
+                          <User className="mr-2 h-4 w-4" />
+                          Improve Profile
+                        </Button>
+                      </div>
+                    ))}
+
+                    {canReviewAdminItems && operatingLedger.queues.adminReviews.map((review) => (
+                      <div
+                        key={`admin-review-${review.id}`}
+                        className="rounded-md border border-slate-800 bg-slate-950/40 p-3"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-medium text-white">{review.title}</p>
+                          <Badge
+                            variant="outline"
+                            className={getReviewRiskBadgeClass(review.priority)}
+                          >
+                            {review.priority}
+                          </Badge>
+                        </div>
+                        {review.description && (
+                          <p className="mt-2 line-clamp-2 text-sm text-slate-300">
+                            {review.description}
+                          </p>
+                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-3 border-slate-700 text-slate-300"
+                          onClick={() => setLocation("/admin")}
+                        >
+                          <Shield className="mr-2 h-4 w-4" />
+                          Open Admin Review
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3 text-sm text-emerald-300">
+                    <CheckCircle className="h-4 w-4" />
+                    No operating approvals or readiness blockers need attention.
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        <Card data-testid="dashboard-success-fee-compliance" className="bg-slate-900/50 border-slate-800/50 mb-8">
+          <CardHeader>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <CardTitle className="text-white flex items-center gap-2">
+                  <DollarSign className="h-5 w-5 text-cyan-400" />
+                  Success Fee Compliance
+                </CardTitle>
+                <CardDescription className="text-slate-400 mt-1">
+                  Offer attribution, billing approvals, and verification deadlines
+                </CardDescription>
+              </div>
+              <Badge
+                variant="outline"
+                className={successFeeCompliance.status === "needs_attention"
+                  ? "w-fit border-red-500/40 text-red-300"
+                  : successFeeCompliance.status === "due_soon"
+                    ? "w-fit border-amber-500/40 text-amber-300"
+                    : successFeeCompliance.status === "clear"
+                      ? "w-fit border-emerald-500/40 text-emerald-300"
+                      : "w-fit border-slate-600 text-slate-300"}
+              >
+                {successFeeCompliance.label}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              {[
+                ["Active fees", successFeeCompliance.activeFees],
+                ["Monthly fee", `$${(successFeeCompliance.monthlyFeeCents / 100).toFixed(2)}`],
+                ["Offer reviews", successFeeCompliance.pendingOfferAttributions],
+                ["Overdue", successFeeCompliance.overdueVerifications],
+              ].map(([label, value]) => (
+                <div key={label} className="border-l border-slate-700 pl-3">
+                  <p className="text-xs text-slate-500">{label}</p>
+                  <p className="text-xl font-semibold text-white">{value}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline" className="w-fit border-slate-700 text-slate-300">
+                    {successFeeComplianceAction.label}
+                  </Badge>
+                  <Badge
+                    variant="outline"
+                    className={successFeeComplianceAction.approvalGated
+                      ? "w-fit border-amber-500/40 text-amber-300"
+                      : "w-fit border-slate-700 text-slate-300"}
+                  >
+                    {successFeeComplianceAction.approvalGated ? "Approval-gated" : "Internal"}
+                  </Badge>
+                  {successFeeComplianceAction.proofRequired && (
+                    <Badge variant="outline" className="w-fit border-cyan-500/40 text-cyan-300">
+                      Proof required
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex items-start gap-2 text-sm text-slate-300">
+                  {successFeeCompliance.status === "needs_attention" ? (
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
+                  ) : successFeeCompliance.status === "clear" ? (
+                    <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+                  ) : (
+                    <Clock className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+                  )}
+                  <span>{successFeeComplianceAction.detail}</span>
+                </div>
+                {successFeeCompliance.nextVerificationDue && (
+                  <p className="text-xs text-slate-500">
+                    Next verification: {successFeeCompliance.nextVerificationDue.toLocaleDateString()}
+                    {successFeeCompliance.daysUntilNextVerification !== null
+                      ? ` (${successFeeCompliance.daysUntilNextVerification} days)`
+                      : ""}
+                  </p>
+                )}
+              </div>
+              <Button
+                data-testid="dashboard-success-fee-primary"
+                variant="outline"
+                size="sm"
+                className="border-slate-700 text-slate-300"
+                onClick={() => setLocation(successFeeComplianceAction.route)}
+              >
+                <DollarSign className="mr-2 h-4 w-4" />
+                {successFeeComplianceAction.cta}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="grid gap-6 mb-8 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
+        {autonomousPlan && (
+          <Card className="bg-slate-900/50 border-slate-800/50 mb-8">
+            <CardHeader>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <CardTitle className="text-white flex items-center gap-2">
+                    <Activity className="h-5 w-5 text-cyan-400" />
+                    Autonomous Agent
+                  </CardTitle>
+                  <CardDescription className="text-slate-400 mt-1">
+                    {autonomousPlan.mode === "auto_apply"
+                      ? "Using accelerated preparation with final submission review"
+                      : "Preparing matches for review before submission"}
+                  </CardDescription>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setLocation("/ai-preferences")}>
+                    <Settings className="mr-2 h-4 w-4" />
+                    Policy
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setLocation("/jobs")}>
+                    <Search className="mr-2 h-4 w-4" />
+                    Review Jobs
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+                {[
+                  ["Scanned", autonomousPlan.summary.scanned],
+                  ["Eligible", autonomousPlan.summary.eligible],
+                  ["Slots left", autonomousPlan.summary.dailyRemaining],
+                  ["Review", autonomousPlan.summary.queuedForReview],
+                  ["Manual", autonomousPlan.summary.manualApply],
+                  ["Follow-ups", autonomousPlan.summary.followUpsDue],
+                  ["Gates", autonomousPlan.evidenceGates?.length || 0],
+                  ["Expired", autonomousPlan.summary.expiredJobsSkipped || 0],
+                ].map(([label, value]) => (
+                  <div key={label} className="border-l border-slate-700 pl-3">
+                    <p className="text-xs text-slate-500">{label}</p>
+                    <p className="text-xl font-semibold text-white">{value}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-5 flex flex-col gap-2 border-t border-slate-800 pt-4 text-sm sm:flex-row sm:items-center sm:justify-between">
+                <span className="text-slate-400">
+                  {autonomousPlan.summary.dailyRemaining} preparation slots remain in today's policy limit.
+                </span>
+                {autonomousPlan.summary.policyWarnings > 0 && (
+                  <Badge variant="outline" className="w-fit border-amber-500/40 text-amber-300">
+                    {autonomousPlan.summary.policyWarnings} policy warning{autonomousPlan.summary.policyWarnings === 1 ? "" : "s"}
+                  </Badge>
+                )}
+                {autonomousPlan.summary.expiredJobsSkipped > 0 && (
+                  <Badge variant="outline" className="w-fit border-slate-700 text-slate-300">
+                    {autonomousPlan.summary.expiredJobsSkipped} expired posting{autonomousPlan.summary.expiredJobsSkipped === 1 ? "" : "s"} excluded
+                  </Badge>
+                )}
+              </div>
+              {autonomousPlan.evidenceGates?.length > 0 && (
+                <div data-testid="dashboard-autonomous-evidence-gates" className="mt-4 grid gap-2 md:grid-cols-2">
+                  {autonomousPlan.evidenceGates.slice(0, 4).map((gate: any) => (
+                    <div key={gate.id || gate.label} className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3">
+                      <div className="flex items-center gap-2 text-sm font-medium text-amber-200">
+                        <AlertCircle className="h-4 w-4" />
+                        {gate.label || "Evidence gate"}
+                      </div>
+                      <p className="mt-1 text-xs text-amber-100/80">{gate.detail}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+          {profileReadiness && (
+            <Card className="bg-slate-900/50 border-slate-800/50 mb-8">
+              <CardHeader>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <CardTitle className="text-white flex items-center gap-2">
+                      <Shield className="h-5 w-5 text-emerald-400" />
+                      Profile Readiness
+                    </CardTitle>
+                    <CardDescription className="text-slate-400 mt-1">
+                      Candidate evidence gate for safe autonomous preparation
+                    </CardDescription>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className={profileReadiness.autoApplyEligible
+                      ? "border-emerald-500/40 text-emerald-300"
+                      : "border-amber-500/40 text-amber-300"}
+                  >
+                    {profileReadiness.autoApplyEligible ? "Automation ready" : "Needs input"}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <div className="mb-2 flex items-center justify-between text-sm">
+                    <span className="text-slate-300">Readiness score</span>
+                    <span className="font-semibold text-white">{profileReadiness.score}%</span>
+                  </div>
+                  <Progress value={profileReadiness.score} className="h-2" />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="rounded-md border border-slate-800 bg-slate-950/40 p-3">
+                    <p className="text-xs text-slate-500">Blockers</p>
+                    <p className="text-xl font-semibold text-white">{profileReadiness.blockers.length}</p>
+                  </div>
+                  <div className="rounded-md border border-slate-800 bg-slate-950/40 p-3">
+                    <p className="text-xs text-slate-500">Warnings</p>
+                    <p className="text-xl font-semibold text-white">{profileReadiness.warnings.length}</p>
+                  </div>
+                </div>
+
+                {profileReadiness.nextActions.length > 0 ? (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Next fixes</p>
+                    {profileReadiness.nextActions.slice(0, 3).map((action) => (
+                      <div key={action} className="flex items-start gap-2 text-sm text-slate-300">
+                        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+                        <span>{action}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-sm text-emerald-300">
+                    <CheckCircle className="h-4 w-4" />
+                    Profile has the core evidence needed for review-safe automation.
+                  </div>
+                )}
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full border-slate-700 text-slate-300"
+                  onClick={() => setLocation("/profile")}
+                >
+                  <User className="mr-2 h-4 w-4" />
+                  Improve Profile
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+
         {/* Health Metrics */}
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           <Card className="bg-slate-900/50 border-slate-800/50">
@@ -335,7 +1299,7 @@ export default function Dashboard() {
                 {appsLoading ? "..." : activeApplications}
               </div>
               <p className="text-xs text-slate-400">
-                {totalApplications > 0 ? `${totalApplications} total sent` : "No applications yet"}
+                {totalApplications > 0 ? `${totalApplications} tracked, ${submittedApplications.length} submitted` : "No applications yet"}
               </p>
             </CardContent>
           </Card>
@@ -378,7 +1342,7 @@ export default function Dashboard() {
                 {jobs?.length || 0}
               </div>
               <p className="text-xs text-slate-400">
-                Across 50+ platforms
+                From configured supported sources
               </p>
             </CardContent>
           </Card>
@@ -403,16 +1367,16 @@ export default function Dashboard() {
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-300">Applications Sent</span>
-                  <span className="text-cyan-400 font-semibold">{totalApplications}</span>
+                  <span className="text-cyan-400 font-semibold">{submittedApplications.length}</span>
                 </div>
                 <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
                   <div 
                     className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full transition-all duration-500" 
-                    style={{ width: `${Math.min(totalApplications * 2, 100)}%` }}
+                    style={{ width: `${Math.min(submittedApplications.length * 2, 100)}%` }}
                   />
                 </div>
                 <p className="text-xs text-slate-500">
-                  {totalApplications === 0 ? "Upload resume to start auto-applying" : "Keep applying to increase chances"}
+                  {submittedApplications.length === 0 ? "No confirmed submissions yet" : "Confirmed employer submissions"}
                 </p>
               </div>
 
@@ -473,16 +1437,20 @@ export default function Dashboard() {
                         app.status === 'viewed' ? 'bg-blue-500/10' :
                         'bg-cyan-500/10'
                       }`}>
-                        {app.status === 'interview' ? <Calendar className="h-4 w-4 text-green-400" /> :
+                        {app.status === 'pending' ? <Clock className="h-4 w-4 text-slate-400" /> :
+                         app.status === 'interview' ? <Calendar className="h-4 w-4 text-green-400" /> :
                          app.status === 'offer' ? <Briefcase className="h-4 w-4 text-yellow-400" /> :
                          app.status === 'viewed' ? <Eye className="h-4 w-4 text-blue-400" /> :
                          <Send className="h-4 w-4 text-cyan-400" />}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm text-white font-medium capitalize">{app.status}</p>
+                        <p className="text-sm text-white font-medium">
+                          {app.status === "pending" ? "Queued" : app.status}
+                        </p>
                         <p className="text-xs text-slate-400 truncate">Job ID: {app.jobId}</p>
                         <p className="text-xs text-slate-500 mt-1">
-                          {app.appliedDate ? new Date(app.appliedDate).toLocaleDateString() : 'Recently'}
+                          {app.status === "pending" ? "Queued" : "Applied"}{" "}
+                          {new Date(app.appliedDate || app.createdAt).toLocaleDateString()}
                         </p>
                       </div>
                     </div>
@@ -532,7 +1500,7 @@ export default function Dashboard() {
                   All ({applications?.length || 0})
                 </TabsTrigger>
                 <TabsTrigger value="active" className="data-[state=active]:bg-blue-900/50">
-                  Active ({applications?.filter(a => ["pending", "applied", "viewed", "interview"].includes(a.status)).length || 0})
+                  Active ({applications?.filter(a => ["pending", "applied", "viewed", "interview"].includes(a.status || "")).length || 0})
                 </TabsTrigger>
                 <TabsTrigger value="interviewing" className="data-[state=active]:bg-amber-900/50">
                   Interviewing ({applications?.filter(a => a.status === "interview").length || 0})
@@ -549,7 +1517,7 @@ export default function Dashboard() {
                     {applications
                       .filter(app => {
                         if (activeTab === "all") return true;
-                        if (activeTab === "active") return ["pending", "applied", "viewed", "interview"].includes(app.status);
+                        if (activeTab === "active") return ["pending", "applied", "viewed", "interview"].includes(app.status || "");
                         if (activeTab === "interviewing") return app.status === "interview";
                         return true;
                       })
@@ -568,7 +1536,7 @@ export default function Dashboard() {
                                     {app.job?.title || "Job Title"}
                                   </h3>
                                   <Badge variant="outline" className="text-xs">
-                                    <span className="capitalize">{app.status}</span>
+                                    <span className="capitalize">{app.status === "pending" ? "queued" : app.status}</span>
                                   </Badge>
                                 </div>
                                 <div className="flex items-center gap-3 text-sm text-slate-400 mb-2">
@@ -583,7 +1551,8 @@ export default function Dashboard() {
                                 </div>
                                 <div className="flex items-center gap-2 text-xs text-slate-500">
                                   <Calendar className="w-3 h-3" />
-                                  Applied {new Date(app.appliedAt).toLocaleDateString()}
+                                  {app.status === "pending" ? "Queued" : "Applied"}{" "}
+                                  {new Date(app.appliedDate || app.createdAt).toLocaleDateString()}
                                 </div>
                               </div>
                             </div>
@@ -628,7 +1597,7 @@ export default function Dashboard() {
                       {selectedApplication.job?.company || "Company"}
                     </span>
                     <Badge variant="outline" className="capitalize">
-                      {selectedApplication.status}
+                      {selectedApplication.status === "pending" ? "queued" : selectedApplication.status}
                     </Badge>
                   </DialogDescription>
                 </DialogHeader>
@@ -638,7 +1607,8 @@ export default function Dashboard() {
                     <div className="flex flex-wrap gap-2">
                       <Badge variant="secondary" className="bg-slate-800">
                         <Calendar className="w-3 h-3 mr-1" />
-                        Applied {new Date(selectedApplication.appliedAt).toLocaleDateString()}
+                        {selectedApplication.status === "pending" ? "Queued" : "Applied"}{" "}
+                        {new Date(selectedApplication.appliedDate || selectedApplication.createdAt).toLocaleDateString()}
                       </Badge>
                       {selectedApplication.job?.salaryMin && (
                         <Badge variant="secondary" className="bg-slate-800">

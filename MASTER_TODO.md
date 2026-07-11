@@ -102,27 +102,26 @@ This document outlines ALL remaining tasks to make Hire.AI V2 fully featured and
 
 ## 🟡 HIGH PRIORITY - Automated Application System
 
-### 7. Browser Automation Setup
-- [ ] **Install Puppeteer or Playwright** - Add to package.json
-- [ ] **Set up headless browser infrastructure** - Configure browser pool
-- [ ] **Implement browser session management** - Handle multiple concurrent applications
-- [ ] **Add proxy rotation** - Avoid IP blocking from job sites
+### 7. Controlled Employer-Portal Handoff
+- [x] **Keep browser automation disabled** - Do not use stealth browsing, proxies, or anti-abuse evasion.
+- [x] **Require user-controlled portal sessions** - Login and CAPTCHA challenges stay with the job seeker.
+- [x] **Record approval before handoff** - External submission is not treated as completed without an explicit user decision.
+- [x] **Capture deterministic confirmation evidence** - Status changes require portal, email, or manual confirmation evidence.
 
-### 8. ATS-Specific Automation
-- [ ] **Greenhouse automation** - Form detection, filling, submission
-- [ ] **Lever automation** - Form detection, filling, submission
-- [ ] **Workday automation** - Complex multi-page form handling
-- [ ] **Taleo automation** - Legacy system handling
-- [ ] **SmartRecruiters automation** - Form detection, filling, submission
+### 8. ATS-Specific Handoff Guidance
+- [x] **Greenhouse classification** - Prepare material and open a reviewed manual handoff.
+- [x] **Lever classification** - Prepare material and open a reviewed manual handoff.
+- [x] **Workday classification** - Keep login and multi-page completion on the employer portal.
+- [x] **Taleo classification** - Keep legacy portal completion on the employer portal.
+- [x] **SmartRecruiters classification** - Prepare material without sending or filling external forms.
 
-### 9. Application Automation Features
-- [ ] **Form field detection** - AI-powered field identification
-- [ ] **Auto-fill logic** - Map user data to form fields
-- [ ] **CAPTCHA solving integration** - 2Captcha or Anti-Captcha service
-- [ ] **Screenshot capture** - Save proof of application submission
-- [ ] **Confirmation email parsing** - Extract confirmation IDs from emails
-- [ ] **Application retry logic** - Retry failed applications
-- [ ] **Rate limiting per platform** - Avoid spam detection (max X applications per day)
+### 9. Application Handoff Features
+- [x] **Material review** - Show tailored material in the application ledger before handoff.
+- [x] **Explicit approval** - Keep high-risk submission and message actions approval-gated.
+- [x] **Manual CAPTCHA and login** - Never outsource or bypass employer controls.
+- [x] **Confirmation evidence** - Store deterministic portal, email, or manual proof after submission.
+- [x] **No external retry loop** - Do not repeatedly target employer portals without a user action.
+- [x] **Preparation limits** - Bound internal preparation without rate-limit evasion.
 
 ### 10. Follow-up Automation
 - [ ] **Generate follow-up emails** - AI-generated personalized follow-ups
@@ -349,7 +348,7 @@ This document outlines ALL remaining tasks to make Hire.AI V2 fully featured and
 
 ### Recommended Approach:
 1. **Phase 1 (Weeks 1-4)**: Complete all 50 platform scrapers
-2. **Phase 2 (Weeks 5-8)**: Implement browser automation for top 3 ATS systems
+2. **Phase 2 (Weeks 5-8)**: Expand approval-gated employer-portal handoff guidance for top ATS systems
 3. **Phase 3 (Weeks 9-12)**: Build out job search, applications, and profile pages
 4. **Phase 4 (Weeks 13-16)**: Add AI-powered features (salary, interview prep, networking)
 5. **Phase 5 (Weeks 17-20)**: Testing, documentation, deployment prep

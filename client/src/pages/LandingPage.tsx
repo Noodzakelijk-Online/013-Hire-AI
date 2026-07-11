@@ -1,22 +1,9 @@
 import { Button } from "@/components/ui/button";
 import { getLoginUrl } from "@/const";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { trpc } from "@/lib/trpc";
-import { Activity, Rocket, ArrowRight, Search, FileText, Send, Star, Quote, Globe, Heart, Calendar, Trophy, Menu, X, ChevronDown } from "lucide-react";
+import { Activity, Rocket, ArrowRight, Search, FileText, Send, Globe, Menu, X, ChevronDown, ShieldCheck } from "lucide-react";
 import { useLocation } from "wouter";
-import { useRef, useEffect, useState } from "react";
-
-// Activity types for the live feed
-type ActivityItem = {
-  id: number;
-  initials: string;
-  action: string;
-  highlight: string;
-  highlightColor: string;
-  time: string;
-  gradientFrom: string;
-  gradientTo: string;
-};
+import { useRef, useState } from "react";
 
 export default function LandingPage() {
   const [, setLocation] = useLocation();
@@ -26,113 +13,6 @@ export default function LandingPage() {
   const faqRef = useRef<HTMLElement>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   
-  // Impact stats state
-  const [impactStats] = useState({
-    totalApplications: 127543,
-    interviewsScheduled: 8921,
-    offersReceived: 2547,
-  });
-  
-  // Sample activity pool for animation (applications, interviews, and job matches only - no offers since that's user's responsibility)
-  const activityPool: ActivityItem[] = [
-    { id: 1, initials: "JM", action: "Applied to", highlight: "Senior Developer at Stripe", highlightColor: "text-cyan-400", time: "just now", gradientFrom: "from-cyan-400", gradientTo: "to-blue-500" },
-    { id: 2, initials: "SK", action: "Got interview at", highlight: "Shopify", highlightColor: "text-green-400", time: "just now", gradientFrom: "from-purple-400", gradientTo: "to-pink-500" },
-    { id: 3, initials: "AR", action: "Matched with", highlight: "47 new jobs", highlightColor: "text-cyan-400", time: "just now", gradientFrom: "from-green-400", gradientTo: "to-emerald-500" },
-    { id: 4, initials: "LT", action: "Applied to", highlight: "Backend Engineer at Notion", highlightColor: "text-cyan-400", time: "just now", gradientFrom: "from-orange-400", gradientTo: "to-red-500" },
-    { id: 5, initials: "MK", action: "Applied to", highlight: "Product Manager at Google", highlightColor: "text-cyan-400", time: "just now", gradientFrom: "from-blue-400", gradientTo: "to-indigo-500" },
-    { id: 6, initials: "RP", action: "Got interview at", highlight: "Meta", highlightColor: "text-green-400", time: "just now", gradientFrom: "from-pink-400", gradientTo: "to-rose-500" },
-    { id: 7, initials: "TC", action: "Applied to", highlight: "Data Scientist at Netflix", highlightColor: "text-cyan-400", time: "just now", gradientFrom: "from-red-400", gradientTo: "to-orange-500" },
-    { id: 8, initials: "AW", action: "Matched with", highlight: "23 new jobs", highlightColor: "text-cyan-400", time: "just now", gradientFrom: "from-teal-400", gradientTo: "to-cyan-500" },
-    { id: 9, initials: "BL", action: "Got interview at", highlight: "Airbnb", highlightColor: "text-green-400", time: "just now", gradientFrom: "from-amber-400", gradientTo: "to-yellow-500" },
-    { id: 10, initials: "CD", action: "Applied to", highlight: "UX Designer at Figma", highlightColor: "text-cyan-400", time: "just now", gradientFrom: "from-violet-400", gradientTo: "to-purple-500" },
-    { id: 11, initials: "EF", action: "Got interview at", highlight: "Spotify", highlightColor: "text-green-400", time: "just now", gradientFrom: "from-lime-400", gradientTo: "to-green-500" },
-    { id: 12, initials: "GH", action: "Applied to", highlight: "Engineer at Tesla", highlightColor: "text-cyan-400", time: "just now", gradientFrom: "from-sky-400", gradientTo: "to-blue-500" },
-  ];
-  
-  // Real-time activity state with animation
-  const [activities, setActivities] = useState<ActivityItem[]>(activityPool.slice(0, 4));
-  const [activityIndex, setActivityIndex] = useState(4);
-  
-  // Animate new activities appearing - smooth update without shaking
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setActivities(prev => {
-        const newActivity = {
-          ...activityPool[activityIndex % activityPool.length],
-          id: Date.now(),
-          time: "just now"
-        };
-        // Add new item at top, remove last item
-        return [newActivity, ...prev.slice(0, 3)];
-      });
-      setActivityIndex(prev => prev + 1);
-    }, 3000); // New activity every 3 seconds
-    
-    return () => clearInterval(interval);
-  }, [activityIndex]);
-  
-  // Update time stamps periodically
-  useEffect(() => {
-    const timeInterval = setInterval(() => {
-      setActivities(prev => prev.map((activity, index) => ({
-        ...activity,
-        time: index === 0 ? "just now" : 
-              index === 1 ? "3 seconds ago" : 
-              index === 2 ? "6 seconds ago" : 
-              "9 seconds ago"
-      })));
-    }, 3000);
-    
-    return () => clearInterval(timeInterval);
-  }, []);
-  
-  // Fetch real activity data from API
-  const { data: recentApplications } = trpc.applications.list.useQuery(undefined, {
-    enabled: true,
-    refetchInterval: 30000, // Refresh every 30 seconds
-  });
-  
-  // Update activities with real data when available
-  useEffect(() => {
-    if (recentApplications && recentApplications.length > 0) {
-      const realActivities: ActivityItem[] = recentApplications.slice(0, 4).map((app, index) => {
-        const colors = [
-          { from: "from-cyan-400", to: "to-blue-500" },
-          { from: "from-purple-400", to: "to-pink-500" },
-          { from: "from-green-400", to: "to-emerald-500" },
-          { from: "from-orange-400", to: "to-red-500" },
-        ];
-        const color = colors[index % colors.length];
-        const initials = "U" + (index + 1);
-        const timeAgo = getTimeAgo(app.appliedDate ? new Date(app.appliedDate) : new Date());
-        
-        return {
-          id: app.id,
-          initials,
-          action: app.status === 'interview' ? "Got interview at" : "Applied to",
-          highlight: "a new position",
-          highlightColor: app.status === 'interview' ? "text-green-400" : "text-cyan-400",
-          time: timeAgo,
-          gradientFrom: color.from,
-          gradientTo: color.to,
-        };
-      });
-      if (realActivities.length > 0) {
-        setActivities(realActivities);
-      }
-    }
-  }, [recentApplications]);
-  
-  function getTimeAgo(date: Date): string {
-    const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
-    if (seconds < 60) return `${seconds} seconds ago`;
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes} minutes ago`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
-    const days = Math.floor(hours / 24);
-    return `${days} day${days > 1 ? 's' : ''} ago`;
-  }
 
   const handleGetStarted = () => {
     if (isAuthenticated) {
@@ -237,12 +117,11 @@ export default function LandingPage() {
           <div className="space-y-6">
             <h1 className="text-4xl lg:text-5xl font-bold leading-tight">
               <span className="bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500 bg-clip-text text-transparent">
-                Unemployment no more.
+                Your job search, under control.
               </span>
             </h1>
             <p className="text-xl text-slate-300 leading-relaxed">
-              Every day without a job is a day too long. We're on a mission to end unemployment 
-              by connecting you with opportunities across 50+ platforms and applying on your behalf—automatically.
+              Discover roles from configured sources, build tailored materials, and keep applications, follow-ups, and responses in one reviewable operating ledger.
             </p>
             <div className="flex flex-col sm:flex-row gap-4">
               <Button
@@ -250,7 +129,7 @@ export default function LandingPage() {
                 className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white px-8 text-lg"
                 onClick={handleGetStarted}
               >
-                {isAuthenticated ? "Go to Dashboard" : "Start Getting Hired"}
+                {isAuthenticated ? "Go to Dashboard" : "Build Your Search Workspace"}
                 <Rocket className="ml-2 h-5 w-5" />
               </Button>
               <Button
@@ -264,62 +143,34 @@ export default function LandingPage() {
               </Button>
             </div>
             
-            {/* Social Proof */}
-            <div className="flex items-center gap-6 pt-4">
-              <div className="flex -space-x-2">
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <div key={i} className={`w-10 h-10 rounded-full border-2 border-slate-900 bg-gradient-to-br ${
-                    i === 1 ? 'from-cyan-400 to-blue-500' :
-                    i === 2 ? 'from-purple-400 to-pink-500' :
-                    i === 3 ? 'from-green-400 to-emerald-500' :
-                    i === 4 ? 'from-orange-400 to-red-500' :
-                    'from-blue-400 to-indigo-500'
-                  }`} />
-                ))}
-              </div>
-              <div className="text-sm text-slate-400">
-                <span className="text-white font-semibold">2,500+</span> job seekers already hired
-              </div>
+            <div className="flex items-center gap-3 pt-4 text-sm text-slate-300">
+              <ShieldCheck className="h-5 w-5 text-emerald-400" />
+              <span>External applications and follow-ups stay behind explicit approval and confirmation steps.</span>
             </div>
           </div>
 
-          {/* Live Activity Feed - Connected to Real Data */}
           <div className="relative">
             <div className="absolute -inset-4 bg-gradient-to-r from-cyan-500/20 via-blue-500/20 to-purple-500/20 rounded-3xl blur-xl" />
             <div className="relative bg-gradient-to-br from-slate-900/90 to-slate-800/90 backdrop-blur-sm border border-slate-700/50 rounded-2xl p-8 shadow-2xl">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between mb-6">
-                  <span className="text-white font-semibold">Live Activity</span>
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                    <span className="text-green-400 text-sm">Active now</span>
-                  </div>
+              <div className="space-y-6">
+                <div>
+                  <p className="text-sm font-medium text-cyan-300">Operating model</p>
+                  <h2 className="mt-2 text-2xl font-semibold text-white">Prepare, review, and record every next step.</h2>
                 </div>
-                
-                {/* Activity Items - Smooth animated feed with fixed height */}
-                <div className="relative h-[280px] overflow-hidden">
-                  <div className="space-y-3">
-                    {activities.map((activity, index) => (
-                      <div 
-                        key={activity.id} 
-                        className="flex items-center gap-3 bg-slate-800/50 rounded-lg p-3 transition-all duration-500 ease-out"
-                        style={{
-                          opacity: 1,
-                          transform: 'translateY(0)',
-                        }}
-                      >
-                        <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${activity.gradientFrom} ${activity.gradientTo} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
-                          {activity.initials}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-slate-200 text-sm truncate">
-                            {activity.action} <span className={activity.highlightColor}>{activity.highlight}</span>
-                          </p>
-                          <p className="text-slate-500 text-xs">{activity.time}</p>
-                        </div>
+                <div className="space-y-4">
+                  {[
+                    ["1", "Versioned candidate evidence", "Resume versions and profile data remain attributable to each prepared application."],
+                    ["2", "Source-aware job discovery", "Configured supported sources feed normalized listings and duplicate relationships."],
+                    ["3", "Review-gated execution", "Hire.AI prepares decisions and drafts; users confirm consequential external actions."],
+                  ].map(([step, title, detail]) => (
+                    <div key={step} className="flex gap-4 border-t border-slate-700/60 pt-4 first:border-t-0 first:pt-0">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-cyan-500/15 text-sm font-semibold text-cyan-300">{step}</span>
+                      <div>
+                        <p className="font-medium text-white">{title}</p>
+                        <p className="mt-1 text-sm leading-6 text-slate-400">{detail}</p>
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -329,75 +180,27 @@ export default function LandingPage() {
 
 
 
-      {/* Testimonials Section */}
+      {/* Operating principles */}
       <section className="container mx-auto px-4 py-20">
         <div className="text-center mb-16">
-          <h2 className="text-4xl font-bold text-white mb-4">What Our Users Say</h2>
-          <p className="text-xl text-slate-400">Real stories from real job seekers</p>
+          <h2 className="text-4xl font-bold text-white mb-4">Designed for accountable job searching</h2>
+          <p className="text-xl text-slate-400">The system records why work was prepared and what still needs your decision.</p>
         </div>
         
         <div className="grid md:grid-cols-3 gap-8">
-          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-6">
-            <div className="flex items-center gap-4 mb-4">
-              <img 
-                src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=face" 
-                alt="Marcus Johnson"
-                className="w-12 h-12 rounded-full object-cover"
-              />
-              <div>
-                <p className="text-white font-semibold">Marcus Johnson</p>
-                <p className="text-slate-400 text-sm">Software Engineer</p>
-              </div>
-            </div>
-            <div className="flex gap-1 mb-3">
-              {[1,2,3,4,5].map(i => <Star key={i} className="h-4 w-4 fill-yellow-400 text-yellow-400" />)}
-            </div>
-            <Quote className="h-6 w-6 text-cyan-400/50 mb-2" />
-            <p className="text-slate-300">
-              "I used to spend 4 hours daily searching job boards. Now Hire.AI does it for me while I focus on interview prep. Landed my dream job at a FAANG company!"
-            </p>
+          <div className="border-t border-slate-700/60 pt-6">
+            <p className="text-lg font-semibold text-white">Evidence before action</p>
+            <p className="mt-3 leading-7 text-slate-400">Prepared applications retain the resume version, profile snapshot, decision rationale, and review state used to create them.</p>
           </div>
           
-          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-6">
-            <div className="flex items-center gap-4 mb-4">
-              <img 
-                src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop&crop=face" 
-                alt="Sarah Kim"
-                className="w-12 h-12 rounded-full object-cover"
-              />
-              <div>
-                <p className="text-white font-semibold">Sarah Kim</p>
-                <p className="text-slate-400 text-sm">Product Designer</p>
-              </div>
-            </div>
-            <div className="flex gap-1 mb-3">
-              {[1,2,3,4,5].map(i => <Star key={i} className="h-4 w-4 fill-yellow-400 text-yellow-400" />)}
-            </div>
-            <Quote className="h-6 w-6 text-green-400/50 mb-2" />
-            <p className="text-slate-300">
-              "The auto-apply feature is a game changer. I went from 2 interviews a month to 6 in my first week! The AI matching is scary accurate."
-            </p>
+          <div className="border-t border-slate-700/60 pt-6">
+            <p className="text-lg font-semibold text-white">Control at external boundaries</p>
+            <p className="mt-3 leading-7 text-slate-400">Application submission and follow-up delivery require explicit approval and a confirmed handoff. The ledger does not invent submission evidence.</p>
           </div>
           
-          <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800/50 rounded-xl p-6">
-            <div className="flex items-center gap-4 mb-4">
-              <img 
-                src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop&crop=face" 
-                alt="David Chen"
-                className="w-12 h-12 rounded-full object-cover"
-              />
-              <div>
-                <p className="text-white font-semibold">David Chen</p>
-                <p className="text-slate-400 text-sm">Data Scientist</p>
-              </div>
-            </div>
-            <div className="flex gap-1 mb-3">
-              {[1,2,3,4,5].map(i => <Star key={i} className="h-4 w-4 fill-yellow-400 text-yellow-400" />)}
-            </div>
-            <Quote className="h-6 w-6 text-purple-400/50 mb-2" />
-            <p className="text-slate-300">
-              "Every job suggestion feels like it was written for me. Got 3 offers in 2 weeks after struggling for months on my own. Absolutely worth it!"
-            </p>
+          <div className="border-t border-slate-700/60 pt-6">
+            <p className="text-lg font-semibold text-white">One operating record</p>
+            <p className="mt-3 leading-7 text-slate-400">Responses, interviews, offers, follow-ups, and compliance work are connected to the originating application for clear next actions.</p>
           </div>
         </div>
       </section>
@@ -406,7 +209,7 @@ export default function LandingPage() {
       <section className="container mx-auto px-4 py-20" ref={featuresRef}>
         <div className="text-center mb-16">
           <h2 className="text-4xl font-bold text-white mb-4">How It Works</h2>
-          <p className="text-xl text-slate-400">Three simple steps to your dream job</p>
+          <p className="text-xl text-slate-400">A controlled workflow from candidate evidence to external handoff</p>
         </div>
 
         <div className="grid md:grid-cols-3 gap-8">
@@ -416,9 +219,9 @@ export default function LandingPage() {
               <div className="h-16 w-16 rounded-2xl bg-cyan-500/10 flex items-center justify-center mb-6">
                 <FileText className="h-8 w-8 text-cyan-400" />
               </div>
-              <h3 className="text-xl font-semibold text-white mb-3">Upload Your Resume</h3>
+              <h3 className="text-xl font-semibold text-white mb-3">Import Candidate Evidence</h3>
               <p className="text-slate-400">
-                Our AI extracts your skills, experience, and preferences to understand exactly what you're looking for.
+                Import a resume version, then review the skills, history, and preferences that inform future application preparation.
               </p>
             </div>
           </div>
@@ -429,15 +232,10 @@ export default function LandingPage() {
               <div className="h-16 w-16 rounded-2xl bg-blue-500/10 flex items-center justify-center mb-6">
                 <Search className="h-8 w-8 text-blue-400" />
               </div>
-              <h3 className="text-xl font-semibold text-white mb-3">AI Scans 50+ Platforms</h3>
-              <p className="text-slate-400 mb-4">
-                We continuously scan FlexJobs, LinkedIn, Remote.co, We Work Remotely, Indeed, and 45+ more platforms.
+              <h3 className="text-xl font-semibold text-white mb-3">Scan Configured Sources</h3>
+              <p className="text-slate-400">
+                Choose from the supported sources available to your workspace. Hire.AI normalizes listings and keeps duplicate relationships visible.
               </p>
-              <div className="flex flex-wrap gap-2">
-                {["FlexJobs", "LinkedIn", "Indeed", "Remote.co", "+45"].map((p) => (
-                  <span key={p} className="text-xs bg-slate-800 text-slate-400 px-2 py-1 rounded">{p}</span>
-                ))}
-              </div>
             </div>
           </div>
 
@@ -447,9 +245,9 @@ export default function LandingPage() {
               <div className="h-16 w-16 rounded-2xl bg-purple-500/10 flex items-center justify-center mb-6">
                 <Send className="h-8 w-8 text-purple-400" />
               </div>
-              <h3 className="text-xl font-semibold text-white mb-3">Auto-Apply While You Sleep</h3>
+              <h3 className="text-xl font-semibold text-white mb-3">Review Prepared Work</h3>
               <p className="text-slate-400">
-                Hire.AI automatically applies with tailored resumes and cover letters. Wake up to interview invites!
+                Review matches, materials, follow-up drafts, and evidence before confirming a consequential external handoff.
               </p>
             </div>
           </div>
@@ -468,28 +266,28 @@ export default function LandingPage() {
         <div className="max-w-3xl mx-auto space-y-4">
           {[
             {
-              question: "How does automated job application work?",
-              answer: "Hire.AI uses advanced browser automation to fill out job applications on your behalf. We detect the application system (Greenhouse, Lever, Workday, etc.), map your profile data to the form fields, and submit applications with your customized resume and cover letter. You maintain full control and can review applications before they're sent."
+              question: "How does Hire.AI handle applications?",
+              answer: "Hire.AI prepares match decisions and application materials from your profile evidence. External application submission remains a separate, review-gated handoff that you explicitly approve and confirm."
             },
             {
               question: "Is my data safe and secure?",
-              answer: "Absolutely. Your resume and personal data are encrypted and stored securely. We never share your information with third parties. You can delete your account and all associated data at any time. We're committed to your privacy and comply with GDPR and other data protection regulations."
+              answer: "Resume versions and application evidence are tracked so you can see what was used. External inbox and cloud connectors remain unavailable until explicit provider authorization is completed. Do not treat the current prototype as a finished production data-processing service."
             },
             {
               question: "Will employers know I'm using an automated service?",
-              answer: "No. Applications are submitted just like you would do manually—through the company's official application portal. Each application is personalized with your unique cover letter and tailored resume. There's no indication that automation was used."
+              answer: "Hire.AI does not silently submit applications. You control the external handoff through the intended employer channel after reviewing the prepared materials."
             },
             {
-              question: "How many jobs can Hire.AI apply to per day?",
-              answer: "We apply at a human-like pace to avoid detection and ensure quality. Typically, this means 10-20 applications per day depending on your preferences. You can set limits and prioritize certain types of jobs or companies."
+              question: "How many applications can Hire.AI prepare per day?",
+              answer: "You control the daily preparation limit. Hire.AI prioritizes high-fit roles and adds them to a review queue before any final submission."
             },
             {
               question: "What job platforms do you support?",
-              answer: "We scan and apply to jobs from 50+ platforms including LinkedIn, Indeed, FlexJobs, We Work Remotely, Remote.co, Greenhouse, Lever, and many more. Our list is constantly growing as we add new integrations."
+              answer: "We aggregate opportunities from supported sources and prepare review workflows for common ATS platforms such as Greenhouse and Lever. Final submission remains under your control."
             },
             {
               question: "Can I review applications before they're sent?",
-              answer: "Yes! You can enable review mode where you approve each application before it's submitted. You can also set up auto-apply for jobs that match your criteria perfectly while reviewing others manually."
+              answer: "Yes. Every prepared application remains in a review queue until you verify the details and submit it."
             },
           ].map((faq, index) => (
             <details 
@@ -512,20 +310,20 @@ export default function LandingPage() {
       <section className="container mx-auto px-4 py-20">
         <div className="text-center space-y-6">
           <h2 className="text-4xl lg:text-5xl font-bold text-white">
-            Ready to Let Jobs Find You?
+            Ready to run your job search from one place?
           </h2>
           <p className="text-xl text-slate-400 max-w-2xl mx-auto">
-            Join thousands of job seekers who wake up to interview invites instead of endless scrolling
+            Build a traceable workflow for job discovery, preparation, approvals, and follow-up.
           </p>
           <Button
             size="lg"
             className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white px-12 py-6 text-lg"
             onClick={handleGetStarted}
           >
-            {isAuthenticated ? "Go to Dashboard" : "Start Getting Hired — It's Free"}
+            {isAuthenticated ? "Go to Dashboard" : "Build Your Search Workspace"}
             <Rocket className="ml-2 h-5 w-5" />
           </Button>
-          <p className="text-sm text-slate-500">No credit card required. Set up in 2 minutes.</p>
+          <p className="text-sm text-slate-500">Set up your profile evidence and job-search policy before preparing work.</p>
         </div>
       </section>
 

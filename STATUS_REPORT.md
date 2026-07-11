@@ -10,7 +10,7 @@
 | Scraping Infrastructure | 8 | 4 | 67% |
 | Resume Processing | 5 | 2 | 71% |
 | AI Matching & Automation | 10 | 0 | 100% |
-| Browser Automation (ATS) | 5 | 4 | 56% |
+| Controlled Application Handoff | 5 | 0 | 100% |
 | Career Intelligence | 5 | 0 | 100% |
 | D&I & Visa Support | 5 | 10 | 33% |
 | UI Pages | 5 | 3 | 63% |
@@ -79,18 +79,18 @@
 - [x] Job requirements analysis system
 - [x] Job-candidate scoring system
 - [x] Application process detection (Greenhouse, Lever, Workday, Taleo)
-- [x] Automated application submission system
+- [x] Approval-gated application preparation and manual submission handoff
 - [x] Decision maker identification feature
 - [x] Application tracking system
 - [x] Application status monitoring
 - [x] Automated follow-up system framework
 
-### Phase 7: Browser Automation (5/9 - 56%)
+### Phase 7: Controlled Employer-Portal Handoff (5/5 - 100%)
 - [x] ATS system type detection
-- [x] Greenhouse application automation (Puppeteer-based)
-- [x] Lever application automation (Puppeteer-based)
-- [x] Form field detection and filling
-- [x] Application rate limiting
+- [x] Application material preparation without external form filling
+- [x] Explicit approval before manual handoff
+- [x] Deterministic submission evidence before application status changes
+- [x] CAPTCHA, login, and final submission remain user-controlled on the employer portal
 
 ### Phase 8: Career Intelligence (5/5 - 100%)
 - [x] Salary negotiation analysis
@@ -127,11 +127,9 @@
 - [ ] S3 storage for resume files (currently parsing only)
 - [ ] Resume version history tracking
 
-#### Browser Automation (4 remaining)
-- [ ] Workday application automation (complex multi-step)
-- [ ] Taleo application automation (legacy system)
-- [ ] CAPTCHA handling integration (2Captcha/Anti-Captcha)
-- [ ] Automated follow-up email sending
+#### Employer-Portal Safety (0 remaining)
+- [x] Keep login, CAPTCHA, and final submission under user control
+- [x] Keep employer-portal form filling and anti-abuse evasion disabled
 
 ### 🟡 HIGH PRIORITY
 
@@ -202,7 +200,7 @@
 
 ### Medium Term
 7. **Add real-time job discovery** - WebSocket notifications for new jobs
-8. **Implement CAPTCHA handling** - Enable full automation
+8. **Keep CAPTCHA and login handling manual** - Preserve employer-portal integrity
 9. **Build admin dashboard** - Monitor scraping status, user activity
 
 ---
@@ -211,7 +209,7 @@
 
 1. **GenericScraper needs customization** - 38 platforms use generic template, need platform-specific parsing
 2. **No actual HTTP requests in scrapers** - Scrapers return mock data, need real implementation
-3. **Browser automation not tested** - Puppeteer code written but not tested against real ATS
+3. **No unattended employer-portal automation** - Browser form filling, CAPTCHA solving, and stealth behavior are deliberately disabled pending a compliant, approval-wired integration.
 4. **Missing error boundaries** - Frontend needs better error handling
 5. **No caching layer** - Add Redis for frequently accessed data
 
@@ -223,7 +221,7 @@
 |------|---------|-------|
 | `server/careerIntelligence.ts` | Salary, culture, networking AI | ~500 |
 | `server/diversitySupport.ts` | D&I and visa support | ~450 |
-| `server/browserAutomation.ts` | Puppeteer ATS automation | ~400 |
+| `server/browserAutomation.ts` | Manual employer-portal handoff adapter | ~160 |
 | `server/resumeParser.ts` | PDF/DOCX parsing | ~300 |
 | `server/scrapers/*.ts` | 10 platform scrapers | ~2000 |
 | `server/scrapers/scheduler.ts` | Cron-based scraping | ~200 |

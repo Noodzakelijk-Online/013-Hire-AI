@@ -35,13 +35,13 @@
 - [ ] Build job scraping scheduler
 - [ ] Implement error handling and retry mechanisms
 
-## Phase 4: AI Matching & Automated Application
+## Phase 4: AI Matching & Controlled Application Handoff
 - [x] Implement AI-powered job matching algorithm
 - [x] Build user skill extraction from resume
 - [x] Create job requirements analysis system
 - [x] Implement job-candidate scoring system
 - [x] Build application process detection (Greenhouse, Lever, Workday, Taleo, etc.)
-- [x] Create automated application submission system
+- [x] Create approval-gated application preparation and manual submission handoff
 - [x] Implement decision maker identification feature
 - [x] Build application tracking system
 - [x] Create application status monitoring
@@ -184,17 +184,14 @@
 - [x] Add scraping status monitoring
 - [x] Create error logging and alerting
 
-## Phase 8: Automated Application Submission
+## Phase 8: Controlled Application Handoff
 - [x] Detect ATS system type (Greenhouse, Lever, Workday, Taleo)
-- [x] Build Greenhouse application automation (Puppeteer-based)
-- [x] Build Lever application automation (Puppeteer-based)
-- [x] Build Workday application automation (complex multi-step)
-- [x] Build Taleo application automation (complex multi-step)
-- [x] Implement form field detection and filling (Puppeteer/stealth)
-- [x] Add CAPTCHA handling strategy (2captcha, hCaptcha, reCAPTCHA support)
-- [x] Create application confirmation tracking
-- [x] Implement automated follow-up emails
-- [x] Add application rate limiting (avoid spam detection)
+- [x] Prepare application material in the internal operating ledger
+- [x] Require explicit approval before a manual employer-portal handoff
+- [x] Require deterministic confirmation evidence before recording submission
+- [x] Keep CAPTCHA, login, and final submission on the employer portal
+- [x] Keep follow-up delivery behind explicit approval and manual confirmation
+- [x] Enforce preparation limits without evasion or proxy rotation
 
 
 ## Phase 11: End User Testing Fixes (23 Issues)

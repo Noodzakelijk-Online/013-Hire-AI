@@ -1,19 +1,78 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { router, adminProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+import {
+  createAdminReviewItem,
+  createAuditEvent,
+  getDb,
+  getAdminReviewEvidenceSnapshot,
+  listAdminReviewItems,
+  resolveAdminReviewItem,
+} from "../db";
 import {
   successFees,
   employmentVerifications,
   feePayments,
   users,
 } from "../../drizzle/schema";
+import {
+  calculateNextVerificationDue,
+  calculateVerificationGraceExpiry,
+} from "../successFeeDates";
 import { eq, desc, and, lt, sql, isNotNull, or } from "drizzle-orm";
-import Stripe from "stripe";
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+import { getStripeClient } from "../stripeClient";
 
 export const adminRouter = router({
+  getReviewQueue: adminProcedure
+    .input(z.object({
+      status: z.enum(["all", "open", "in_progress", "resolved", "dismissed"]).default("open"),
+    }).optional())
+    .query(async ({ input }) => {
+      return await listAdminReviewItems(input?.status ?? "open");
+    }),
+
+  getReviewEvidence: adminProcedure
+    .input(z.object({
+      reviewItemId: z.number(),
+    }))
+    .query(async ({ input }) => {
+      try {
+        return await getAdminReviewEvidenceSnapshot(input.reviewItemId);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to load review evidence.";
+        throw new TRPCError({
+          code: message === "Review item not found." ? "NOT_FOUND" : "INTERNAL_SERVER_ERROR",
+          message,
+        });
+      }
+    }),
+
+  resolveReviewItem: adminProcedure
+    .input(z.object({
+      reviewItemId: z.number(),
+      status: z.enum(["resolved", "dismissed"]),
+      resolution: z.string().trim().min(1).max(5000),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await resolveAdminReviewItem(
+        input.reviewItemId,
+        ctx.user.id,
+        input.status,
+        input.resolution
+      );
+      await createAuditEvent({
+        userId: ctx.user.id,
+        entityType: "admin_review",
+        entityId: input.reviewItemId,
+        action: "admin_review_item_resolved",
+        actor: "admin",
+        source: "admin.resolveReviewItem",
+        afterState: JSON.stringify({ status: input.status, resolution: input.resolution }),
+        riskLevel: input.status === "resolved" ? "medium" : "low",
+      });
+      return result;
+    }),
+
   // ─── Overview Stats ─────────────────────────────────────────────────────────
   getStats: adminProcedure.query(async () => {
     const db = await getDb();
@@ -176,7 +235,7 @@ export const adminRouter = router({
         notes: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
@@ -191,7 +250,7 @@ export const adminRouter = router({
       // If suspending and has active Stripe subscription, pause it
       if (input.status === "suspended" && fee.stripeSubscriptionId) {
         try {
-          await stripe.subscriptions.update(fee.stripeSubscriptionId, {
+          await getStripeClient().subscriptions.update(fee.stripeSubscriptionId, {
             pause_collection: { behavior: "void" },
           });
         } catch (err) {
@@ -202,7 +261,7 @@ export const adminRouter = router({
       // If reactivating from suspended, resume Stripe subscription
       if (input.status === "active" && fee.status === "suspended" && fee.stripeSubscriptionId) {
         try {
-          await stripe.subscriptions.update(fee.stripeSubscriptionId, {
+          await getStripeClient().subscriptions.update(fee.stripeSubscriptionId, {
             pause_collection: "",
           } as any);
         } catch (err) {
@@ -213,7 +272,7 @@ export const adminRouter = router({
       // If ending, cancel Stripe subscription
       if (input.status === "ended" && fee.stripeSubscriptionId) {
         try {
-          await stripe.subscriptions.cancel(fee.stripeSubscriptionId);
+          await getStripeClient().subscriptions.cancel(fee.stripeSubscriptionId);
         } catch (err) {
           console.error("[Admin] Failed to cancel Stripe subscription:", err);
         }
@@ -228,6 +287,29 @@ export const adminRouter = router({
         })
         .where(eq(successFees.id, input.feeId));
 
+      await createAuditEvent({
+        userId: fee.userId,
+        entityType: "success_fee",
+        entityId: input.feeId,
+        action: "success_fee_status_updated",
+        actor: "admin",
+        source: "admin.updateFeeStatus",
+        beforeState: JSON.stringify({ status: fee.status }),
+        afterState: JSON.stringify({ status: input.status, notes: input.notes ?? null, adminUserId: ctx.user.id }),
+        riskLevel: input.status === "suspended" || input.status === "disputed" ? "high" : "medium",
+      });
+      if (input.status === "suspended" || input.status === "disputed") {
+        await createAdminReviewItem({
+          userId: fee.userId,
+          entityType: "success_fee",
+          entityId: input.feeId,
+          category: input.status === "disputed" ? "legal_escalation" : "verification_overdue",
+          priority: input.status === "disputed" ? "critical" : "high",
+          title: input.status === "disputed" ? "Disputed success fee requires admin follow-up" : "Suspended success fee requires admin review",
+          description: input.notes ?? `Status changed from ${fee.status} to ${input.status}.`,
+        });
+      }
+
       return { success: true };
     }),
 
@@ -240,7 +322,7 @@ export const adminRouter = router({
         notes: z.string().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
@@ -264,10 +346,8 @@ export const adminRouter = router({
 
       // If approved, update next verification due date on the fee
       if (input.approved) {
-        const nextDue = new Date();
-        nextDue.setDate(nextDue.getDate() + 90);
-        const graceExpiry = new Date(nextDue);
-        graceExpiry.setDate(graceExpiry.getDate() + 14);
+        const nextDue = calculateNextVerificationDue();
+        const graceExpiry = calculateVerificationGraceExpiry(nextDue);
 
         await db
           .update(successFees)
@@ -277,6 +357,48 @@ export const adminRouter = router({
             verificationGraceExpiry: graceExpiry,
           })
           .where(eq(successFees.id, verification.successFeeId));
+      }
+
+      await createAuditEvent({
+        userId: verification.userId,
+        entityType: "verification",
+        entityId: input.verificationId,
+        action: input.approved ? "employment_verification_approved" : "employment_verification_rejected",
+        actor: "admin",
+        source: "admin.reviewVerification",
+        beforeState: JSON.stringify({ status: verification.status }),
+        afterState: JSON.stringify({
+          status: input.approved ? "approved" : "rejected",
+          notes: input.notes ?? null,
+          adminUserId: ctx.user.id,
+        }),
+        riskLevel: input.approved ? "medium" : "high",
+      });
+
+      const reviewResolution = input.approved
+        ? "Employment verification approved by admin review."
+        : `Employment verification rejected by admin review${input.notes ? `: ${input.notes}` : "."}`;
+      const reviewItems = await listAdminReviewItems("all");
+      const activeVerificationReviewItems = reviewItems.filter((item) =>
+        item.entityType === "verification" &&
+        item.entityId === input.verificationId &&
+        (item.status === "open" || item.status === "in_progress")
+      );
+
+      await Promise.all(activeVerificationReviewItems.map((item) =>
+        resolveAdminReviewItem(item.id, ctx.user.id, "resolved", reviewResolution)
+      ));
+
+      if (!input.approved) {
+        await createAdminReviewItem({
+          userId: verification.userId,
+          entityType: "verification",
+          entityId: input.verificationId,
+          category: "verification_overdue",
+          priority: "high",
+          title: "Rejected verification needs user follow-up",
+          description: input.notes ?? "Employment verification was rejected by admin review.",
+        });
       }
 
       return { success: true, approved: input.approved };
@@ -290,7 +412,7 @@ export const adminRouter = router({
         reason: z.string().min(1),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
@@ -308,7 +430,7 @@ export const adminRouter = router({
       for (const fee of userFees) {
         if (fee.stripeSubscriptionId) {
           try {
-            await stripe.subscriptions.update(fee.stripeSubscriptionId, {
+            await getStripeClient().subscriptions.update(fee.stripeSubscriptionId, {
               pause_collection: { behavior: "void" },
             });
           } catch (err) {
@@ -321,13 +443,33 @@ export const adminRouter = router({
           .where(eq(successFees.id, fee.id));
       }
 
+      await createAuditEvent({
+        userId: input.userId,
+        entityType: "user",
+        entityId: input.userId,
+        action: "user_suspended",
+        actor: "admin",
+        source: "admin.suspendUser",
+        afterState: JSON.stringify({ reason: input.reason, adminUserId: ctx.user.id }),
+        riskLevel: "critical",
+      });
+      await createAdminReviewItem({
+        userId: input.userId,
+        entityType: "user",
+        entityId: input.userId,
+        category: "legal_escalation",
+        priority: "critical",
+        title: "Suspended user account requires admin follow-up",
+        description: input.reason,
+      });
+
       return { success: true };
     }),
 
   // ─── Reinstate User Account ──────────────────────────────────────────────────
   reinstateUser: adminProcedure
     .input(z.object({ userId: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
@@ -335,6 +477,17 @@ export const adminRouter = router({
         .update(users)
         .set({ accountStatus: "active" })
         .where(eq(users.id, input.userId));
+
+      await createAuditEvent({
+        userId: input.userId,
+        entityType: "user",
+        entityId: input.userId,
+        action: "user_reinstated",
+        actor: "admin",
+        source: "admin.reinstateUser",
+        afterState: JSON.stringify({ accountStatus: "active", adminUserId: ctx.user.id }),
+        riskLevel: "high",
+      });
 
       return { success: true };
     }),
@@ -347,7 +500,7 @@ export const adminRouter = router({
         reason: z.string().min(1),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
@@ -361,6 +514,24 @@ export const adminRouter = router({
 
       const escalationNote = `[LEGAL ESCALATION ${new Date().toISOString()}] ${input.reason}`;
       const updatedNotes = fee.notes ? `${fee.notes}\n${escalationNote}` : escalationNote;
+      const activeUserFees = await db
+        .select()
+        .from(successFees)
+        .where(and(eq(successFees.userId, fee.userId), eq(successFees.status, "active")));
+      const feesToPause = Array.from(
+        new Map([...activeUserFees, fee].map((item) => [item.id, item])).values()
+      );
+
+      for (const feeToPause of feesToPause) {
+        if (!feeToPause.stripeSubscriptionId) continue;
+        try {
+          await getStripeClient().subscriptions.update(feeToPause.stripeSubscriptionId, {
+            pause_collection: { behavior: "void" },
+          });
+        } catch (err) {
+          console.error("[Admin] Failed to pause subscription during legal escalation:", err);
+        }
+      }
 
       await db
         .update(successFees)
@@ -370,11 +541,65 @@ export const adminRouter = router({
         })
         .where(eq(successFees.id, input.feeId));
 
+      const relatedSuspensionNote = `Suspended: legal escalation on success fee #${input.feeId}.`;
+      const relatedActiveFees = activeUserFees.filter((activeFee) => activeFee.id !== input.feeId);
+      for (const relatedFee of relatedActiveFees) {
+        const relatedNotes = relatedFee.notes
+          ? `${relatedFee.notes}\n${relatedSuspensionNote}`
+          : relatedSuspensionNote;
+        await db
+          .update(successFees)
+          .set({ status: "suspended", notes: relatedNotes })
+          .where(eq(successFees.id, relatedFee.id));
+        await createAuditEvent({
+          userId: fee.userId,
+          entityType: "success_fee",
+          entityId: relatedFee.id,
+          action: "success_fee_suspended_for_legal_escalation",
+          actor: "admin",
+          source: "admin.flagLegalEscalation",
+          beforeState: JSON.stringify({ status: relatedFee.status }),
+          afterState: JSON.stringify({
+            status: "suspended",
+            escalatedFeeId: input.feeId,
+            accountStatus: "suspended",
+            adminUserId: ctx.user.id,
+          }),
+          riskLevel: "critical",
+        });
+      }
+
       // Suspend user account
       await db
         .update(users)
         .set({ accountStatus: "suspended" })
         .where(eq(users.id, fee.userId));
+
+      await createAuditEvent({
+        userId: fee.userId,
+        entityType: "success_fee",
+        entityId: input.feeId,
+        action: "legal_escalation_flagged",
+        actor: "admin",
+        source: "admin.flagLegalEscalation",
+        beforeState: JSON.stringify({ status: fee.status }),
+        afterState: JSON.stringify({
+          status: "disputed",
+          accountStatus: "suspended",
+          reason: input.reason,
+          adminUserId: ctx.user.id,
+        }),
+        riskLevel: "critical",
+      });
+      await createAdminReviewItem({
+        userId: fee.userId,
+        entityType: "success_fee",
+        entityId: input.feeId,
+        category: "legal_escalation",
+        priority: "critical",
+        title: "Legal escalation flagged",
+        description: input.reason,
+      });
 
       return { success: true, escalationNote };
     }),
@@ -455,7 +680,7 @@ export const adminRouter = router({
         note: z.string().min(1),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
@@ -475,6 +700,24 @@ export const adminRouter = router({
         .update(successFees)
         .set({ notes: updatedNotes })
         .where(eq(successFees.id, input.feeId));
+
+      const [fullFee] = await db
+        .select({ userId: successFees.userId })
+        .from(successFees)
+        .where(eq(successFees.id, input.feeId))
+        .limit(1);
+      if (fullFee) {
+        await createAuditEvent({
+          userId: fullFee.userId,
+          entityType: "success_fee",
+          entityId: input.feeId,
+          action: "admin_note_added",
+          actor: "admin",
+          source: "admin.addNote",
+          afterState: JSON.stringify({ note: input.note, adminUserId: ctx.user.id }),
+          riskLevel: "low",
+        });
+      }
 
       return { success: true };
     }),

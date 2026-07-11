@@ -1,0 +1,633 @@
+export type ApprovalResolutionStatus = "approved" | "rejected" | "cancelled";
+export type ReviewDecisionResolution = "save" | "ignore";
+export type ReviewQueueActionKind =
+  | "approval"
+  | "send_handoff"
+  | "evidence_gate"
+  | "connector_readiness"
+  | "job_decision"
+  | "interview_scheduling"
+  | "interview_preparation"
+  | "employer_reply"
+  | "follow_up"
+  | "success_fee"
+  | "profile_gap"
+  | "admin_review";
+
+export type ReviewQueueActionRisk = "low" | "medium" | "high" | "critical";
+
+export interface ReviewQueueActionSummary {
+  label: string;
+  detail: string;
+  cta: string;
+  route: string;
+  risk: ReviewQueueActionRisk;
+  approvalGated: boolean;
+  externalAction: "none" | "manual_handoff" | "blocked_until_approved" | "blocked_until_evidence";
+}
+
+export type ReviewQueueControlStatus =
+  | "blocked"
+  | "handoff"
+  | "attention"
+  | "ready"
+  | "clear";
+
+export type ReviewQueueControlSection =
+  | "approvals"
+  | "send-handoffs"
+  | "evidence-gates"
+  | "connector-readiness"
+  | "job-decisions"
+  | "interview-scheduling"
+  | "interview-preparation"
+  | "employer-replies"
+  | "follow-ups"
+  | "success-fees"
+  | "profile-readiness"
+  | "admin-reviews"
+  | "audit";
+
+export interface ReviewQueueControlSummary {
+  status: ReviewQueueControlStatus;
+  label: string;
+  headline: string;
+  detail: string;
+  cta: string;
+  section: ReviewQueueControlSection;
+  route: string;
+  count: number;
+  risk: ReviewQueueActionRisk;
+  approvalGated: boolean;
+  externalAction: ReviewQueueActionSummary["externalAction"];
+}
+
+export interface OperatingReviewQueueInput {
+  queues?: {
+    pendingApprovals?: unknown[];
+    reviewDecisions?: unknown[];
+    adminReviews?: unknown[];
+    interviewScheduling?: unknown[];
+    interviewPreparationNeeded?: unknown[];
+    employerResponsesNeedingReply?: unknown[];
+    followUpsDue?: unknown[];
+    approvedFollowUpsReadyToSend?: unknown[];
+    evidenceGates?: unknown[];
+    successFeeCompliance?: unknown[];
+    connectorReadiness?: unknown[];
+  } | null;
+  canReviewAdminItems?: boolean | null;
+  readiness?: {
+    blockers?: unknown[];
+    warnings?: unknown[];
+  } | null;
+}
+
+const APPROVAL_TYPE_LABELS: Record<string, string> = {
+  application_submission: "Application submission",
+  follow_up_send: "Follow-up send",
+  offer_attribution: "Offer attribution",
+  interview_schedule: "Interview schedule",
+  billing_action: "Billing action",
+  profile_claim: "Profile claim",
+};
+
+const DECISION_LABELS: Record<string, string> = {
+  auto_apply: "Auto-apply",
+  apply: "Apply",
+  save: "Save",
+  ignore: "Ignore",
+  review: "Review",
+  manual_apply: "Manual apply",
+};
+
+function coerceRisk(value?: string | null): ReviewQueueActionRisk {
+  return value === "critical" || value === "high" || value === "medium" || value === "low"
+    ? value
+    : "medium";
+}
+
+function applicationRoute(applicationId?: number | null, action?: string) {
+  if (!applicationId) return "/applications";
+  const params = new URLSearchParams();
+  params.set("applicationId", String(applicationId));
+  if (action && action !== "view") {
+    params.set("action", action);
+  }
+  return `/applications?${params.toString()}`;
+}
+
+function approvalRoute(item: Record<string, unknown>) {
+  const entityType = typeof item.entityType === "string" ? item.entityType : "";
+  const entityId = typeof item.entityId === "number" ? item.entityId : null;
+  const approvalType = typeof item.approvalType === "string" ? item.approvalType : "";
+
+  if (entityType === "application" && entityId) {
+    return applicationRoute(entityId, "view");
+  }
+
+  if (entityType === "follow_up" || approvalType === "follow_up_send") {
+    const applicationId = typeof item.applicationId === "number" ? item.applicationId : null;
+    return applicationRoute(applicationId, "send-follow-up");
+  }
+
+  if (approvalType === "offer_attribution") {
+    const applicationId = typeof item.applicationId === "number" ? item.applicationId : null;
+    return applicationId ? applicationRoute(applicationId, "view") : "/billing";
+  }
+
+  return "/review-queue";
+}
+
+export function getReviewQueueActionSummary(
+  kind: ReviewQueueActionKind,
+  item: Record<string, unknown> = {}
+): ReviewQueueActionSummary {
+  switch (kind) {
+    case "approval": {
+      const approvalType = typeof item.approvalType === "string" ? item.approvalType : null;
+      return {
+        label: "Approval gate",
+        detail: `${formatApprovalType(approvalType)} cannot run silently. Review the linked ledger evidence, then approve or reject it.`,
+        cta: "Open linked ledger",
+        route: approvalRoute(item),
+        risk: coerceRisk(typeof item.riskLevel === "string" ? item.riskLevel : null),
+        approvalGated: true,
+        externalAction: "blocked_until_approved",
+      };
+    }
+    case "send_handoff":
+      return {
+        label: "Approved send handoff",
+        detail: "The draft is approved, but Hire.AI still needs a manual send confirmation before response tracking continues.",
+        cta: "Open send handoff",
+        route: applicationRoute(typeof item.applicationId === "number" ? item.applicationId : null, "send-follow-up"),
+        risk: coerceRisk(typeof item.riskLevel === "string" ? item.riskLevel : "medium"),
+        approvalGated: false,
+        externalAction: "manual_handoff",
+      };
+    case "evidence_gate":
+      return {
+        label: "Evidence gate",
+        detail: typeof item.detail === "string"
+          ? item.detail
+          : "Resolve the missing profile or connector evidence before Hire.AI advances external actions.",
+        cta: "Resolve evidence",
+        route: typeof item.route === "string" ? item.route : "/profile",
+        risk: coerceRisk(typeof item.severity === "string" ? item.severity : "medium"),
+        approvalGated: false,
+        externalAction: "blocked_until_evidence",
+      };
+    case "connector_readiness":
+      return {
+        label: "Connector readiness",
+        detail: typeof item.detail === "string"
+          ? item.detail
+          : "Complete the connector setup before Hire.AI depends on external inbox or cloud evidence.",
+        cta: "Open profile connectors",
+        route: "/profile",
+        risk: coerceRisk(typeof item.riskLevel === "string" ? item.riskLevel : "medium"),
+        approvalGated: false,
+        externalAction: "none",
+      };
+    case "job_decision": {
+      const decision = typeof item.decision === "string" ? item.decision : null;
+      const applicationId = typeof item.applicationId === "number" ? item.applicationId : null;
+      const reviewRequired = item.reviewRequired === 1 || item.reviewRequired === true;
+      const externalAction = decision === "manual_apply"
+        ? "manual_handoff"
+        : reviewRequired || decision === "review"
+          ? "blocked_until_approved"
+          : "none";
+      return {
+        label: "Job decision",
+        detail: externalAction === "manual_handoff"
+          ? "This role must stay in manual-apply mode until the user handles the external ATS step and records the outcome."
+          : externalAction === "blocked_until_approved"
+            ? "This saved decision blocks autonomous application execution until the user resolves the review."
+            : "Resolve the saved decision so autonomous sourcing knows whether to prepare, save, ignore, or leave this role manual.",
+        cta: applicationId ? "Open application ledger" : "Review job",
+        route: applicationId ? applicationRoute(applicationId, "view") : "/jobs",
+        risk: coerceRisk(typeof item.riskLevel === "string" ? item.riskLevel : "medium"),
+        approvalGated: externalAction === "blocked_until_approved",
+        externalAction,
+      };
+    }
+    case "interview_scheduling":
+      return {
+        label: "Interview scheduling",
+        detail: "Capture the agreed time, channel, and interviewer context before follow-up automation continues.",
+        cta: "Schedule interview",
+        route: applicationRoute(typeof item.applicationId === "number" ? item.applicationId : null, "schedule-interview"),
+        risk: "medium",
+        approvalGated: false,
+        externalAction: "none",
+      };
+    case "interview_preparation":
+      return {
+        label: "Interview preparation",
+        detail: "Generate saved preparation from the application ledger before the scheduled interview starts.",
+        cta: "Open application",
+        route: applicationRoute(typeof item.applicationId === "number" ? item.applicationId : null, "view"),
+        risk: "low",
+        approvalGated: false,
+        externalAction: "none",
+      };
+    case "employer_reply":
+      return {
+        label: "Employer reply",
+        detail: "Classify the employer response and draft any reply inside the ledger before routine follow-ups resume.",
+        cta: "Open response",
+        route: applicationRoute(typeof item.applicationId === "number" ? item.applicationId : null, "employer-response"),
+        risk: "medium",
+        approvalGated: false,
+        externalAction: "none",
+      };
+    case "follow_up":
+      return {
+        label: "Follow-up due",
+        detail: "Draft a follow-up internally. External sending remains a separate approval and handoff.",
+        cta: "Draft follow-up",
+        route: applicationRoute(typeof item.applicationId === "number" ? item.applicationId : null, "follow-up"),
+        risk: "medium",
+        approvalGated: true,
+        externalAction: "blocked_until_approved",
+      };
+    case "success_fee": {
+      const applicationId = typeof item.applicationId === "number" ? item.applicationId : null;
+      const priority = typeof item.priority === "string" ? item.priority : "high";
+      return {
+        label: "Success-fee compliance",
+        detail: "Resolve offer attribution, verification, or billing evidence before revenue enforcement advances.",
+        cta: applicationId ? "Open offer ledger" : "Open billing",
+        route: applicationId ? applicationRoute(applicationId, "view") : "/billing",
+        risk: coerceRisk(priority),
+        approvalGated: true,
+        externalAction: "blocked_until_approved",
+      };
+    }
+    case "profile_gap":
+      return {
+        label: "Profile readiness",
+        detail: "Complete the missing candidate evidence before increasing autonomous application scope.",
+        cta: "Improve profile",
+        route: "/profile",
+        risk: "medium",
+        approvalGated: false,
+        externalAction: "none",
+      };
+    case "admin_review":
+      return {
+        label: "Admin review",
+        detail: item.category === "employment_ended"
+          ? "Review the employment-ended report, final billing state, subscription cancellation, and verification context before closing the obligation."
+          : "Keep compliance, billing, suspension, and legal-adjacent decisions in the admin review path.",
+        cta: "Open admin panel",
+        route: "/admin",
+        risk: coerceRisk(typeof item.priority === "string" ? item.priority : "high"),
+        approvalGated: true,
+        externalAction: "blocked_until_approved",
+      };
+  }
+}
+
+function titleCaseFromToken(value: string) {
+  return value
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}`)
+    .join(" ");
+}
+
+function controlSummary(input: {
+  status: ReviewQueueControlStatus;
+  label: string;
+  headline: string;
+  detail: string;
+  cta: string;
+  section: ReviewQueueControlSection;
+  route?: string;
+  count: number;
+  risk: ReviewQueueActionRisk;
+  approvalGated: boolean;
+  externalAction: ReviewQueueActionSummary["externalAction"];
+}): ReviewQueueControlSummary {
+  return {
+    route: "/review-queue",
+    ...input,
+  };
+}
+
+export function formatApprovalType(type?: string | null) {
+  if (!type) {
+    return "Approval";
+  }
+
+  return APPROVAL_TYPE_LABELS[type] ?? titleCaseFromToken(type);
+}
+
+export function formatApplicationDecision(decision?: string | null) {
+  if (!decision) {
+    return "Review";
+  }
+
+  return DECISION_LABELS[decision] ?? titleCaseFromToken(decision);
+}
+
+export function getReviewRiskBadgeClass(riskLevel?: string | null) {
+  switch (riskLevel) {
+    case "critical":
+      return "border-red-500/50 text-red-300";
+    case "high":
+      return "border-orange-500/50 text-orange-300";
+    case "medium":
+      return "border-amber-500/50 text-amber-300";
+    case "low":
+      return "border-emerald-500/50 text-emerald-300";
+    default:
+      return "border-slate-600 text-slate-300";
+  }
+}
+
+export function getApprovalDecisionNote(
+  approvalType: string | null | undefined,
+  status: ApprovalResolutionStatus
+) {
+  const label = formatApprovalType(approvalType).toLowerCase();
+  return `${status === "approved" ? "Approved" : "Rejected"} ${label} from the dashboard review queue.`;
+}
+
+export function getReviewDecisionResolutionCopy(
+  decision: {
+    jobId?: number | null;
+    decision?: string | null;
+    decisionReason?: string | null;
+    reviewReason?: string | null;
+    matchScore?: number | null;
+  },
+  resolution: ReviewDecisionResolution
+) {
+  const label = formatApplicationDecision(decision.decision).toLowerCase();
+  const reason = decision.reviewReason || decision.decisionReason || "No review reason was stored.";
+  const matchScore = typeof decision.matchScore === "number"
+    ? ` Match score: ${decision.matchScore}%.`
+    : "";
+  const prefix = resolution === "save"
+    ? "Saved from the review queue for later user review."
+    : "Ignored from the review queue after user review.";
+
+  return `${prefix} Previous decision: ${label}.${matchScore} Review context: ${reason}`;
+}
+
+export function getOperatingReviewQueueCounts(input?: OperatingReviewQueueInput | null) {
+  const pendingApprovals = input?.queues?.pendingApprovals?.length ?? 0;
+  const reviewDecisions = input?.queues?.reviewDecisions?.length ?? 0;
+  const interviewScheduling = input?.queues?.interviewScheduling?.length ?? 0;
+  const interviewPreparationNeeded = input?.queues?.interviewPreparationNeeded?.length ?? 0;
+  const employerResponsesNeedingReply = input?.queues?.employerResponsesNeedingReply?.length ?? 0;
+  const followUpsDue = input?.queues?.followUpsDue?.length ?? 0;
+  const approvedFollowUpsReadyToSend = input?.queues?.approvedFollowUpsReadyToSend?.length ?? 0;
+  const evidenceGates = input?.queues?.evidenceGates?.length ?? 0;
+  const successFeeCompliance = input?.queues?.successFeeCompliance?.length ?? 0;
+  const connectorReadiness = input?.queues?.connectorReadiness?.length ?? 0;
+  const adminReviews = input?.canReviewAdminItems === true
+    ? input?.queues?.adminReviews?.length ?? 0
+    : 0;
+  const profileBlockers = input?.readiness?.blockers?.length ?? 0;
+  const profileWarnings = input?.readiness?.warnings?.length ?? 0;
+
+  return {
+    pendingApprovals,
+    reviewDecisions,
+    interviewScheduling,
+    interviewPreparationNeeded,
+    employerResponsesNeedingReply,
+    followUpsDue,
+    approvedFollowUpsReadyToSend,
+    evidenceGates,
+    successFeeCompliance,
+    connectorReadiness,
+    adminReviews,
+    profileBlockers,
+    profileWarnings,
+    total: pendingApprovals + reviewDecisions + interviewScheduling + interviewPreparationNeeded + employerResponsesNeedingReply + followUpsDue + approvedFollowUpsReadyToSend + evidenceGates + successFeeCompliance + connectorReadiness + adminReviews + profileBlockers + profileWarnings,
+  };
+}
+
+export function getReviewQueueControlSummary(
+  input?: OperatingReviewQueueInput | null
+): ReviewQueueControlSummary {
+  const counts = getOperatingReviewQueueCounts(input);
+
+  if (counts.pendingApprovals > 0) {
+    return controlSummary({
+      status: "blocked",
+      label: "Approval gate",
+      headline: `${counts.pendingApprovals} consequential action${counts.pendingApprovals === 1 ? "" : "s"} need a user decision.`,
+      detail: "Resolve submission, follow-up, offer attribution, or billing approvals before Hire.AI can advance external work.",
+      cta: "Review approvals",
+      section: "approvals",
+      count: counts.pendingApprovals,
+      risk: "high",
+      approvalGated: true,
+      externalAction: "blocked_until_approved",
+    });
+  }
+
+  if (counts.approvedFollowUpsReadyToSend > 0) {
+    return controlSummary({
+      status: "handoff",
+      label: "Send handoff",
+      headline: `${counts.approvedFollowUpsReadyToSend} approved follow-up draft${counts.approvedFollowUpsReadyToSend === 1 ? "" : "s"} need send confirmation.`,
+      detail: "Send through the intended external channel, then record the handoff so response tracking continues from ledger state.",
+      cta: "Open send handoffs",
+      section: "send-handoffs",
+      count: counts.approvedFollowUpsReadyToSend,
+      risk: "medium",
+      approvalGated: false,
+      externalAction: "manual_handoff",
+    });
+  }
+
+  if (counts.successFeeCompliance > 0) {
+    return controlSummary({
+      status: "blocked",
+      label: "Success-fee compliance",
+      headline: `${counts.successFeeCompliance} success-fee item${counts.successFeeCompliance === 1 ? "" : "s"} need review.`,
+      detail: "Handle offer attribution, verification, or billing evidence before revenue enforcement advances.",
+      cta: "Review compliance",
+      section: "success-fees",
+      count: counts.successFeeCompliance,
+      risk: "high",
+      approvalGated: true,
+      externalAction: "blocked_until_approved",
+    });
+  }
+
+  if (counts.evidenceGates > 0) {
+    return controlSummary({
+      status: "blocked",
+      label: "Evidence gate",
+      headline: `${counts.evidenceGates} autonomous evidence gate${counts.evidenceGates === 1 ? "" : "s"} block external work.`,
+      detail: "Resolve missing profile, inbox, or cloud evidence before Hire.AI advances submissions, follow-up sending, reply monitoring, or document discovery.",
+      cta: "Review evidence gates",
+      section: "evidence-gates",
+      route: "/profile",
+      count: counts.evidenceGates,
+      risk: "high",
+      approvalGated: false,
+      externalAction: "blocked_until_evidence",
+    });
+  }
+
+  if (counts.adminReviews > 0) {
+    return controlSummary({
+      status: "blocked",
+      label: "Admin review",
+      headline: `${counts.adminReviews} admin operating item${counts.adminReviews === 1 ? "" : "s"} need manual review.`,
+      detail: "Keep billing, suspension, verification, and legal-adjacent decisions in the admin control path.",
+      cta: "Review admin items",
+      section: "admin-reviews",
+      count: counts.adminReviews,
+      risk: "high",
+      approvalGated: true,
+      externalAction: "blocked_until_approved",
+    });
+  }
+
+  if (counts.profileBlockers > 0) {
+    return controlSummary({
+      status: "blocked",
+      label: "Profile blocker",
+      headline: `${counts.profileBlockers} profile blocker${counts.profileBlockers === 1 ? "" : "s"} stop safer automation.`,
+      detail: "Complete missing candidate evidence before expanding autonomous application scope.",
+      cta: "Review profile blockers",
+      section: "profile-readiness",
+      route: "/profile",
+      count: counts.profileBlockers,
+      risk: "medium",
+      approvalGated: false,
+      externalAction: "none",
+    });
+  }
+
+  if (counts.connectorReadiness > 0) {
+    return controlSummary({
+      status: "attention",
+      label: "Connector readiness",
+      headline: `${counts.connectorReadiness} connector setup item${counts.connectorReadiness === 1 ? "" : "s"} need attention.`,
+      detail: "Complete inbox or cloud connector setup so Hire.AI can monitor replies and discover profile evidence only after explicit consent.",
+      cta: "Review connectors",
+      section: "connector-readiness",
+      route: "/profile",
+      count: counts.connectorReadiness,
+      risk: "medium",
+      approvalGated: false,
+      externalAction: "none",
+    });
+  }
+
+  if (counts.employerResponsesNeedingReply > 0) {
+    return controlSummary({
+      status: "attention",
+      label: "Employer reply",
+      headline: `${counts.employerResponsesNeedingReply} employer response${counts.employerResponsesNeedingReply === 1 ? "" : "s"} need classification or reply drafting.`,
+      detail: "Classify employer questions inside the application ledger before routine follow-up automation resumes.",
+      cta: "Open employer replies",
+      section: "employer-replies",
+      count: counts.employerResponsesNeedingReply,
+      risk: "medium",
+      approvalGated: false,
+      externalAction: "none",
+    });
+  }
+
+  if (counts.interviewScheduling > 0) {
+    return controlSummary({
+      status: "attention",
+      label: "Interview scheduling",
+      headline: `${counts.interviewScheduling} interview invite${counts.interviewScheduling === 1 ? "" : "s"} need scheduling details.`,
+      detail: "Capture time, channel, and interviewer context so interview preparation and follow-up state stay current.",
+      cta: "Open interview scheduling",
+      section: "interview-scheduling",
+      count: counts.interviewScheduling,
+      risk: "medium",
+      approvalGated: false,
+      externalAction: "none",
+    });
+  }
+
+  if (counts.followUpsDue > 0) {
+    return controlSummary({
+      status: "ready",
+      label: "Follow-up drafting",
+      headline: `${counts.followUpsDue} quiet application${counts.followUpsDue === 1 ? "" : "s"} can receive a draft follow-up.`,
+      detail: "Draft internally first. External sending remains a separate approval and handoff.",
+      cta: "Open follow-ups",
+      section: "follow-ups",
+      count: counts.followUpsDue,
+      risk: "medium",
+      approvalGated: true,
+      externalAction: "blocked_until_approved",
+    });
+  }
+
+  if (counts.reviewDecisions > 0) {
+    return controlSummary({
+      status: "attention",
+      label: "Job decision",
+      headline: `${counts.reviewDecisions} job decision${counts.reviewDecisions === 1 ? "" : "s"} need review.`,
+      detail: "Resolve save or ignore decisions so sourcing knows what to prepare next.",
+      cta: "Open job decisions",
+      section: "job-decisions",
+      count: counts.reviewDecisions,
+      risk: "medium",
+      approvalGated: false,
+      externalAction: "none",
+    });
+  }
+
+  if (counts.interviewPreparationNeeded > 0) {
+    return controlSummary({
+      status: "ready",
+      label: "Interview prep",
+      headline: `${counts.interviewPreparationNeeded} scheduled interview${counts.interviewPreparationNeeded === 1 ? "" : "s"} need preparation.`,
+      detail: "Generate saved preparation from application evidence before the interview starts.",
+      cta: "Open interview prep",
+      section: "interview-preparation",
+      count: counts.interviewPreparationNeeded,
+      risk: "low",
+      approvalGated: false,
+      externalAction: "none",
+    });
+  }
+
+  if (counts.profileWarnings > 0) {
+    return controlSummary({
+      status: "attention",
+      label: "Profile warning",
+      headline: `${counts.profileWarnings} profile warning${counts.profileWarnings === 1 ? "" : "s"} should be reviewed.`,
+      detail: "Improve candidate evidence to raise match quality and reduce review-required applications.",
+      cta: "Review profile warnings",
+      section: "profile-readiness",
+      route: "/profile",
+      count: counts.profileWarnings,
+      risk: "low",
+      approvalGated: false,
+      externalAction: "none",
+    });
+  }
+
+  return controlSummary({
+    status: "clear",
+    label: "Queue clear",
+    headline: "No review queue items need attention.",
+    detail: "Hire.AI can keep preparing safe internal work while watching for replies, interviews, offers, and verification events.",
+    cta: "View audit trail",
+    section: "audit",
+    count: 0,
+    risk: "low",
+    approvalGated: false,
+    externalAction: "none",
+  });
+}

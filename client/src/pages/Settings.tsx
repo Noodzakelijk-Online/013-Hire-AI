@@ -3,13 +3,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Activity, Bell, Shield, Zap, Globe, Clock, Mail, Settings as SettingsIcon, LogOut, User, ChevronLeft } from "lucide-react";
+import { Activity, Shield, Zap, Globe, Settings as SettingsIcon, LogOut, User, ChevronLeft, Loader2 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
 import { getLoginUrl } from "@/const";
 import { toast } from "sonner";
+import { trpc } from "@/lib/trpc";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,18 +24,37 @@ export default function Settings() {
   
   // Settings state
   const [autoApply, setAutoApply] = useState(false);
-  const [emailNotifications, setEmailNotifications] = useState(true);
-  const [dailyDigest, setDailyDigest] = useState(true);
-  const [instantAlerts, setInstantAlerts] = useState(false);
   const [scanFrequency, setScanFrequency] = useState("daily");
   const [maxApplicationsPerDay, setMaxApplicationsPerDay] = useState("10");
-  const [preferredTimezone, setPreferredTimezone] = useState("UTC");
+  const { data: profile } = trpc.profile.get.useQuery(undefined, {
+    enabled: isAuthenticated,
+  });
+  const { data: applications } = trpc.applications.list.useQuery(undefined, {
+    enabled: isAuthenticated,
+  });
+  const updateProfile = trpc.profile.update.useMutation({
+    onSuccess: () => toast.success("Settings saved"),
+    onError: (error) => toast.error(error.message || "Failed to save settings"),
+  });
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
       window.location.href = getLoginUrl();
     }
   }, [loading, isAuthenticated]);
+
+  useEffect(() => {
+    if (!profile?.preferences) return;
+
+    try {
+      const saved = JSON.parse(profile.preferences);
+      setAutoApply(saved.mode === "auto_apply");
+      setMaxApplicationsPerDay(String(saved.dailyApplicationLimit || 10));
+      setScanFrequency(saved.scanFrequency || "daily");
+    } catch {
+      // Keep conservative defaults for legacy preference data.
+    }
+  }, [profile?.preferences]);
 
   const handleLogout = async () => {
     await logout();
@@ -44,7 +63,42 @@ export default function Settings() {
   };
 
   const handleSaveSettings = () => {
-    toast.success("Settings saved successfully!");
+    let existingPreferences: Record<string, unknown> = {};
+    try {
+      existingPreferences = profile?.preferences ? JSON.parse(profile.preferences) : {};
+    } catch {
+      existingPreferences = {};
+    }
+
+    updateProfile.mutate({
+      preferences: JSON.stringify({
+        ...existingPreferences,
+        mode: autoApply ? "auto_apply" : "review_first",
+        dailyApplicationLimit: Number(maxApplicationsPerDay),
+        scanFrequency,
+      }),
+    });
+  };
+
+  const handleExportData = () => {
+    const exportData = {
+      exportedAt: new Date().toISOString(),
+      account: {
+        id: user?.id,
+        name: user?.name,
+        email: user?.email,
+      },
+      profile: profile || null,
+      applications: applications || [],
+    };
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `hire-ai-export-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    toast.success("Data export created");
   };
 
   if (loading) {
@@ -145,27 +199,27 @@ export default function Settings() {
 
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-white mb-2">Settings</h1>
-          <p className="text-slate-400">Manage your job search preferences and notifications</p>
+          <p className="text-slate-400">Manage application preparation and job scanning preferences</p>
         </div>
 
         <div className="space-y-6">
-          {/* Auto-Apply Settings */}
+          {/* Application Preparation Settings */}
           <Card className="bg-slate-900/50 border-slate-800/50">
             <CardHeader>
               <CardTitle className="text-white flex items-center gap-2">
                 <Zap className="h-5 w-5 text-cyan-400" />
-                Auto-Apply Settings
+                Application Preparation
               </CardTitle>
               <CardDescription className="text-slate-400">
-                Configure how Hire.AI automatically applies to jobs on your behalf
+                Configure how Hire.AI prepares matching jobs for your review
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label className="text-white">Enable Auto-Apply</Label>
+                  <Label className="text-white">Accelerated Preparation</Label>
                   <p className="text-sm text-slate-400">
-                    Automatically apply to jobs that match your profile
+                    Automatically prepare high-fit applications for final review
                   </p>
                 </div>
                 <Switch
@@ -175,7 +229,7 @@ export default function Settings() {
               </div>
               
               <div className="space-y-2">
-                <Label className="text-white">Max Applications Per Day</Label>
+                <Label className="text-white">Max Preparations Per Day</Label>
                 <Select value={maxApplicationsPerDay} onValueChange={setMaxApplicationsPerDay}>
                   <SelectTrigger className="bg-slate-800 border-slate-700 text-white">
                     <SelectValue />
@@ -184,12 +238,11 @@ export default function Settings() {
                     <SelectItem value="5" className="text-white">5 applications</SelectItem>
                     <SelectItem value="10" className="text-white">10 applications</SelectItem>
                     <SelectItem value="20" className="text-white">20 applications</SelectItem>
-                    <SelectItem value="50" className="text-white">50 applications</SelectItem>
-                    <SelectItem value="unlimited" className="text-white">Unlimited</SelectItem>
+                    <SelectItem value="25" className="text-white">25 applications</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-slate-500">
-                  Limit auto-applications to avoid spam detection
+                  Keep the daily review queue focused and manageable
                 </p>
               </div>
             </CardContent>
@@ -215,81 +268,11 @@ export default function Settings() {
                   </SelectTrigger>
                   <SelectContent className="bg-slate-800 border-slate-700">
                     <SelectItem value="hourly" className="text-white">Every hour</SelectItem>
-                    <SelectItem value="every4hours" className="text-white">Every 4 hours</SelectItem>
+                    <SelectItem value="continuous" className="text-white">Every 15 minutes</SelectItem>
                     <SelectItem value="daily" className="text-white">Once daily</SelectItem>
-                    <SelectItem value="weekly" className="text-white">Once weekly</SelectItem>
+                    <SelectItem value="twice-daily" className="text-white">Twice daily</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-white">Timezone</Label>
-                <Select value={preferredTimezone} onValueChange={setPreferredTimezone}>
-                  <SelectTrigger className="bg-slate-800 border-slate-700 text-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-slate-800 border-slate-700">
-                    <SelectItem value="UTC" className="text-white">UTC</SelectItem>
-                    <SelectItem value="America/New_York" className="text-white">Eastern Time (ET)</SelectItem>
-                    <SelectItem value="America/Los_Angeles" className="text-white">Pacific Time (PT)</SelectItem>
-                    <SelectItem value="Europe/London" className="text-white">London (GMT)</SelectItem>
-                    <SelectItem value="Europe/Paris" className="text-white">Central European (CET)</SelectItem>
-                    <SelectItem value="Asia/Tokyo" className="text-white">Japan (JST)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Notification Settings */}
-          <Card className="bg-slate-900/50 border-slate-800/50">
-            <CardHeader>
-              <CardTitle className="text-white flex items-center gap-2">
-                <Bell className="h-5 w-5 text-purple-400" />
-                Notifications
-              </CardTitle>
-              <CardDescription className="text-slate-400">
-                Choose how you want to be notified about job updates
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label className="text-white">Email Notifications</Label>
-                  <p className="text-sm text-slate-400">
-                    Receive updates via email
-                  </p>
-                </div>
-                <Switch
-                  checked={emailNotifications}
-                  onCheckedChange={setEmailNotifications}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label className="text-white">Daily Digest</Label>
-                  <p className="text-sm text-slate-400">
-                    Get a summary of new matches every morning
-                  </p>
-                </div>
-                <Switch
-                  checked={dailyDigest}
-                  onCheckedChange={setDailyDigest}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label className="text-white">Instant Alerts</Label>
-                  <p className="text-sm text-slate-400">
-                    Get notified immediately for high-match jobs
-                  </p>
-                </div>
-                <Switch
-                  checked={instantAlerts}
-                  onCheckedChange={setInstantAlerts}
-                />
               </div>
             </CardContent>
           </Card>
@@ -311,18 +294,12 @@ export default function Settings() {
                   <p className="text-white font-medium">Export Your Data</p>
                   <p className="text-sm text-slate-400">Download all your data in JSON format</p>
                 </div>
-                <Button variant="outline" className="border-slate-700 text-slate-300">
+                <Button
+                  variant="outline"
+                  className="border-slate-700 text-slate-300"
+                  onClick={handleExportData}
+                >
                   Export
-                </Button>
-              </div>
-              
-              <div className="flex items-center justify-between p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
-                <div>
-                  <p className="text-red-400 font-medium">Delete Account</p>
-                  <p className="text-sm text-slate-400">Permanently delete your account and all data</p>
-                </div>
-                <Button variant="outline" className="border-red-500/50 text-red-400 hover:bg-red-500/10">
-                  Delete
                 </Button>
               </div>
             </CardContent>
@@ -340,7 +317,9 @@ export default function Settings() {
             <Button
               className="bg-gradient-to-r from-cyan-500 to-blue-600"
               onClick={handleSaveSettings}
+              disabled={updateProfile.isPending}
             >
+              {updateProfile.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Save Settings
             </Button>
           </div>

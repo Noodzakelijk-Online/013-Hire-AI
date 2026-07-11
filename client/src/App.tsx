@@ -13,12 +13,20 @@ import SavedJobs from "./pages/SavedJobs";
 import Billing from "./pages/Billing";
 import AdminPanel from "./pages/AdminPanel";
 import TermsOfService from "./pages/TermsOfService";
+import JobSearch from "./pages/JobSearch";
+import Applications from "./pages/Applications";
+import JobAlerts from "./pages/JobAlerts";
+import ReviewQueue from "./pages/ReviewQueue";
 
 function Router() {
   return (
     <Switch>
       <Route path={"/"} component={LandingPage} />
       <Route path={"/dashboard"} component={Dashboard} />
+      <Route path={"/jobs"} component={JobSearch} />
+      <Route path={"/applications"} component={Applications} />
+      <Route path={"/review-queue"} component={ReviewQueue} />
+      <Route path={"/alerts"} component={JobAlerts} />
       <Route path={"/profile"} component={Profile} />
       <Route path={"/settings"} component={Settings} />
       <Route path={"/ai-preferences"} component={AIPreferences} />

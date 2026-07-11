@@ -1,6 +1,23 @@
-import { useState, useMemo } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
+import { formatAutonomousRunSummary, getAutonomousRunCounts } from "@/lib/autonomousRunSummary";
+import { getAutonomousPolicyControlAction } from "@/lib/autonomousPolicyControl";
+import { buildJobDecisionMutationInput, type JobDecisionLifecycleAction } from "@/lib/jobDecisionActions";
+import { getSafeExternalUrl, openExternalUrl } from "@/lib/externalUrl";
+import { getJobMatchDecisionSummary } from "@/lib/jobMatchDecisionSummary";
+import { getJobSourcingControlSummary } from "@/lib/jobSourcingControl";
+import {
+  countActiveJobSearchFilters,
+  defaultJobSearchFilters,
+  filterJobListings,
+  type JobApplicationProcessFilter,
+  type JobExperienceLevel,
+  type JobPostedWithin,
+  type JobSearchFilterState,
+  type JobTypeFilter,
+} from "@/lib/jobSearchFilters";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,29 +48,117 @@ import {
   RefreshCw,
   BookmarkPlus,
   Send,
+  AlertCircle,
+  ClipboardCheck,
+  XCircle,
 } from "lucide-react";
 
 export default function JobSearch() {
   const { user, loading: authLoading } = useAuth();
+  const [, setLocation] = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedJobType, setSelectedJobType] = useState<string>("all");
+  const [selectedJobType, setSelectedJobType] = useState<JobTypeFilter>("all");
   const [selectedPlatform, setSelectedPlatform] = useState<string>("all");
   const [salaryRange, setSalaryRange] = useState<[number, number]>([0, 300000]);
   const [showRemoteOnly, setShowRemoteOnly] = useState(true);
+  const [selectedExperienceLevel, setSelectedExperienceLevel] = useState<JobExperienceLevel>("all");
+  const [selectedApplicationProcess, setSelectedApplicationProcess] = useState<JobApplicationProcessFilter>("all");
+  const [postedWithin, setPostedWithin] = useState<JobPostedWithin>("all");
+  const [visaSponsorshipOnly, setVisaSponsorshipOnly] = useState(false);
+  const [openHiringSupportOnly, setOpenHiringSupportOnly] = useState(false);
+  const [diversityFriendlyOnly, setDiversityFriendlyOnly] = useState(false);
+  const [salaryDisclosedOnly, setSalaryDisclosedOnly] = useState(false);
   const [selectedJob, setSelectedJob] = useState<any>(null);
   const [activeTab, setActiveTab] = useState("all");
+  const [autonomousMode, setAutonomousMode] = useState<"review_first" | "auto_apply">("review_first");
+  const [requireHumanReview, setRequireHumanReview] = useState(true);
+  const [allowUnsupportedATS, setAllowUnsupportedATS] = useState(false);
+  const [createFollowUps, setCreateFollowUps] = useState(false);
 
-  // Fetch jobs - returns array directly
+  const jobSearchFilters = useMemo<JobSearchFilterState>(() => ({
+    query: searchQuery,
+    jobType: selectedJobType,
+    platformId: selectedPlatform,
+    salaryRange,
+    remoteOnly: showRemoteOnly,
+    experienceLevel: selectedExperienceLevel,
+    applicationProcess: selectedApplicationProcess,
+    visaSponsorshipOnly,
+    openHiringSupportOnly,
+    diversityFriendlyOnly,
+    salaryDisclosedOnly,
+    postedWithin,
+  }), [
+    diversityFriendlyOnly,
+    openHiringSupportOnly,
+    postedWithin,
+    salaryDisclosedOnly,
+    salaryRange,
+    searchQuery,
+    selectedApplicationProcess,
+    selectedExperienceLevel,
+    selectedJobType,
+    selectedPlatform,
+    showRemoteOnly,
+    visaSponsorshipOnly,
+  ]);
+  const deferredJobSearchFilters = useDeferredValue(jobSearchFilters);
+
+  // The API applies the same canonical filter contract before pagination.
   const { data: jobsList, isLoading: jobsLoading, refetch: refetchJobs } = trpc.jobs.list.useQuery({
-    limit: 100,
+    limit: 250,
     offset: 0,
+    filters: deferredJobSearchFilters,
   });
 
   // Fetch platforms
   const { data: platformsData } = trpc.platforms.list.useQuery();
+  const { data: selectedJobSources } = trpc.jobs.getSources.useQuery(
+    { id: selectedJob?.id ?? 0 },
+    { enabled: Boolean(selectedJob?.id) }
+  );
 
   // Fetch user profile for matching
   const { data: profileData } = trpc.profile.get.useQuery();
+  const { data: autonomousPlan, refetch: refetchAutonomousPlan } = trpc.automation.plan.useQuery({
+    mode: autonomousMode,
+    remoteOnly: showRemoteOnly,
+    requireHumanReview,
+    allowUnsupportedATS,
+    createFollowUps,
+  });
+  const {
+    data: applicationDecisions = [],
+    refetch: refetchApplicationDecisions,
+  } = trpc.applications.listDecisions.useQuery(undefined, {
+    enabled: Boolean(user),
+  });
+  const { data: operatingLedger } = trpc.applications.getOperatingLedger.useQuery(undefined, {
+    enabled: Boolean(user),
+  });
+
+  const autonomousEnabled = useMemo(() => {
+    try {
+      return JSON.parse(profileData?.preferences || "{}").autonomousEnabled === true;
+    } catch {
+      return false;
+    }
+  }, [profileData?.preferences]);
+
+  useEffect(() => {
+    if (!profileData?.preferences) return;
+
+    try {
+      const saved = JSON.parse(profileData.preferences);
+      setAutonomousMode(saved.mode === "auto_apply" ? "auto_apply" : "review_first");
+      setShowRemoteOnly(saved.remoteOnly ?? true);
+      setRequireHumanReview(saved.requireHumanReview ?? true);
+      setAllowUnsupportedATS(saved.allowUnsupportedATS ?? false);
+      setCreateFollowUps(saved.createFollowUps ?? false);
+    } catch {
+      // Keep safe defaults when legacy preference data cannot be parsed.
+    }
+  }, [profileData?.preferences]);
 
   // AI Match mutation
   const matchMutation = trpc.matching.calculateMatch.useMutation({
@@ -65,90 +170,152 @@ export default function JobSearch() {
     },
   });
 
-  // Apply mutation
-  const applyMutation = trpc.applications.create.useMutation({
-    onSuccess: () => {
-      toast.success("Application submitted!");
+  const decideMutation = trpc.applications.decide.useMutation({
+    onSuccess: (result, variables) => {
+      if (variables.decision === "save") {
+        toast.success("Job saved with decision reason");
+      } else if (variables.decision === "ignore") {
+        toast.success("Job ignored");
+      } else {
+        toast.success(result.existing ? "Decision updated" : "Application decision recorded");
+      }
+      refetchApplicationDecisions();
+      refetchAutonomousPlan();
     },
-    onError: () => {
-      toast.error("Failed to submit application");
+    onError: (error) => {
+      toast.error(error.message || "Failed to record decision");
     },
   });
 
-  // Save job - placeholder for now
-  const handleSaveJobAction = (job: any) => {
-    toast.success("Job saved!");
-  };
+  const autonomousRunMutation = trpc.automation.run.useMutation({
+    onSuccess: (result: any) => {
+      const counts = getAutonomousRunCounts(result);
+      const message = formatAutonomousRunSummary(result);
+      if (counts.failures > 0 || counts.resumeEvidenceBlockedActions > 0) {
+        toast.warning(message);
+      } else {
+        toast.success(message);
+      }
+      refetchAutonomousPlan();
+      refetchJobs();
+    },
+    onError: () => toast.error("Autonomous run failed"),
+  });
+
+  const autonomousDecisionByJobId = useMemo(() => {
+    return new Map((autonomousPlan?.decisions || []).map((decision: any) => [decision.jobId, decision]));
+  }, [autonomousPlan?.decisions]);
+  const applicationDecisionByJobId = useMemo(() => {
+    return new Map((applicationDecisions || []).map((decision: any) => [decision.jobId, decision]));
+  }, [applicationDecisions]);
+  const platformNameById = useMemo(
+    () => new Map((platformsData || []).map((platform) => [platform.id, platform.name])),
+    [platformsData]
+  );
 
   // Filter jobs
   const filteredJobs = useMemo(() => {
     if (!jobsList) return [];
+    return filterJobListings(jobsList, jobSearchFilters);
+  }, [jobSearchFilters, jobsList]);
 
-    return jobsList.filter((job: any) => {
-      // Search query filter
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        const matchesSearch =
-          job.title?.toLowerCase().includes(query) ||
-          job.company?.toLowerCase().includes(query) ||
-          job.description?.toLowerCase().includes(query) ||
-          job.skills?.toLowerCase().includes(query);
-        if (!matchesSearch) return false;
-      }
+  const activeFilterCount = useMemo(
+    () => countActiveJobSearchFilters(jobSearchFilters),
+    [jobSearchFilters]
+  );
 
-      // Job type filter
-      if (selectedJobType !== "all" && job.jobType !== selectedJobType) {
-        return false;
-      }
+  const resetFilters = () => {
+    setSearchQuery(defaultJobSearchFilters.query);
+    setSelectedJobType(defaultJobSearchFilters.jobType);
+    setSelectedPlatform(defaultJobSearchFilters.platformId);
+    setSalaryRange(defaultJobSearchFilters.salaryRange);
+    setShowRemoteOnly(defaultJobSearchFilters.remoteOnly);
+    setSelectedExperienceLevel(defaultJobSearchFilters.experienceLevel);
+    setSelectedApplicationProcess(defaultJobSearchFilters.applicationProcess);
+    setPostedWithin(defaultJobSearchFilters.postedWithin);
+    setVisaSponsorshipOnly(defaultJobSearchFilters.visaSponsorshipOnly);
+    setOpenHiringSupportOnly(defaultJobSearchFilters.openHiringSupportOnly);
+    setDiversityFriendlyOnly(defaultJobSearchFilters.diversityFriendlyOnly);
+    setSalaryDisclosedOnly(defaultJobSearchFilters.salaryDisclosedOnly);
+  };
 
-      // Platform filter
-      if (selectedPlatform !== "all" && job.platformId?.toString() !== selectedPlatform) {
-        return false;
-      }
-
-      // Salary filter
-      if (job.salaryMin && job.salaryMin < salaryRange[0]) return false;
-      if (job.salaryMax && job.salaryMax > salaryRange[1]) return false;
-
-      // Remote filter
-      if (showRemoteOnly && job.location && !job.location.toLowerCase().includes("remote")) {
-        return false;
-      }
-
-      return true;
+  const scoredJobs = useMemo(() => {
+    return filteredJobs.map((job: any) => {
+      const summary = getJobMatchDecisionSummary(
+        job,
+        profileData,
+        autonomousDecisionByJobId.get(job.id),
+        applicationDecisionByJobId.get(job.id)
+      );
+      return { ...job, matchScore: summary.matchScore, matchSummary: summary };
     });
-  }, [jobsList, searchQuery, selectedJobType, selectedPlatform, salaryRange, showRemoteOnly]);
+  }, [applicationDecisionByJobId, autonomousDecisionByJobId, filteredJobs, profileData]);
 
   // Group jobs by match score
   const groupedJobs = useMemo(() => {
     const excellent: any[] = [];
     const good: any[] = [];
     const fair: any[] = [];
+    const decided: any[] = [];
 
-    filteredJobs.forEach((job: any) => {
-      const userSkills = profileData?.skills?.toLowerCase().split(",").map((s) => s.trim()) || [];
-      const jobSkills = job.skills?.toLowerCase().split(",").map((s: string) => s.trim()) || [];
-      const overlap = userSkills.filter((s) => jobSkills.some((js: string) => js.includes(s) || s.includes(js))).length;
-      const matchScore = userSkills.length > 0 ? Math.min(100, (overlap / userSkills.length) * 100 + Math.random() * 20) : 50 + Math.random() * 30;
-
-      const jobWithScore = { ...job, matchScore: Math.round(matchScore) };
-
-      if (matchScore >= 80) excellent.push(jobWithScore);
-      else if (matchScore >= 60) good.push(jobWithScore);
-      else fair.push(jobWithScore);
+    scoredJobs.forEach((job: any) => {
+      if (job.matchSummary?.isDecided) decided.push(job);
+      if (job.matchScore >= 80) excellent.push(job);
+      else if (job.matchScore >= 60) good.push(job);
+      else fair.push(job);
     });
 
-    return { excellent, good, fair, all: filteredJobs };
-  }, [filteredJobs, profileData?.skills]);
+    return { excellent, good, fair, decided, all: scoredJobs };
+  }, [scoredJobs]);
+  const sourcingControl = useMemo(() => getJobSourcingControlSummary(scoredJobs), [scoredJobs]);
+  const autonomousControl = useMemo(() => getAutonomousPolicyControlAction({
+    plan: autonomousPlan,
+    campaign: operatingLedger?.campaign,
+    settings: {
+      autonomousEnabled,
+      requireHumanReview,
+    },
+  }), [autonomousEnabled, autonomousPlan, operatingLedger?.campaign, requireHumanReview]);
+  const autonomousControlTone = {
+    low: "border-slate-700 text-slate-300",
+    medium: "border-amber-500/40 text-amber-300",
+    high: "border-red-500/40 text-red-300",
+  }[autonomousControl.risk];
+
+  const selectedJobSummary = useMemo(() => {
+    if (!selectedJob) return null;
+    return getJobMatchDecisionSummary(
+      selectedJob,
+      profileData,
+      autonomousDecisionByJobId.get(selectedJob.id),
+      applicationDecisionByJobId.get(selectedJob.id)
+    );
+  }, [applicationDecisionByJobId, autonomousDecisionByJobId, profileData, selectedJob]);
 
   const handleApply = async (job: any) => {
     if (!user) {
       toast.error("Please log in to apply");
       return;
     }
-    applyMutation.mutate({
+    const summary = getJobMatchDecisionSummary(
+      job,
+      profileData,
+      autonomousDecisionByJobId.get(job.id),
+      applicationDecisionByJobId.get(job.id)
+    );
+    const reviewReason = [
+      summary.nextAction,
+      summary.blockers.length > 0 ? `Blockers: ${summary.blockers.join("; ")}` : "",
+      summary.missingSkills.length > 0 ? `Missing skills to review: ${summary.missingSkills.join(", ")}` : "",
+    ].filter(Boolean).join(" ");
+    decideMutation.mutate({
       jobId: job.id,
-      coverLetter: `I am excited to apply for the ${job.title} position at ${job.company}.`,
+      decision: summary.recommendedDecision === "manual_apply" ? "manual_apply" : "review",
+      decisionReason: `${summary.decisionLabel}: ${job.title} at ${job.company}. ${summary.reasons.join(" ")}`.trim(),
+      matchScore: summary.matchScore,
+      riskLevel: summary.riskLevel,
+      reviewRequired: true,
+      reviewReason,
     });
   };
 
@@ -157,7 +324,38 @@ export default function JobSearch() {
       toast.error("Please log in to save jobs");
       return;
     }
-    handleSaveJobAction(job);
+    const summary = getJobMatchDecisionSummary(
+      job,
+      profileData,
+      autonomousDecisionByJobId.get(job.id),
+      applicationDecisionByJobId.get(job.id)
+    );
+    decideMutation.mutate({
+      jobId: job.id,
+      decision: "save",
+      decisionReason: `Saved ${job.title} at ${job.company} for later review. ${summary.nextAction}`,
+      matchScore: summary.matchScore,
+      riskLevel: summary.riskLevel === "high" ? "medium" : summary.riskLevel,
+      reviewRequired: true,
+      reviewReason: summary.missingSkills.length > 0
+        ? `Saved to review missing skills: ${summary.missingSkills.join(", ")}.`
+        : "Saved for later review from Job Search.",
+    });
+  };
+
+  const handleDecisionLifecycleAction = (job: any, action: JobDecisionLifecycleAction) => {
+    if (!user) {
+      toast.error("Please log in to manage job decisions");
+      return;
+    }
+
+    const summary = getJobMatchDecisionSummary(
+      job,
+      profileData,
+      autonomousDecisionByJobId.get(job.id),
+      applicationDecisionByJobId.get(job.id)
+    );
+    decideMutation.mutate(buildJobDecisionMutationInput(job, summary, action));
   };
 
   const handleCalculateMatch = async (job: any) => {
@@ -166,6 +364,21 @@ export default function JobSearch() {
       return;
     }
     matchMutation.mutate({ jobId: job.id });
+  };
+
+  const handleAutonomousControlAction = () => {
+    if (autonomousControl.runsAgent) {
+      autonomousRunMutation.mutate({
+        mode: autonomousMode,
+        remoteOnly: showRemoteOnly,
+        requireHumanReview,
+        allowUnsupportedATS,
+        createFollowUps,
+      });
+      return;
+    }
+
+    setLocation(autonomousControl.route);
   };
 
   const formatSalary = (min?: number | null, max?: number | null) => {
@@ -182,8 +395,39 @@ export default function JobSearch() {
     return "bg-slate-500/20 text-slate-400 border-slate-500/30";
   };
 
+  const getFitBadgeClass = (fit: string) => {
+    switch (fit) {
+      case "fit":
+        return "border-emerald-500/30 text-emerald-300";
+      case "partial":
+        return "border-amber-500/30 text-amber-300";
+      case "gap":
+        return "border-red-500/30 text-red-300";
+      default:
+        return "border-slate-600 text-slate-300";
+    }
+  };
+  const sourcingTone = {
+    empty: "border-slate-700 bg-slate-900/50",
+    blocked: "border-amber-500/40 bg-amber-500/10",
+    review_ready: "border-emerald-500/40 bg-emerald-500/10",
+    manual_tasks: "border-orange-500/40 bg-orange-500/10",
+    save_for_later: "border-blue-500/40 bg-blue-500/10",
+    low_signal: "border-slate-700 bg-slate-900/50",
+  }[sourcingControl.status];
+  const sourcingBadgeTone = {
+    empty: "border-slate-600 text-slate-300",
+    blocked: "border-amber-500/40 text-amber-300",
+    review_ready: "border-emerald-500/40 text-emerald-300",
+    manual_tasks: "border-orange-500/40 text-orange-300",
+    save_for_later: "border-blue-500/40 text-blue-300",
+    low_signal: "border-slate-600 text-slate-300",
+  }[sourcingControl.status];
+
   const JobCard = ({ job, showMatchScore = true }: { job: any; showMatchScore?: boolean }) => (
     <Card
+      data-testid="job-card"
+      data-job-id={job.id}
       className="group hover:border-cyan-500/50 transition-all duration-300 cursor-pointer bg-slate-900/50 border-slate-700/50"
       onClick={() => setSelectedJob(job)}
     >
@@ -229,6 +473,45 @@ export default function JobSearch() {
                 </Badge>
               )}
             </div>
+            {job.matchSummary && (
+              <div className="mt-3 rounded-md border border-slate-800 bg-slate-950/40 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline" className={getMatchBadgeColor(job.matchSummary.matchScore)}>
+                    {job.matchSummary.decisionLabel}
+                  </Badge>
+                  <Badge
+                    variant="outline"
+                    className={job.matchSummary.riskLevel === "high"
+                      ? "border-amber-500/40 text-amber-300"
+                      : job.matchSummary.riskLevel === "low"
+                        ? "border-emerald-500/40 text-emerald-300"
+                        : "border-blue-500/40 text-blue-300"}
+                  >
+                    {job.matchSummary.riskLevel} risk
+                  </Badge>
+                  {job.matchSummary.blockers.length > 0 && (
+                    <Badge variant="outline" className="border-orange-500/40 text-orange-300">
+                      {job.matchSummary.blockers.length} blocker{job.matchSummary.blockers.length === 1 ? "" : "s"}
+                    </Badge>
+                  )}
+                  {job.matchSummary.isDecided && (
+                    <Badge
+                      data-testid="job-card-ledger-decision"
+                      variant="outline"
+                      className="border-cyan-500/40 text-cyan-300"
+                    >
+                      Ledger: {job.matchSummary.ledgerDecisionLabel}
+                    </Badge>
+                  )}
+                </div>
+                <p className="mt-2 line-clamp-2 text-xs text-slate-400">{job.matchSummary.nextAction}</p>
+                {job.matchSummary.ledgerDecisionReason && (
+                  <p className="mt-2 line-clamp-1 text-xs text-slate-500">
+                    {job.matchSummary.ledgerDecisionReason}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex flex-col gap-2">
             <Button
@@ -269,13 +552,198 @@ export default function JobSearch() {
               {filteredJobs.length} jobs found across {platformsData?.length || 0} platforms
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={autonomousMode} onValueChange={(value) => setAutonomousMode(value as "review_first" | "auto_apply")}>
+              <SelectTrigger className="w-[150px] bg-slate-800 border-slate-700">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="review_first">Review first</SelectItem>
+                <SelectItem value="auto_apply">Accelerated</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              data-testid="job-search-autonomous-primary"
+              size="sm"
+              onClick={handleAutonomousControlAction}
+              disabled={autonomousRunMutation.isPending && autonomousControl.runsAgent}
+              className={autonomousControl.risk === "high"
+                ? "bg-red-600 hover:bg-red-500"
+                : autonomousControl.runsAgent
+                  ? "bg-gradient-to-r from-cyan-500 to-blue-600"
+                  : "bg-amber-600 hover:bg-amber-500"}
+            >
+              {autonomousRunMutation.isPending && autonomousControl.runsAgent
+                ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                : autonomousControl.runsAgent
+                  ? <Sparkles className="w-4 h-4 mr-2" />
+                  : <ExternalLink className="w-4 h-4 mr-2" />}
+              {autonomousControl.cta}
+            </Button>
             <Button variant="outline" size="sm" onClick={() => refetchJobs()}>
               <RefreshCw className="w-4 h-4 mr-2" />
               Refresh
             </Button>
           </div>
         </div>
+
+        {autonomousPlan && (
+          <Card className="bg-slate-900/50 border-cyan-500/30">
+            <CardContent className="p-4">
+              <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <Sparkles className="w-4 h-4 text-cyan-400" />
+                    <h2 className="text-sm font-semibold text-white">Autonomous sourcing plan</h2>
+                  </div>
+                  <p className="text-sm text-slate-400">
+                    Scanned {autonomousPlan.summary.scanned} current jobs, found {autonomousPlan.summary.eligible} eligible matches,
+                    prepared {autonomousPlan.summary.queuedForReview} for review and identified {autonomousPlan.summary.manualApply} manual tasks.
+                    {autonomousPlan.summary.expiredJobsSkipped > 0
+                      ? ` Excluded ${autonomousPlan.summary.expiredJobsSkipped} expired posting${autonomousPlan.summary.expiredJobsSkipped === 1 ? "" : "s"}.`
+                      : ""}
+                  </p>
+                  {autonomousPlan.policyWarnings?.length > 0 && (
+                    <div className="mt-3 space-y-1">
+                      {autonomousPlan.policyWarnings.slice(0, 3).map((warning: string) => (
+                        <p key={warning} className="text-xs text-amber-300">{warning}</p>
+                      ))}
+                    </div>
+                  )}
+                  {autonomousPlan.evidenceGates?.length > 0 && (
+                    <div data-testid="job-search-autonomous-evidence-gates" className="mt-3 space-y-2">
+                      {autonomousPlan.evidenceGates.slice(0, 3).map((gate: any) => (
+                        <div key={gate.id || gate.label} className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                          <div className="flex items-center gap-2 text-xs font-medium text-amber-200">
+                            <AlertCircle className="h-3.5 w-3.5" />
+                            {gate.label || "Evidence gate"}
+                          </div>
+                          <p className="mt-1 text-xs text-amber-100/80">{gate.detail}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div
+                    data-testid="job-search-autonomous-control"
+                    className="mt-3 rounded-md border border-slate-800 bg-slate-950/40 p-3"
+                  >
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <Badge variant="outline" className={autonomousControlTone}>
+                        {autonomousControl.label}
+                      </Badge>
+                      <Badge
+                        variant="outline"
+                        className={autonomousControl.approvalGated
+                          ? "border-amber-500/40 text-amber-300"
+                          : "border-slate-700 text-slate-300"}
+                      >
+                        {autonomousControl.approvalGated ? "Approval-gated" : "Internal"}
+                      </Badge>
+                    </div>
+                    <p className="text-sm font-medium text-white">{autonomousControl.headline}</p>
+                    <p className="mt-1 text-sm text-slate-400">{autonomousControl.detail}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-center">
+                  <div className="rounded-md bg-slate-800 px-3 py-2">
+                    <p className="text-lg font-bold text-white">{autonomousPlan.summary.eligible}</p>
+                    <p className="text-xs text-slate-400">Eligible</p>
+                  </div>
+                  <div className="rounded-md bg-slate-800 px-3 py-2">
+                    <p className="text-lg font-bold text-cyan-400">{autonomousPlan.summary.queuedForReview}</p>
+                    <p className="text-xs text-slate-400">Review</p>
+                  </div>
+                  <div className="rounded-md bg-slate-800 px-3 py-2">
+                    <p className="text-lg font-bold text-amber-400">{autonomousPlan.summary.manualApply}</p>
+                    <p className="text-xs text-slate-400">Manual</p>
+                  </div>
+                  <div className="rounded-md bg-slate-800 px-3 py-2">
+                    <p className="text-lg font-bold text-purple-400">{autonomousPlan.summary.followUpsDue}</p>
+                    <p className="text-xs text-slate-400">Follow-ups</p>
+                  </div>
+                  <div className="rounded-md bg-slate-800 px-3 py-2">
+                    <p className="text-lg font-bold text-amber-400">{autonomousPlan.evidenceGates?.length || 0}</p>
+                    <p className="text-xs text-slate-400">Gates</p>
+                  </div>
+                  <div className="rounded-md bg-slate-800 px-3 py-2">
+                    <p className="text-lg font-bold text-slate-300">{autonomousPlan.summary.expiredJobsSkipped || 0}</p>
+                    <p className="text-xs text-slate-400">Expired</p>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-2 md:grid-cols-3">
+                <label className="flex items-center gap-2 rounded-md border border-slate-700 bg-slate-800/50 px-3 py-2 text-sm text-slate-300">
+                  <Checkbox checked={requireHumanReview} onCheckedChange={(checked) => setRequireHumanReview(Boolean(checked))} />
+                  Human review
+                </label>
+                <label className="flex items-center gap-2 rounded-md border border-slate-700 bg-slate-800/50 px-3 py-2 text-sm text-slate-300">
+                  <Checkbox checked={allowUnsupportedATS} onCheckedChange={(checked) => setAllowUnsupportedATS(Boolean(checked))} />
+                  Manual tasks
+                </label>
+                <label className="flex items-center gap-2 rounded-md border border-slate-700 bg-slate-800/50 px-3 py-2 text-sm text-slate-300">
+                  <Checkbox checked={createFollowUps} onCheckedChange={(checked) => setCreateFollowUps(Boolean(checked))} />
+                  Queue follow-ups
+                </label>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        <Card data-testid="job-sourcing-control" className={sourcingTone}>
+          <CardContent className="p-5">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0">
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  <Badge variant="outline" className={sourcingBadgeTone}>
+                    {sourcingControl.label}
+                  </Badge>
+                  <Badge variant="outline" className="border-slate-700 text-slate-300">
+                    {sourcingControl.totalJobs} visible job{sourcingControl.totalJobs === 1 ? "" : "s"}
+                  </Badge>
+                  <Badge variant="outline" className="border-slate-700 text-slate-300">
+                    {sourcingControl.averageScore}% avg match
+                  </Badge>
+                </div>
+                <h2 className="text-xl font-semibold text-white">Sourcing Control</h2>
+                <p className="mt-1 text-sm text-slate-300">{sourcingControl.headline}</p>
+                <p className="mt-2 max-w-3xl text-sm text-slate-400">{sourcingControl.nextAction}</p>
+              </div>
+              <Button
+                data-testid="job-sourcing-primary"
+                className="bg-cyan-600 hover:bg-cyan-500 lg:w-56"
+                onClick={() => setActiveTab(sourcingControl.primaryTab)}
+              >
+                <Target className="mr-2 h-4 w-4" />
+                {sourcingControl.primaryCta}
+              </Button>
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-9">
+              {[
+                ["Review", sourcingControl.reviewReady, "excellent"],
+                ["Manual", sourcingControl.manualTasks, "good"],
+                ["Save", sourcingControl.saveForLater, "good"],
+                ["Ignore", sourcingControl.ignored, "fair"],
+                ["Decided", sourcingControl.decided, "decided"],
+                ["Blocked", sourcingControl.blocked, "all"],
+                ["High risk", sourcingControl.highRisk, "all"],
+                ["High match", sourcingControl.highMatch, "excellent"],
+                ["Average", `${sourcingControl.averageScore}%`, "all"],
+              ].map(([label, value, tab]) => (
+                <button
+                  key={String(label)}
+                  type="button"
+                  data-testid={`job-sourcing-metric-${String(label).toLowerCase().replace(/\s+/g, "-")}`}
+                  className="rounded-md border border-slate-800 bg-slate-950/40 p-3 text-left transition hover:border-cyan-500/50 hover:bg-slate-900"
+                  onClick={() => setActiveTab(String(tab))}
+                >
+                  <p className="text-xs text-slate-500">{label}</p>
+                  <p className="mt-1 text-lg font-semibold text-white">{value}</p>
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Search and Filters */}
         <Card className="bg-slate-900/50 border-slate-700/50">
@@ -292,7 +760,7 @@ export default function JobSearch() {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <Select value={selectedJobType} onValueChange={setSelectedJobType}>
+                <Select value={selectedJobType} onValueChange={(value) => setSelectedJobType(value as JobTypeFilter)}>
                   <SelectTrigger className="w-[140px] bg-slate-800 border-slate-700">
                     <SelectValue placeholder="Job Type" />
                   </SelectTrigger>
@@ -329,15 +797,62 @@ export default function JobSearch() {
                     Remote Only
                   </label>
                 </div>
+                <Select value={selectedExperienceLevel} onValueChange={(value) => setSelectedExperienceLevel(value as JobExperienceLevel)}>
+                  <SelectTrigger data-testid="job-filter-experience" className="w-[150px] bg-slate-800 border-slate-700">
+                    <SelectValue placeholder="Experience" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Levels</SelectItem>
+                    <SelectItem value="entry">Entry</SelectItem>
+                    <SelectItem value="junior">Junior</SelectItem>
+                    <SelectItem value="mid">Mid</SelectItem>
+                    <SelectItem value="senior">Senior</SelectItem>
+                    <SelectItem value="lead">Lead / Staff</SelectItem>
+                    <SelectItem value="executive">Executive</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={selectedApplicationProcess} onValueChange={(value) => setSelectedApplicationProcess(value as JobApplicationProcessFilter)}>
+                  <SelectTrigger data-testid="job-filter-application-process" className="w-[150px] bg-slate-800 border-slate-700">
+                    <SelectValue placeholder="Application system" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Systems</SelectItem>
+                    <SelectItem value="greenhouse">Greenhouse</SelectItem>
+                    <SelectItem value="lever">Lever</SelectItem>
+                    <SelectItem value="workday">Workday</SelectItem>
+                    <SelectItem value="email">Email</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={postedWithin} onValueChange={(value) => setPostedWithin(value as JobPostedWithin)}>
+                  <SelectTrigger data-testid="job-filter-posted-within" className="w-[140px] bg-slate-800 border-slate-700">
+                    <SelectValue placeholder="Posted" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Any Date</SelectItem>
+                    <SelectItem value="1">Past 24 hours</SelectItem>
+                    <SelectItem value="3">Past 3 days</SelectItem>
+                    <SelectItem value="7">Past week</SelectItem>
+                    <SelectItem value="30">Past month</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
             <div className="mt-4 pt-4 border-t border-slate-700">
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between gap-3 mb-2">
                 <span className="text-sm text-slate-400">Salary Range</span>
-                <span className="text-sm text-slate-300">
-                  ${(salaryRange[0] / 1000).toFixed(0)}k - ${(salaryRange[1] / 1000).toFixed(0)}k
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-slate-300">
+                    ${(salaryRange[0] / 1000).toFixed(0)}k - ${(salaryRange[1] / 1000).toFixed(0)}k
+                  </span>
+                  {activeFilterCount > 0 && (
+                    <Button data-testid="job-filter-clear" type="button" size="sm" variant="ghost" className="h-7 px-2 text-slate-300" onClick={resetFilters}>
+                      <XCircle className="mr-1 h-3.5 w-3.5" />
+                      Clear {activeFilterCount}
+                    </Button>
+                  )}
+                </div>
               </div>
               <Slider
                 value={salaryRange}
@@ -347,13 +862,30 @@ export default function JobSearch() {
                 step={10000}
                 className="w-full"
               />
+              <div className="mt-4 flex flex-wrap gap-x-5 gap-y-3">
+                {[
+                  ["visa-sponsorship", "Visa sponsorship", visaSponsorshipOnly, setVisaSponsorshipOnly],
+                  ["open-hiring-support", "Open hiring support", openHiringSupportOnly, setOpenHiringSupportOnly],
+                  ["diversity-friendly", "Diversity-friendly", diversityFriendlyOnly, setDiversityFriendlyOnly],
+                  ["salary-disclosed", "Salary disclosed", salaryDisclosedOnly, setSalaryDisclosedOnly],
+                ].map(([id, label, checked, setChecked]) => (
+                  <div key={id as string} className="flex items-center gap-2">
+                    <Checkbox
+                      id={id as string}
+                      checked={checked as boolean}
+                      onCheckedChange={(value) => (setChecked as (next: boolean) => void)(value === true)}
+                    />
+                    <label htmlFor={id as string} className="text-sm text-slate-300 cursor-pointer">{label as string}</label>
+                  </div>
+                ))}
+              </div>
             </div>
           </CardContent>
         </Card>
 
         {/* Job Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="bg-slate-800/50 border border-slate-700">
+          <TabsList className="h-auto flex-wrap justify-start bg-slate-800/50 border border-slate-700">
             <TabsTrigger value="all" className="data-[state=active]:bg-slate-700">
               All Jobs ({filteredJobs.length})
             </TabsTrigger>
@@ -368,6 +900,10 @@ export default function JobSearch() {
             <TabsTrigger value="fair" className="data-[state=active]:bg-slate-700">
               Fair ({groupedJobs.fair.length})
             </TabsTrigger>
+            <TabsTrigger value="decided" className="data-[state=active]:bg-cyan-900/50">
+              <ClipboardCheck className="w-4 h-4 mr-1 text-cyan-400" />
+              Decided ({groupedJobs.decided.length})
+            </TabsTrigger>
           </TabsList>
 
           <div className="mt-4">
@@ -379,10 +915,10 @@ export default function JobSearch() {
               <>
                 <TabsContent value="all" className="mt-0">
                   <div className="grid gap-3">
-                    {filteredJobs.map((job: any) => (
+                    {scoredJobs.map((job: any) => (
                       <JobCard key={job.id} job={job} showMatchScore={false} />
                     ))}
-                    {filteredJobs.length === 0 && (
+                    {scoredJobs.length === 0 && (
                       <div className="text-center py-12 text-slate-400">
                         No jobs found matching your criteria
                       </div>
@@ -418,6 +954,20 @@ export default function JobSearch() {
                     {groupedJobs.fair.map((job: any) => (
                       <JobCard key={job.id} job={job} />
                     ))}
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="decided" className="mt-0">
+                  <div className="grid gap-3" data-testid="job-decided-tab">
+                    {groupedJobs.decided.map((job: any) => (
+                      <JobCard key={job.id} job={job} />
+                    ))}
+                    {groupedJobs.decided.length === 0 && (
+                      <div className="text-center py-12 text-slate-400">
+                        <ClipboardCheck className="w-12 h-12 mx-auto mb-4 text-slate-600" />
+                        <p>No ledger decisions match the current filters</p>
+                      </div>
+                    )}
                   </div>
                 </TabsContent>
               </>
@@ -464,6 +1014,176 @@ export default function JobSearch() {
                       </div>
                     )}
 
+                    {selectedJobSummary && (
+                      <div className="rounded-md border border-slate-700 bg-slate-800/50 p-3">
+                        <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <h4 className="text-sm font-medium text-slate-200">Match decision</h4>
+                            <p className="mt-1 text-sm text-slate-400">{selectedJobSummary.nextAction}</p>
+                          </div>
+                          <Badge variant="outline" className={getMatchBadgeColor(selectedJobSummary.matchScore)}>
+                            <Target className="w-3 h-3 mr-1" />
+                            {selectedJobSummary.matchScore}% {selectedJobSummary.confidence}
+                          </Badge>
+                        </div>
+                        <div className="grid gap-2 text-xs text-slate-400 md:grid-cols-4">
+                          {[
+                            ["Decision", selectedJobSummary.decisionLabel],
+                            ["Risk", selectedJobSummary.riskLevel],
+                            ["Salary", selectedJobSummary.salaryFit],
+                            ["Location", selectedJobSummary.locationFit],
+                          ].map(([label, value]) => (
+                            <div key={label} className="rounded border border-slate-700/70 bg-slate-900/60 p-2">
+                              <div className="text-slate-500">{label}</div>
+                              <div className="mt-1 font-medium capitalize text-slate-200">{value}</div>
+                            </div>
+                          ))}
+                        </div>
+                        {selectedJobSummary.isDecided && (
+                          <div
+                            data-testid="job-detail-ledger-decision"
+                            className="mt-3 rounded-md border border-cyan-500/30 bg-cyan-500/10 p-3"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div>
+                                <div className="text-xs font-medium uppercase text-cyan-300">
+                                  Operating ledger decision
+                                </div>
+                                <p className="mt-1 text-sm text-slate-200">
+                                  {selectedJobSummary.ledgerDecisionLabel}
+                                  {selectedJobSummary.ledgerUpdatedAt
+                                    ? ` recorded ${selectedJobSummary.ledgerUpdatedAt.toLocaleDateString()}`
+                                    : ""}
+                                </p>
+                              </div>
+                              <Badge variant="outline" className="border-cyan-500/40 text-cyan-300">
+                                {selectedJobSummary.ledgerDecision}
+                              </Badge>
+                            </div>
+                            {selectedJobSummary.ledgerDecisionReason && (
+                              <p className="mt-2 text-xs text-slate-300">
+                                {selectedJobSummary.ledgerDecisionReason}
+                              </p>
+                            )}
+                            {selectedJobSummary.ledgerReviewReason && (
+                              <p className="mt-1 text-xs text-slate-400">
+                                Review context: {selectedJobSummary.ledgerReviewReason}
+                              </p>
+                            )}
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {selectedJobSummary.ledgerDecision !== "review" && (
+                                <Button
+                                  size="sm"
+                                  data-testid="job-decision-reopen-review"
+                                  disabled={decideMutation.isPending}
+                                  onClick={() => handleDecisionLifecycleAction(selectedJob, "queue_review")}
+                                >
+                                  <RefreshCw className="mr-2 h-4 w-4" />
+                                  Reopen Review
+                                </Button>
+                              )}
+                              {selectedJobSummary.ledgerDecision !== "save" && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  data-testid="job-decision-save"
+                                  disabled={decideMutation.isPending}
+                                  onClick={() => handleDecisionLifecycleAction(selectedJob, "save")}
+                                >
+                                  <Heart className="mr-2 h-4 w-4" />
+                                  Save for Later
+                                </Button>
+                              )}
+                              {selectedJobSummary.ledgerDecision !== "ignore" && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  data-testid="job-decision-ignore"
+                                  className="border-destructive/50 text-destructive"
+                                  disabled={decideMutation.isPending}
+                                  onClick={() => handleDecisionLifecycleAction(selectedJob, "ignore")}
+                                >
+                                  <XCircle className="mr-2 h-4 w-4" />
+                                  Ignore
+                                </Button>
+                              )}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                data-testid="job-open-review-queue"
+                                onClick={() => setLocation("/review-queue")}
+                              >
+                                <ClipboardCheck className="mr-2 h-4 w-4" />
+                                Review Queue
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                        {selectedJobSummary.reasons.length > 0 && (
+                          <div className="mt-3 space-y-1">
+                            {selectedJobSummary.reasons.map((reason) => (
+                              <div key={reason} className="flex items-start gap-2 text-xs text-emerald-300">
+                                <Target className="mt-0.5 h-3 w-3 shrink-0" />
+                                <span>{reason}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {selectedJobSummary.blockers.length > 0 && (
+                          <div className="mt-3 space-y-1">
+                            {selectedJobSummary.blockers.map((blocker) => (
+                              <div key={blocker} className="flex items-start gap-2 text-xs text-amber-300">
+                                <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
+                                <span>{blocker}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          <div>
+                            <div className="mb-2 text-xs font-medium text-slate-300">Matched skills</div>
+                            <div className="flex flex-wrap gap-1">
+                              {selectedJobSummary.matchedSkills.length > 0 ? selectedJobSummary.matchedSkills.map((skill) => (
+                                <Badge key={skill} variant="outline" className="border-emerald-500/30 text-emerald-300">
+                                  {skill}
+                                </Badge>
+                              )) : (
+                                <span className="text-xs text-slate-500">No direct skill evidence yet</span>
+                              )}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="mb-2 text-xs font-medium text-slate-300">Missing / verify</div>
+                            <div className="flex flex-wrap gap-1">
+                              {selectedJobSummary.missingSkills.length > 0 ? selectedJobSummary.missingSkills.map((skill) => (
+                                <Badge key={skill} variant="outline" className="border-amber-500/30 text-amber-300">
+                                  {skill}
+                                </Badge>
+                              )) : (
+                                <span className="text-xs text-slate-500">No missing skills detected from listing</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {["salaryFit", "locationFit"].map((key) => {
+                            const label = key === "salaryFit" ? "Salary fit" : "Location fit";
+                            const fit = key === "salaryFit" ? selectedJobSummary.salaryFit : selectedJobSummary.locationFit;
+                            return (
+                              <Badge key={key} variant="outline" className={getFitBadgeClass(fit)}>
+                                {label}: {fit}
+                              </Badge>
+                            );
+                          })}
+                          {selectedJobSummary.remoteFit && (
+                            <Badge variant="outline" className="border-cyan-500/30 text-cyan-300">
+                              Remote-compatible
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="flex flex-wrap gap-2">
                       {selectedJob.jobType && (
                         <Badge variant="secondary" className="bg-slate-800">
@@ -478,6 +1198,30 @@ export default function JobSearch() {
                         </Badge>
                       )}
                     </div>
+
+                    {selectedJobSources && selectedJobSources.sources.length > 1 && (
+                      <div
+                        data-testid="job-detail-source-coverage"
+                        className="border-l-2 border-cyan-400 bg-slate-800/40 py-2 pl-3"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-medium text-slate-200">Source coverage</p>
+                          <Badge variant="outline" className="border-cyan-500/40 text-cyan-300">
+                            {selectedJobSources.sources.length} linked sources
+                          </Badge>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-400">
+                          Hire.AI is showing one canonical listing while preserving every matched source for verification.
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {selectedJobSources.sources.map((source) => (
+                            <Badge key={source.id} variant="outline" className="border-slate-600 text-slate-300">
+                              {platformNameById.get(source.platformId) || `Platform #${source.platformId}`}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {selectedJob.skills && (
                       <div>
@@ -505,15 +1249,20 @@ export default function JobSearch() {
 
                 <div className="flex justify-between items-center pt-4 border-t border-slate-700">
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => handleSaveJob(selectedJob)}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleSaveJob(selectedJob)}
+                      disabled={decideMutation.isPending}
+                    >
                       <Heart className="w-4 h-4 mr-1" />
                       Save
                     </Button>
-                    {selectedJob.applicationUrl && (
+                    {getSafeExternalUrl(selectedJob.applicationUrl) && (
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => window.open(selectedJob.applicationUrl, "_blank")}
+                        onClick={() => openExternalUrl(selectedJob.applicationUrl)}
                       >
                         <ExternalLink className="w-4 h-4 mr-1" />
                         View Original
@@ -522,15 +1271,19 @@ export default function JobSearch() {
                   </div>
                   <Button
                     onClick={() => handleApply(selectedJob)}
-                    disabled={applyMutation.isPending}
+                    disabled={decideMutation.isPending}
                     className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700"
                   >
-                    {applyMutation.isPending ? (
+                    {decideMutation.isPending ? (
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     ) : (
                       <Send className="w-4 h-4 mr-2" />
                     )}
-                    Quick Apply
+                    {selectedJobSummary?.recommendedDecision === "manual_apply"
+                      ? "Queue Manual Task"
+                      : selectedJobSummary?.recommendedDecision === "ignore"
+                        ? "Queue Exception Review"
+                        : "Queue Review"}
                   </Button>
                 </div>
               </>

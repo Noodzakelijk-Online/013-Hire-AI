@@ -3,8 +3,7 @@ import Stripe from "stripe";
 import { getDb } from "./db";
 import { successFees, feePayments } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+import { getStripeClient } from "./stripeClient";
 
 export function registerStripeWebhook(app: Express) {
   app.post(
@@ -18,7 +17,7 @@ export function registerStripeWebhook(app: Express) {
 
       try {
         if (webhookSecret && sig) {
-          event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+          event = getStripeClient().webhooks.constructEvent(req.body, sig, webhookSecret);
         } else {
           // For development without webhook secret
           event = JSON.parse(req.body.toString()) as Stripe.Event;

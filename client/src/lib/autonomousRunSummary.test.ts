@@ -1,0 +1,66 @@
+import { describe, expect, it } from "vitest";
+import { formatAutonomousRunSummary, getAutonomousRunCounts } from "./autonomousRunSummary";
+
+describe("autonomous run summary", () => {
+  it("combines job tasks and follow-up drafts", () => {
+    const result = {
+      queuedApplicationRecords: 1,
+      queuedReviewRecords: 2,
+      queuedManualRecords: 0,
+      queuedFollowUps: 1,
+    };
+
+    expect(getAutonomousRunCounts(result)).toMatchObject({
+      jobTasks: 3,
+      followUpDrafts: 1,
+      totalCreated: 4,
+    });
+    expect(formatAutonomousRunSummary(result)).toBe("Queued 3 job tasks and 1 follow-up draft");
+  });
+
+  it("reports skipped follow-ups and failures", () => {
+    expect(formatAutonomousRunSummary({
+      skippedDuplicateFollowUps: 2,
+      skippedSafetyBlockedFollowUps: 1,
+      failedActions: 1,
+    })).toBe("Autonomous run completed with no new tasks; 2 duplicate follow-ups skipped; 1 follow-up paused for higher-priority review; 1 action failed");
+  });
+
+  it("reports evidence-gated external actions", () => {
+    const result = {
+      queuedReviewRecords: 1,
+      skippedEvidenceGatedActions: 2,
+      evidenceGates: [{ id: "profile-core-evidence", label: "Evidence blocked", severity: "high" }],
+    };
+
+    expect(getAutonomousRunCounts(result)).toMatchObject({
+      jobTasks: 1,
+      evidenceGatedActions: 2,
+      evidenceGates: 1,
+    });
+    expect(formatAutonomousRunSummary(result)).toBe(
+      "Queued 1 job task; 2 external actions gated by profile or connector evidence"
+    );
+  });
+
+  it("explains when application preparation is blocked by missing resume evidence", () => {
+    const result = {
+      skippedResumeEvidenceActions: 2,
+      evidenceGates: [{ id: "profile-core-evidence", label: "Evidence blocked", severity: "high" }],
+    };
+
+    expect(getAutonomousRunCounts(result)).toMatchObject({
+      resumeEvidenceBlockedActions: 2,
+      evidenceGates: 1,
+    });
+    expect(formatAutonomousRunSummary(result)).toBe(
+      "Autonomous run completed with no new tasks; 2 application preparations blocked until an active resume is linked; 1 evidence gate active"
+    );
+  });
+
+  it("reports expired postings excluded from preparation", () => {
+    expect(formatAutonomousRunSummary({
+      summary: { expiredJobsSkipped: 2 },
+    })).toBe("Autonomous run completed with no new tasks; 2 expired job postings excluded");
+  });
+});
