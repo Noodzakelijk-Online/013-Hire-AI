@@ -75,4 +75,22 @@ describe("success fee compliance", () => {
       daysUntilDue: 5,
     });
   });
+
+  it("surfaces suspended fees as payment-recovery work", () => {
+    const now = new Date("2026-06-30T12:00:00.000Z");
+    const fees = [fee({ status: "suspended", monthlyFeeAmount: 25_000 })];
+
+    const summary = getSuccessFeeComplianceSummary(fees, [], now);
+    const queue = getSuccessFeeComplianceQueue(fees, [], now);
+
+    expect(summary).toMatchObject({
+      status: "needs_attention",
+      activeFees: 0,
+      suspendedFees: 1,
+      nextAction: expect.stringContaining("suspended success-fee payment"),
+    });
+    expect(queue).toMatchObject([
+      { type: "payment_suspended", priority: "high", successFeeId: 1 },
+    ]);
+  });
 });

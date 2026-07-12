@@ -348,9 +348,10 @@ export default function Billing() {
               </Button>
             </div>
 
-            <div className="grid gap-2 text-xs text-gray-400 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="grid gap-2 text-xs text-gray-400 sm:grid-cols-2 lg:grid-cols-6">
               {[
                 ["Offer reviews", complianceSummary.pendingOfferAttributions],
+                ["Suspended", complianceSummary.suspendedFees],
                 ["Pending proof", complianceSummary.pendingVerification],
                 ["Overdue", complianceSummary.overdueVerifications],
                 ["Due soon", complianceSummary.dueSoonVerifications],

@@ -12,6 +12,7 @@ export type SuccessFeeComplianceStatus = "none" | "clear" | "due_soon" | "needs_
 export type SuccessFeeComplianceRisk = "low" | "medium" | "high" | "critical";
 export type SuccessFeeComplianceActionId =
   | "review_offer_attribution"
+  | "resolve_suspended_payment"
   | "submit_verification"
   | "prepare_verification"
   | "monitor"
@@ -20,6 +21,7 @@ export type SuccessFeeComplianceActionId =
 export interface SuccessFeeComplianceSummary {
   status: SuccessFeeComplianceStatus;
   activeFees: number;
+  suspendedFees: number;
   pendingVerification: number;
   overdueVerifications: number;
   dueSoonVerifications: number;
@@ -57,6 +59,7 @@ export function getSuccessFeeComplianceSummary(
   now = new Date()
 ): SuccessFeeComplianceSummary {
   const activeFees = fees.filter((fee) => ACTIVE_FEE_STATUSES.has(fee.status || ""));
+  const suspendedFees = fees.filter((fee) => fee.status === "suspended");
   const verificationDeadlines = activeFees
     .map((fee) => coerceDate(fee.nextVerificationDue))
     .filter((date): date is Date => Boolean(date))
@@ -74,10 +77,11 @@ export function getSuccessFeeComplianceSummary(
     ? Math.ceil((nextVerificationDue.getTime() - now.getTime()) / 86_400_000)
     : null;
 
-  if (pendingOfferAttributions > 0 || overdueVerifications > 0) {
+  if (pendingOfferAttributions > 0 || suspendedFees.length > 0 || overdueVerifications > 0) {
     return {
       status: "needs_attention",
       activeFees: activeFees.length,
+      suspendedFees: suspendedFees.length,
       pendingVerification,
       overdueVerifications,
       dueSoonVerifications,
@@ -88,6 +92,8 @@ export function getSuccessFeeComplianceSummary(
       label: "Needs attention",
       nextAction: pendingOfferAttributions > 0
         ? "Review offer attribution and report hires that came through Hire.AI."
+        : suspendedFees.length > 0
+          ? "Resolve the suspended success-fee payment before billing enforcement advances."
         : "Submit overdue employment verification proof.",
     };
   }
@@ -96,6 +102,7 @@ export function getSuccessFeeComplianceSummary(
     return {
       status: "due_soon",
       activeFees: activeFees.length,
+      suspendedFees: suspendedFees.length,
       pendingVerification,
       overdueVerifications,
       dueSoonVerifications,
@@ -112,6 +119,7 @@ export function getSuccessFeeComplianceSummary(
     return {
       status: "clear",
       activeFees: activeFees.length,
+      suspendedFees: suspendedFees.length,
       pendingVerification,
       overdueVerifications,
       dueSoonVerifications,
@@ -127,6 +135,7 @@ export function getSuccessFeeComplianceSummary(
   return {
     status: "none",
     activeFees: 0,
+    suspendedFees: 0,
     pendingVerification: 0,
     overdueVerifications: 0,
     dueSoonVerifications: 0,
@@ -154,6 +163,19 @@ export function getSuccessFeeComplianceAction(
       risk: "high",
       proofRequired: true,
       approvalGated: true,
+    };
+  }
+
+  if (summary.suspendedFees > 0) {
+    return {
+      id: "resolve_suspended_payment",
+      label: "Payment recovery required",
+      detail: "A success-fee payment is suspended. Review the billing record and resolve payment recovery before any enforcement action advances.",
+      cta: "Review billing",
+      route: "/billing",
+      risk: "high",
+      proofRequired: false,
+      approvalGated: false,
     };
   }
 

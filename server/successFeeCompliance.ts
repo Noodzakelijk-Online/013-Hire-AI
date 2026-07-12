@@ -29,6 +29,7 @@ export interface OfferAttributionReviewLike {
 export type SuccessFeeComplianceStatus = "none" | "clear" | "due_soon" | "needs_attention";
 export type SuccessFeeComplianceQueueItemType =
   | "offer_attribution"
+  | "payment_suspended"
   | "verification_pending"
   | "verification_due_soon"
   | "verification_overdue";
@@ -36,6 +37,7 @@ export type SuccessFeeComplianceQueueItemType =
 export interface SuccessFeeComplianceSummary {
   status: SuccessFeeComplianceStatus;
   activeFees: number;
+  suspendedFees: number;
   pendingVerification: number;
   overdueVerifications: number;
   dueSoonVerifications: number;
@@ -86,6 +88,7 @@ export function getSuccessFeeComplianceSummary(
   now = new Date()
 ): SuccessFeeComplianceSummary {
   const activeFees = fees.filter(isActiveFee);
+  const suspendedFees = fees.filter((fee) => fee.status === "suspended");
   const verificationDeadlines = activeFees
     .map((fee) => coerceDate(fee.nextVerificationDue))
     .filter((date): date is Date => Boolean(date))
@@ -101,10 +104,11 @@ export function getSuccessFeeComplianceSummary(
   const nextVerificationDue = verificationDeadlines[0] || null;
   const daysUntilNextVerification = daysUntil(nextVerificationDue, now);
 
-  if (pendingOfferAttributions > 0 || overdueVerifications > 0) {
+  if (pendingOfferAttributions > 0 || suspendedFees.length > 0 || overdueVerifications > 0) {
     return {
       status: "needs_attention",
       activeFees: activeFees.length,
+      suspendedFees: suspendedFees.length,
       pendingVerification,
       overdueVerifications,
       dueSoonVerifications,
@@ -115,6 +119,8 @@ export function getSuccessFeeComplianceSummary(
       label: "Needs attention",
       nextAction: pendingOfferAttributions > 0
         ? "Review offer attribution and report hires that came through Hire.AI."
+        : suspendedFees.length > 0
+          ? "Resolve the suspended success-fee payment before billing enforcement advances."
         : "Submit overdue employment verification proof.",
     };
   }
@@ -123,6 +129,7 @@ export function getSuccessFeeComplianceSummary(
     return {
       status: "due_soon",
       activeFees: activeFees.length,
+      suspendedFees: suspendedFees.length,
       pendingVerification,
       overdueVerifications,
       dueSoonVerifications,
@@ -139,6 +146,7 @@ export function getSuccessFeeComplianceSummary(
     return {
       status: "clear",
       activeFees: activeFees.length,
+      suspendedFees: suspendedFees.length,
       pendingVerification,
       overdueVerifications,
       dueSoonVerifications,
@@ -154,6 +162,7 @@ export function getSuccessFeeComplianceSummary(
   return {
     status: "none",
     activeFees: 0,
+    suspendedFees: 0,
     pendingVerification: 0,
     overdueVerifications: 0,
     dueSoonVerifications: 0,
@@ -190,6 +199,23 @@ export function getSuccessFeeComplianceQueue(
   }));
 
   const feeItems: SuccessFeeComplianceQueueItem[] = [];
+  for (const fee of fees.filter((item) => item.status === "suspended")) {
+    feeItems.push({
+      type: "payment_suspended",
+      priority: "high",
+      action: "Resolve the suspended success-fee payment before billing enforcement advances.",
+      successFeeId: fee.id,
+      approvalId: null,
+      applicationId: fee.applicationId ?? null,
+      employerName: fee.employerName,
+      jobTitle: fee.jobTitle,
+      status: fee.status,
+      nextVerificationDue: coerceDate(fee.nextVerificationDue),
+      daysUntilDue: null,
+      monthlyFeeAmount: fee.monthlyFeeAmount,
+      responseSummary: null,
+    });
+  }
   for (const fee of fees.filter(isActiveFee)) {
     const dueDate = coerceDate(fee.nextVerificationDue);
     const dueInDays = daysUntil(dueDate, now);

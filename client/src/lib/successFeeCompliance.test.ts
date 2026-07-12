@@ -60,6 +60,26 @@ describe("success fee compliance summary", () => {
     });
   });
 
+  it("routes suspended billing to payment recovery instead of report-hire", () => {
+    const summary = getSuccessFeeComplianceSummary(
+      [{ status: "suspended", monthlyFeeAmount: 10_000 }],
+      [],
+      now
+    );
+
+    expect(summary).toMatchObject({
+      status: "needs_attention",
+      activeFees: 0,
+      suspendedFees: 1,
+    });
+    expect(getSuccessFeeComplianceAction(summary)).toMatchObject({
+      id: "resolve_suspended_payment",
+      route: "/billing",
+      risk: "high",
+      approvalGated: false,
+    });
+  });
+
   it("reports clear state for active fees without pending work", () => {
     const summary = getSuccessFeeComplianceSummary(
       [{

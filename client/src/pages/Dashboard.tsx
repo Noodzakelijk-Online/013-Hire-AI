@@ -1100,9 +1100,10 @@ export default function Dashboard() {
             </div>
           </CardHeader>
           <CardContent className="space-y-5">
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
               {[
                 ["Active fees", successFeeCompliance.activeFees],
+                ["Suspended", successFeeCompliance.suspendedFees],
                 ["Monthly fee", `$${(successFeeCompliance.monthlyFeeCents / 100).toFixed(2)}`],
                 ["Offer reviews", successFeeCompliance.pendingOfferAttributions],
                 ["Overdue", successFeeCompliance.overdueVerifications],
