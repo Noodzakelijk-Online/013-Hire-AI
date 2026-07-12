@@ -20,6 +20,13 @@ import { calculateNextVerificationDue } from "../successFeeDates";
 
 const MIN_MONTHLY_SALARY = 300; // USD
 const FEE_PERCENT = 5;
+const UNRESOLVED_SUCCESS_FEE_STATUSES = [
+  "pending_verification",
+  "active",
+  "paused",
+  "suspended",
+  "disputed",
+] as const;
 
 // Helper: get or create Stripe customer for user
 async function getOrCreateStripeCustomer(userId: number, email: string, name: string | null) {
@@ -110,8 +117,8 @@ export const successFeesRouter = router({
         });
       }
 
-      // A pending verification already has offer proof and may already have a Stripe subscription.
-      // Do not allow a retry to create a second fee while that ledger record is unresolved.
+      // Any non-terminal fee may already hold offer proof or a Stripe subscription.
+      // Do not allow a retry to create a second fee while the existing ledger record is unresolved.
       const existingFee = await db
         .select()
         .from(successFees)
@@ -119,7 +126,7 @@ export const successFeesRouter = router({
           and(
             eq(successFees.userId, userId),
             eq(successFees.employerName, input.employerName),
-            inArray(successFees.status, ["active", "pending_verification"])
+            inArray(successFees.status, UNRESOLVED_SUCCESS_FEE_STATUSES)
           )
         )
         .limit(1);
@@ -127,7 +134,7 @@ export const successFeesRouter = router({
       if (existingFee.length > 0) {
         throw new TRPCError({
           code: "CONFLICT",
-          message: "You already have an active or pending success fee for this employer.",
+          message: "You already have an unresolved success fee for this employer.",
         });
       }
 

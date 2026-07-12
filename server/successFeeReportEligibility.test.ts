@@ -166,10 +166,10 @@ describe("success fee report-hire eligibility", () => {
     expect(mocks.mockDb.insert).not.toHaveBeenCalled();
   });
 
-  it("rejects a duplicate hire report while the employer fee is still pending verification", async () => {
+  it("rejects a duplicate hire report while the employer fee is suspended", async () => {
     mocks.selectLimit
       .mockResolvedValueOnce([{ id: 51, status: "accepted" }])
-      .mockResolvedValueOnce([{ id: 77, status: "pending_verification" }]);
+      .mockResolvedValueOnce([{ id: 77, status: "suspended" }]);
     mocks.selectOrderLimit.mockResolvedValueOnce([]);
     const caller = successFeesRouter.createCaller(createContext(190095));
 
@@ -186,7 +186,7 @@ describe("success fee report-hire eligibility", () => {
       termsAccepted: true,
     })).rejects.toMatchObject({
       code: "CONFLICT",
-      message: expect.stringContaining("active or pending"),
+      message: expect.stringContaining("unresolved"),
     });
 
     expect(mocks.storagePut).not.toHaveBeenCalled();
