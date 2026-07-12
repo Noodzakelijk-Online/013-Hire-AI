@@ -1,0 +1,82 @@
+export type JobDiscoveryStatus =
+  | "no_active_sources"
+  | "awaiting_first_scan"
+  | "stale"
+  | "current";
+
+export interface JobDiscoveryStatusInput {
+  activeSources?: number | null;
+  sourcesWithSuccessfulScrape?: number | null;
+  latestSuccessfulScrapeAt?: Date | string | null;
+  canonicalJobs?: number | null;
+}
+
+export interface JobDiscoveryStatusSummary {
+  status: JobDiscoveryStatus;
+  label: string;
+  detail: string;
+  activeSources: number;
+  canonicalJobs: number;
+  latestSuccessfulScrapeAt: Date | null;
+}
+
+const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
+
+function positiveInteger(value: number | null | undefined) {
+  return Number.isFinite(value) ? Math.max(0, Math.floor(value as number)) : 0;
+}
+
+function parseDate(value: Date | string | null | undefined) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function plural(count: number, singular: string) {
+  return `${count} ${singular}${count === 1 ? "" : "s"}`;
+}
+
+export function getJobDiscoveryStatusSummary(
+  input: JobDiscoveryStatusInput | undefined,
+  now = new Date()
+): JobDiscoveryStatusSummary {
+  const activeSources = positiveInteger(input?.activeSources);
+  const canonicalJobs = positiveInteger(input?.canonicalJobs);
+  const sourcesWithSuccessfulScrape = positiveInteger(input?.sourcesWithSuccessfulScrape);
+  const latestSuccessfulScrapeAt = parseDate(input?.latestSuccessfulScrapeAt);
+  const base = { activeSources, canonicalJobs, latestSuccessfulScrapeAt };
+
+  if (activeSources === 0) {
+    return {
+      ...base,
+      status: "no_active_sources",
+      label: "Discovery unavailable",
+      detail: "No active discovery sources are configured, so the job index cannot be refreshed yet.",
+    };
+  }
+
+  if (sourcesWithSuccessfulScrape === 0 || !latestSuccessfulScrapeAt) {
+    return {
+      ...base,
+      status: "awaiting_first_scan",
+      label: "Awaiting verified scan",
+      detail: `${plural(activeSources, "source")} ${activeSources === 1 ? "is" : "are"} enabled and the index contains ${plural(canonicalJobs, "canonical job")}, but no successful scan timestamp is recorded. Review posting dates before acting on a listing.`,
+    };
+  }
+
+  if (now.getTime() - latestSuccessfulScrapeAt.getTime() > STALE_AFTER_MS) {
+    return {
+      ...base,
+      status: "stale",
+      label: "Discovery may be stale",
+      detail: `The last successful scan was more than 24 hours ago. ${plural(canonicalJobs, "canonical job")} remain in the index; confirm a listing is still open before preparing materials.`,
+    };
+  }
+
+  return {
+    ...base,
+    status: "current",
+    label: "Discovery current",
+    detail: `${plural(sourcesWithSuccessfulScrape, "source")} reported a successful scan in the last 24 hours. ${plural(canonicalJobs, "canonical job")} are available after deduplication.`,
+  };
+}

@@ -81,6 +81,20 @@ describe("jobs router", () => {
     expect(jobs.length).toBeLessThanOrEqual(10);
   });
 
+  it("reports canonical discovery status without exposing scraper controls", async () => {
+    const caller = appRouter.createCaller(createPublicContext());
+
+    const status = await caller.jobs.getDiscoveryStatus();
+
+    expect(status).toMatchObject({
+      activeSources: expect.any(Number),
+      sourcesWithSuccessfulScrape: expect.any(Number),
+      canonicalJobs: expect.any(Number),
+    });
+    expect(status.activeSources).toBeGreaterThan(0);
+    expect(status.canonicalJobs).toBeGreaterThan(0);
+  });
+
   it("should search jobs with filters", async () => {
     const caller = appRouter.createCaller(createPublicContext());
 

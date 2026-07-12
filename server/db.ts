@@ -330,6 +330,63 @@ const canonicalJobCondition = sql`NOT EXISTS (
 
 const sampleDuplicateJobIds = new Set(sampleJobDuplicateLinks.map((link) => link.duplicateJobId));
 
+/**
+ * User-facing discovery health deliberately reports only persisted source and
+ * listing state. It never implies that an external scrape was run just because
+ * a platform adapter is registered in the application.
+ */
+export async function getJobDiscoveryStatus() {
+  const now = new Date();
+  const db = await getDb();
+  if (!db) {
+    const activePlatforms = samplePlatforms.filter((platform) => platform.isActive === 1);
+    const canonicalJobs = sampleJobs.filter((job) =>
+      job.isActive === 1 &&
+      !sampleDuplicateJobIds.has(job.id) &&
+      (!job.expiryDate || job.expiryDate > now)
+    );
+    const successfulScrapes = activePlatforms
+      .map((platform) => platform.lastScraped)
+      .filter((lastScraped): lastScraped is Date => lastScraped instanceof Date);
+
+    return {
+      activeSources: activePlatforms.length,
+      sourcesWithSuccessfulScrape: successfulScrapes.length,
+      latestSuccessfulScrapeAt: successfulScrapes.length > 0
+        ? new Date(Math.max(...successfulScrapes.map((lastScraped) => lastScraped.getTime())))
+        : null,
+      canonicalJobs: canonicalJobs.length,
+    };
+  }
+
+  const [activePlatforms, jobCountRows] = await Promise.all([
+    db
+      .select({ lastScraped: jobPlatforms.lastScraped })
+      .from(jobPlatforms)
+      .where(eq(jobPlatforms.isActive, 1)),
+    db
+      .select({ total: sql<number>`count(*)` })
+      .from(jobs)
+      .where(and(
+        eq(jobs.isActive, 1),
+        or(isNull(jobs.expiryDate), gt(jobs.expiryDate, now))!,
+        canonicalJobCondition,
+      )),
+  ]);
+  const successfulScrapes = activePlatforms
+    .map((platform) => platform.lastScraped)
+    .filter((lastScraped): lastScraped is Date => lastScraped instanceof Date);
+
+  return {
+    activeSources: activePlatforms.length,
+    sourcesWithSuccessfulScrape: successfulScrapes.length,
+    latestSuccessfulScrapeAt: successfulScrapes.length > 0
+      ? new Date(Math.max(...successfulScrapes.map((lastScraped) => lastScraped.getTime())))
+      : null,
+    canonicalJobs: Number(jobCountRows[0]?.total ?? 0),
+  };
+}
+
 function resolveJobSearchFilters(filters: Partial<JobSearchFilterState> = {}): JobSearchFilterState {
   return {
     ...defaultJobSearchFilters,

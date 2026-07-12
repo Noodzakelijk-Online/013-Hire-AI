@@ -264,6 +264,10 @@ export const appRouter = router({
 
   // Jobs
   jobs: router({
+    getDiscoveryStatus: publicProcedure.query(async () => {
+      const { getJobDiscoveryStatus } = await import("./db");
+      return await getJobDiscoveryStatus();
+    }),
     list: publicProcedure
       .input(
         z.object({

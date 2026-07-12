@@ -8,6 +8,7 @@ import { buildJobDecisionMutationInput, type JobDecisionLifecycleAction } from "
 import { getSafeExternalUrl, openExternalUrl } from "@/lib/externalUrl";
 import { getJobMatchDecisionSummary } from "@/lib/jobMatchDecisionSummary";
 import { getJobSourcingControlSummary } from "@/lib/jobSourcingControl";
+import { getJobDiscoveryStatusSummary } from "@/lib/jobDiscoveryStatus";
 import {
   getJobSearchAutonomousPolicy,
   isJobSearchAutonomousPolicyDirty,
@@ -119,6 +120,10 @@ export default function JobSearch() {
 
   // Fetch platforms
   const { data: platformsData } = trpc.platforms.list.useQuery();
+  const {
+    data: discoveryStatus,
+    refetch: refetchDiscoveryStatus,
+  } = trpc.jobs.getDiscoveryStatus.useQuery();
   const { data: selectedJobSources } = trpc.jobs.getSources.useQuery(
     { id: selectedJob?.id ?? 0 },
     { enabled: Boolean(selectedJob?.id) }
@@ -306,6 +311,10 @@ export default function JobSearch() {
     return { excellent, good, fair, decided, all: scoredJobs };
   }, [scoredJobs]);
   const sourcingControl = useMemo(() => getJobSourcingControlSummary(scoredJobs), [scoredJobs]);
+  const discoveryControl = useMemo(
+    () => getJobDiscoveryStatusSummary(discoveryStatus),
+    [discoveryStatus]
+  );
   const autonomousControl = useMemo(() => getAutonomousPolicyControlAction({
     plan: autonomousPlan,
     campaign: operatingLedger?.campaign,
@@ -471,6 +480,12 @@ export default function JobSearch() {
     save_for_later: "border-blue-500/40 text-blue-300",
     low_signal: "border-slate-600 text-slate-300",
   }[sourcingControl.status];
+  const discoveryTone = {
+    no_active_sources: "border-red-500/40 bg-red-500/10 text-red-100",
+    awaiting_first_scan: "border-amber-500/40 bg-amber-500/10 text-amber-100",
+    stale: "border-orange-500/40 bg-orange-500/10 text-orange-100",
+    current: "border-emerald-500/40 bg-emerald-500/10 text-emerald-100",
+  }[discoveryControl.status];
 
   const JobCard = ({ job, showMatchScore = true }: { job: any; showMatchScore?: boolean }) => (
     <Card
@@ -645,9 +660,14 @@ export default function JobSearch() {
                   : <ExternalLink className="w-4 h-4 mr-2" />}
               {autonomousControl.cta}
             </Button>
-            <Button variant="outline" size="sm" onClick={() => refetchJobs()}>
+            <Button
+              variant="outline"
+              size="sm"
+              title="Refresh displayed job listings and discovery status"
+              onClick={() => void Promise.all([refetchJobs(), refetchDiscoveryStatus()])}
+            >
               <RefreshCw className="w-4 h-4 mr-2" />
-              Refresh
+              Refresh listings
             </Button>
           </div>
         </div>
@@ -772,6 +792,24 @@ export default function JobSearch() {
                 <h2 className="text-xl font-semibold text-white">Sourcing Control</h2>
                 <p className="mt-1 text-sm text-slate-300">{sourcingControl.headline}</p>
                 <p className="mt-2 max-w-3xl text-sm text-slate-400">{sourcingControl.nextAction}</p>
+                <div
+                  data-testid="job-discovery-status"
+                  data-discovery-status={discoveryControl.status}
+                  className={`mt-3 max-w-3xl rounded-md border px-3 py-2 ${discoveryTone}`}
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" className="border-current text-current">
+                      {discoveryControl.label}
+                    </Badge>
+                    <span className="text-xs font-medium">
+                      {discoveryControl.activeSources} active source{discoveryControl.activeSources === 1 ? "" : "s"}
+                    </span>
+                    <span className="text-xs">
+                      {discoveryControl.canonicalJobs} canonical job{discoveryControl.canonicalJobs === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs leading-5 opacity-90">{discoveryControl.detail}</p>
+                </div>
               </div>
               <Button
                 data-testid="job-sourcing-primary"
