@@ -841,6 +841,15 @@ export default function Applications() {
             <div className="flex items-center gap-2 text-xs text-slate-500">
               <Calendar className="w-3 h-3" />
               {getApplicationDateLabel(application)}
+              {application.job?.platformName && (
+                <Badge
+                  data-testid="application-card-platform"
+                  variant="outline"
+                  className="border-slate-600 text-slate-300"
+                >
+                  {application.job.platformName}
+                </Badge>
+              )}
             </div>
           </div>
         </div>
@@ -1101,6 +1110,15 @@ export default function Applications() {
                         <Badge variant="secondary" className="bg-slate-800">
                           <DollarSign className="w-3 h-3 mr-1" />
                           {formatSalary(selectedApplication.job.salaryMin, selectedApplication.job.salaryMax)}
+                        </Badge>
+                      )}
+                      {selectedApplication.job?.platformName && (
+                        <Badge
+                          data-testid="application-detail-platform"
+                          variant="outline"
+                          className="border-cyan-500/40 text-cyan-300"
+                        >
+                          Source: {selectedApplication.job.platformName}
                         </Badge>
                       )}
                     </div>

@@ -1070,10 +1070,16 @@ export async function getUserApplications(userId: number) {
   if (!db) {
     return memoryApplications
       .filter((application) => application.userId === userId)
-      .map((application) => ({
-        ...application,
-        job: sampleJobs.find((job) => job.id === application.jobId),
-      }));
+      .map((application) => {
+        const job = sampleJobs.find((item) => item.id === application.jobId);
+        return {
+          ...application,
+          job: job ? {
+            ...job,
+            platformName: samplePlatforms.find((platform) => platform.id === job.platformId)?.name ?? null,
+          } : undefined,
+        };
+      });
   }
   return await db
     .select({
@@ -1097,6 +1103,13 @@ export async function getUserApplications(userId: number) {
         salaryMin: jobs.salaryMin,
         salaryMax: jobs.salaryMax,
         jobType: jobs.jobType,
+        platformId: jobs.platformId,
+        platformName: sql<string | null>`(
+          SELECT ${jobPlatforms.name}
+          FROM ${jobPlatforms}
+          WHERE ${jobPlatforms.id} = ${jobs.platformId}
+          LIMIT 1
+        )`,
         applicationUrl: jobs.applicationUrl,
         sourceUrl: jobs.sourceUrl,
       },

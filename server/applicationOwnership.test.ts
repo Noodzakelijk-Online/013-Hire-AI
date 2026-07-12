@@ -13,7 +13,12 @@ describe("application ownership boundaries", () => {
 
     const ownerApplications = await getUserApplications(ownerId);
     const otherApplications = await getUserApplications(otherUserId);
-    expect(ownerApplications.find((application) => application.id === applicationId)?.status).toBe("pending");
+    const ownerApplication = ownerApplications.find((application) => application.id === applicationId);
+    expect(ownerApplication?.status).toBe("pending");
+    expect(ownerApplication?.job).toMatchObject({
+      platformId: 2,
+      platformName: "We Work Remotely",
+    });
     expect(otherApplications.find((application) => application.id === applicationId)).toBeUndefined();
   });
 });
