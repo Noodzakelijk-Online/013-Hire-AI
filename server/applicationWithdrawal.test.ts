@@ -1,7 +1,7 @@
 import type { TrpcContext } from "./_core/context";
 import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
-import { createApplication, createApplicationApproval, getApplicationLedgerArtifacts, getUserApplications, listUserApplicationApprovals, resolveApplicationApproval } from "./db";
+import { createAdminReviewItem, createApplication, createApplicationApproval, getApplicationLedgerArtifacts, getUserApplications, listAdminReviewItems, listUserApplicationApprovals, resolveApplicationApproval } from "./db";
 import { createFollowUp, markFollowUpSent } from "./applicationFeatures";
 
 function createContext(userId: number): TrpcContext {
@@ -116,6 +116,15 @@ describe("application withdrawal", () => {
       payload: null,
       decidedAt: null,
     });
+    const attributionReview = await createAdminReviewItem({
+      userId,
+      entityType: "application",
+      entityId: applicationId,
+      category: "offer_attribution",
+      priority: "high",
+      title: "Offer attribution needs review",
+      description: "Review this offer before success-fee work proceeds.",
+    });
 
     const caller = appRouter.createCaller(createContext(userId));
     await caller.applications.declineOffer({
@@ -128,10 +137,16 @@ describe("application withdrawal", () => {
     expect((await listUserApplicationApprovals(userId, "all")).find((approval) =>
       approval.id === Number(attributionApproval.insertId)
     )?.status).toBe("cancelled");
+    const dismissedReview = (await listAdminReviewItems("all")).find((review) =>
+      review.id === Number(attributionReview.insertId)
+    );
+    expect(dismissedReview?.status).toBe("dismissed");
+    expect(dismissedReview?.resolution).toContain("explicitly declined");
     const artifacts = await getApplicationLedgerArtifacts(applicationId, userId);
     expect(artifacts.auditEvents.some((event) =>
       event.action === "offer_declined" &&
-      event.afterState?.includes("externalCommunicationSent\":false")
+      event.afterState?.includes("externalCommunicationSent\":false") &&
+      event.afterState?.includes(String(attributionReview.insertId))
     )).toBe(true);
     expect(artifacts.auditEvents.some((event) =>
       event.action === "application_external_actions_cancelled" &&

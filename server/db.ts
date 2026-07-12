@@ -1950,6 +1950,53 @@ export async function listAdminReviewItems(status: AdminReviewItem["status"] | "
     .orderBy(desc(adminReviewItems.createdAt));
 }
 
+export async function dismissOfferAttributionAdminReviews(
+  userId: number,
+  applicationId: number,
+  resolution: string
+) {
+  const db = await getDb();
+  const dismissedAt = new Date();
+  if (!db) {
+    const reviews = memoryAdminReviewItems.filter((review) =>
+      review.userId === userId &&
+      review.entityType === "application" &&
+      review.entityId === applicationId &&
+      review.category === "offer_attribution" &&
+      (review.status === "open" || review.status === "in_progress")
+    );
+    for (const review of reviews) {
+      review.status = "dismissed";
+      review.resolution = resolution;
+      review.resolvedAt = dismissedAt;
+      review.updatedAt = dismissedAt;
+    }
+    return { dismissedReviewIds: reviews.map((review) => review.id) };
+  }
+
+  const reviews = await db
+    .select({ id: adminReviewItems.id })
+    .from(adminReviewItems)
+    .where(and(
+      eq(adminReviewItems.userId, userId),
+      eq(adminReviewItems.entityType, "application"),
+      eq(adminReviewItems.entityId, applicationId),
+      eq(adminReviewItems.category, "offer_attribution"),
+      inArray(adminReviewItems.status, ["open", "in_progress"])
+    ));
+  if (reviews.length > 0) {
+    await db
+      .update(adminReviewItems)
+      .set({
+        status: "dismissed",
+        resolution,
+        resolvedAt: dismissedAt,
+      })
+      .where(inArray(adminReviewItems.id, reviews.map((review) => review.id)));
+  }
+  return { dismissedReviewIds: reviews.map((review) => review.id) };
+}
+
 export async function getAdminReviewEvidenceSnapshot(reviewItemId: number) {
   const reviewItem = (await listAdminReviewItems("all")).find((item) => item.id === reviewItemId);
   if (!reviewItem) {

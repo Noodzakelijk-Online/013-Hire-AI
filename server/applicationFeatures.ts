@@ -11,6 +11,7 @@ import {
   createAuditEvent,
   createEmployerResponse,
   createInterviewNotification,
+  dismissOfferAttributionAdminReviews,
   findEmployerResponseBySourceReference,
   getEmployerResponses,
   getInterviewPreparationForJob,
@@ -2088,11 +2089,12 @@ function isWithdrawalCancellableApproval(
 export async function withdrawApplication(
   applicationId: number,
   userId: number,
-  options: { cancelOfferAttribution?: boolean } = {}
+  options: { cancelOfferAttribution?: boolean; dismissOfferAttributionReviews?: boolean } = {}
 ) {
   const db = await getDb();
   const cancelledAt = new Date();
   const cancelOfferAttribution = options.cancelOfferAttribution === true;
+  const dismissOfferAttributionReviews = options.dismissOfferAttributionReviews === true;
 
   if (!db) {
     const userApplications = await getUserApplications(userId);
@@ -2133,6 +2135,13 @@ export async function withdrawApplication(
     const cancelledOfferAttributionApprovalIds = cancellableApprovals
       .filter((approval) => approval.approvalType === "offer_attribution")
       .map((approval) => approval.id);
+    const dismissedOfferAttributionReviewIds = dismissOfferAttributionReviews
+      ? (await dismissOfferAttributionAdminReviews(
+        userId,
+        applicationId,
+        "Dismissed because the user explicitly declined this offer."
+      )).dismissedReviewIds
+      : [];
     for (const approvalId of cancelledSubmissionApprovalIds) {
       await createApplicationAttempt({
         applicationId,
@@ -2161,6 +2170,7 @@ export async function withdrawApplication(
           cancelledApprovalIds: cancellableApprovals.map((approval) => approval.id),
           cancelledSubmissionApprovalIds,
           cancelledOfferAttributionApprovalIds,
+          dismissedOfferAttributionReviewIds,
         }),
         riskLevel: "medium",
       });
@@ -2171,6 +2181,7 @@ export async function withdrawApplication(
       cancelledApprovalIds: cancellableApprovals.map((approval) => approval.id),
       cancelledSubmissionApprovalIds,
       cancelledOfferAttributionApprovalIds,
+      dismissedOfferAttributionReviewIds,
     };
   }
 
@@ -2243,6 +2254,29 @@ export async function withdrawApplication(
     const cancelledOfferAttributionApprovalIds = cancellableApprovals
       .filter((approval) => approval.approvalType === "offer_attribution")
       .map((approval) => approval.id);
+    const dismissibleOfferAttributionReviews = dismissOfferAttributionReviews
+      ? await tx
+        .select({ id: adminReviewItems.id })
+        .from(adminReviewItems)
+        .where(and(
+          eq(adminReviewItems.userId, userId),
+          eq(adminReviewItems.entityType, "application"),
+          eq(adminReviewItems.entityId, applicationId),
+          eq(adminReviewItems.category, "offer_attribution"),
+          inArray(adminReviewItems.status, ["open", "in_progress"])
+        ))
+      : [];
+    const dismissedOfferAttributionReviewIds = dismissibleOfferAttributionReviews.map((review) => review.id);
+    if (dismissedOfferAttributionReviewIds.length > 0) {
+      await tx
+        .update(adminReviewItems)
+        .set({
+          status: "dismissed",
+          resolution: "Dismissed because the user explicitly declined this offer.",
+          resolvedAt: cancelledAt,
+        })
+        .where(inArray(adminReviewItems.id, dismissedOfferAttributionReviewIds));
+    }
     if (cancelledSubmissionApprovalIds.length > 0) {
       const job = await tx
         .select({ platformId: jobs.platformId })
@@ -2276,6 +2310,7 @@ export async function withdrawApplication(
           cancelledApprovalIds: cancellableApprovals.map((approval) => approval.id),
           cancelledSubmissionApprovalIds,
           cancelledOfferAttributionApprovalIds,
+          dismissedOfferAttributionReviewIds,
         }),
         riskLevel: "medium",
       });
@@ -2286,6 +2321,7 @@ export async function withdrawApplication(
       cancelledApprovalIds: cancellableApprovals.map((approval) => approval.id),
       cancelledSubmissionApprovalIds,
       cancelledOfferAttributionApprovalIds,
+      dismissedOfferAttributionReviewIds,
     };
   });
 }

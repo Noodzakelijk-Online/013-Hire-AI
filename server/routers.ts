@@ -1405,6 +1405,7 @@ export const appRouter = router({
         try {
           const result = await withdrawApplication(input.applicationId, ctx.user.id, {
             cancelOfferAttribution: true,
+            dismissOfferAttributionReviews: true,
           });
           await createAuditEvent({
             userId: ctx.user.id,
@@ -1419,6 +1420,7 @@ export const appRouter = router({
               confirmed: input.confirmed,
               declineNote: input.declineNote,
               cancelledOfferAttributionApprovalIds: result.cancelledOfferAttributionApprovalIds,
+              dismissedOfferAttributionReviewIds: result.dismissedOfferAttributionReviewIds,
               externalCommunicationSent: false,
             }),
             riskLevel: "high",
