@@ -58,6 +58,19 @@ describe("autonomous run summary", () => {
     );
   });
 
+  it("explains when core profile evidence blocks application preparation", () => {
+    const result = {
+      skippedProfileReadinessActions: 2,
+    };
+
+    expect(getAutonomousRunCounts(result)).toMatchObject({
+      profileReadinessBlockedActions: 2,
+    });
+    expect(formatAutonomousRunSummary(result)).toBe(
+      "Autonomous run completed with no new tasks; 2 application preparations blocked until core profile evidence is complete"
+    );
+  });
+
   it("reports expired postings excluded from preparation", () => {
     expect(formatAutonomousRunSummary({
       summary: { expiredJobsSkipped: 2 },

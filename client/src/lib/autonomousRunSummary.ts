@@ -6,6 +6,7 @@ export interface AutonomousRunSummaryInput {
   skippedDuplicateFollowUps?: number;
   skippedSafetyBlockedFollowUps?: number;
   skippedResumeEvidenceActions?: number;
+  skippedProfileReadinessActions?: number;
   skippedEvidenceGatedActions?: number;
   evidenceGates?: Array<{ id?: string; label?: string; severity?: string }>;
   failedActions?: number;
@@ -31,6 +32,7 @@ export function getAutonomousRunCounts(result: AutonomousRunSummaryInput) {
     skippedFollowUps: result.skippedDuplicateFollowUps || 0,
     safetyBlockedFollowUps: result.skippedSafetyBlockedFollowUps || 0,
     resumeEvidenceBlockedActions: result.skippedResumeEvidenceActions || 0,
+    profileReadinessBlockedActions: result.skippedProfileReadinessActions || 0,
     evidenceGatedActions: result.skippedEvidenceGatedActions || 0,
     evidenceGates: result.evidenceGates?.length || 0,
     expiredJobsSkipped: result.summary?.expiredJobsSkipped || 0,
@@ -63,6 +65,9 @@ export function formatAutonomousRunSummary(result: AutonomousRunSummaryInput) {
   }
   if (counts.resumeEvidenceBlockedActions > 0) {
     notes.push(`${plural(counts.resumeEvidenceBlockedActions, "application preparation")} blocked until an active resume is linked`);
+  }
+  if (counts.profileReadinessBlockedActions > 0) {
+    notes.push(`${plural(counts.profileReadinessBlockedActions, "application preparation")} blocked until core profile evidence is complete`);
   }
   if (counts.evidenceGatedActions > 0) {
     notes.push(`${plural(counts.evidenceGatedActions, "external action")} gated by profile or connector evidence`);

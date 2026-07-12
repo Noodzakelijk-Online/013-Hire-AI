@@ -75,7 +75,7 @@ export default function AIPreferences() {
     onSuccess: (result: any) => {
       const counts = getAutonomousRunCounts(result);
       const message = formatAutonomousRunSummary(result);
-      if (counts.failures > 0 || counts.resumeEvidenceBlockedActions > 0) {
+      if (counts.failures > 0 || counts.resumeEvidenceBlockedActions > 0 || counts.profileReadinessBlockedActions > 0) {
         toast.warning(message);
       } else {
         toast.success(message);
@@ -615,6 +615,7 @@ export default function AIPreferences() {
                       <span>{schedulerStatus.followUpDraftsQueued || 0} follow-up draft{schedulerStatus.followUpDraftsQueued === 1 ? "" : "s"}</span>
                       <span>{schedulerStatus.duplicateFollowUpsSkipped || 0} duplicate follow-up{schedulerStatus.duplicateFollowUpsSkipped === 1 ? "" : "s"} skipped</span>
                       <span>{schedulerStatus.resumeEvidenceBlockedActions || 0} application preparation{schedulerStatus.resumeEvidenceBlockedActions === 1 ? "" : "s"} blocked by resume evidence</span>
+                      <span>{schedulerStatus.profileReadinessBlockedActions || 0} application preparation{schedulerStatus.profileReadinessBlockedActions === 1 ? "" : "s"} blocked by profile readiness</span>
                       <span>{schedulerStatus.evidenceGatedActions || 0} external action{schedulerStatus.evidenceGatedActions === 1 ? "" : "s"} gated</span>
                     </div>
                   </div>

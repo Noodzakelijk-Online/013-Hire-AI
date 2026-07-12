@@ -48,6 +48,7 @@ export interface AutonomousRunResult extends AutonomousPlan {
   skippedDuplicateFollowUps: number;
   skippedSafetyBlockedFollowUps: number;
   skippedResumeEvidenceActions: number;
+  skippedProfileReadinessActions: number;
   skippedEvidenceGatedActions: number;
   evidenceGates: AutonomousEvidenceGate[];
   failedActions: number;
@@ -65,6 +66,7 @@ function persistableRunSummary(result: AutonomousRunResult) {
     skippedDuplicateFollowUps: result.skippedDuplicateFollowUps,
     skippedSafetyBlockedFollowUps: result.skippedSafetyBlockedFollowUps,
     skippedResumeEvidenceActions: result.skippedResumeEvidenceActions,
+    skippedProfileReadinessActions: result.skippedProfileReadinessActions,
     skippedEvidenceGatedActions: result.skippedEvidenceGatedActions,
     failedActions: result.failedActions,
   };
@@ -264,8 +266,12 @@ async function executeAutonomousRun(
   });
   const applicationPreparationCandidates =
     executable.autoApply.length + executable.review.length + executable.manual.length;
+  const profileReadinessBlockers = evidenceContext.readiness.blockers.filter((gap) => gap.key !== "resume");
+  const skippedProfileReadinessActions = profileReadinessBlockers.length > 0
+    ? applicationPreparationCandidates
+    : 0;
   const skippedResumeEvidenceActions = activeResume ? 0 : applicationPreparationCandidates;
-  const executableApplicationDecisions = activeResume
+  const executableApplicationDecisions = activeResume && skippedProfileReadinessActions === 0
     ? executable
     : { ...executable, autoApply: [], review: [], manual: [] };
   const jobById = new Map(jobList.map((job) => [job.id, job]));
@@ -307,6 +313,30 @@ async function executeAutonomousRun(
       source: "autonomousService",
       afterState: JSON.stringify({
         skippedApplicationPreparations: skippedResumeEvidenceActions,
+        autoApplyCandidates: executable.autoApply.length,
+        reviewCandidates: executable.review.length,
+        manualCandidates: executable.manual.length,
+        externalSubmissionPerformed: false,
+      }),
+      riskLevel: "high",
+    });
+  }
+
+  if (skippedProfileReadinessActions > 0) {
+    await createAuditEvent({
+      userId,
+      entityType: "user",
+      entityId: userId,
+      action: "autonomous_application_preparation_blocked_profile_readiness",
+      actor: "system",
+      source: "autonomousService",
+      afterState: JSON.stringify({
+        skippedApplicationPreparations: skippedProfileReadinessActions,
+        blockers: profileReadinessBlockers.map((gap) => ({
+          key: gap.key,
+          label: gap.label,
+          recommendation: gap.recommendation,
+        })),
         autoApplyCandidates: executable.autoApply.length,
         reviewCandidates: executable.review.length,
         manualCandidates: executable.manual.length,
@@ -572,6 +602,7 @@ async function executeAutonomousRun(
     skippedDuplicateFollowUps,
     skippedSafetyBlockedFollowUps,
     skippedResumeEvidenceActions,
+    skippedProfileReadinessActions,
     skippedEvidenceGatedActions: evidenceGatedActions.total,
     evidenceGates,
     failedActions: actionErrors.length,

@@ -129,6 +129,7 @@ export interface AutonomousRunSummaryRecord {
   skippedDuplicateFollowUps: number;
   skippedSafetyBlockedFollowUps: number;
   skippedResumeEvidenceActions: number;
+  skippedProfileReadinessActions: number;
   skippedEvidenceGatedActions: number;
   failedActions: number;
 }
@@ -163,6 +164,10 @@ function parseAutonomousRunSummary(value: string | null | undefined): Autonomous
     for (const key of keys) {
       summary[key] = Math.max(0, Math.round(parsed[key] as number));
     }
+    summary.skippedProfileReadinessActions = typeof parsed.skippedProfileReadinessActions === "number"
+      && Number.isFinite(parsed.skippedProfileReadinessActions)
+      ? Math.max(0, Math.round(parsed.skippedProfileReadinessActions))
+      : 0;
     return summary;
   } catch {
     return null;

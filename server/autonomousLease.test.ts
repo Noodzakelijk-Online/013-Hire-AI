@@ -63,6 +63,7 @@ describe("autonomous run leases", () => {
       skippedDuplicateFollowUps: 1,
       skippedSafetyBlockedFollowUps: 0,
       skippedResumeEvidenceActions: 3,
+      skippedProfileReadinessActions: 0,
       skippedEvidenceGatedActions: 2,
       failedActions: 0,
     });

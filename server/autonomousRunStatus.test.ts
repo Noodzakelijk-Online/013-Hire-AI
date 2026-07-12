@@ -40,6 +40,7 @@ describe("autonomous scheduler status", () => {
       skippedDuplicateFollowUps: 1,
       skippedSafetyBlockedFollowUps: 1,
       skippedResumeEvidenceActions: 0,
+      skippedProfileReadinessActions: 2,
       skippedEvidenceGatedActions: 3,
       failedActions: 0,
     });
@@ -54,6 +55,7 @@ describe("autonomous scheduler status", () => {
       jobsQueued: 3,
       followUpDraftsQueued: 2,
       duplicateFollowUpsSkipped: 1,
+      profileReadinessBlockedActions: 2,
       evidenceGatedActions: 3,
     });
     expect(status.lastCycleAt).toBeInstanceOf(Date);
@@ -70,6 +72,7 @@ describe("autonomous scheduler status", () => {
       skippedDuplicateFollowUps: 0,
       skippedSafetyBlockedFollowUps: 0,
       skippedResumeEvidenceActions: 0,
+      skippedProfileReadinessActions: 0,
       skippedEvidenceGatedActions: 0,
       failedActions: 0,
     });

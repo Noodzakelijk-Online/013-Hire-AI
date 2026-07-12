@@ -239,4 +239,33 @@ describe("autonomous submission approval gates", () => {
       event.afterState?.includes("skippedApplicationPreparations")
     )).toBe(true);
   });
+
+  it("does not create materials or approvals when core profile evidence is incomplete", async () => {
+    const userId = 99105;
+    await upsertUserProfile({
+      userId,
+      skills: "React, TypeScript, Node.js",
+      desiredLocations: "remote, worldwide",
+      resumeUrl: "https://example.com/resume.pdf",
+      preferences: JSON.stringify({
+        autonomousEnabled: true,
+        mode: "review_first",
+        minMatchScore: 0,
+        dailyApplicationLimit: 1,
+      }),
+    });
+
+    const result = await runAutonomousForUser(userId, { dailyApplicationLimit: 1, minMatchScore: 0 });
+    const auditEvents = await getAuditEventsForUser(userId, 10);
+
+    expect(result.skippedProfileReadinessActions).toBeGreaterThan(0);
+    expect(result.queuedReviewRecords + result.queuedApplicationRecords + result.queuedManualRecords).toBe(0);
+    expect(await getUserApplications(userId)).toHaveLength(0);
+    expect(await listUserApplicationApprovals(userId, "all")).toHaveLength(0);
+    expect(auditEvents.some((event) =>
+      event.action === "autonomous_application_preparation_blocked_profile_readiness" &&
+      event.afterState?.includes("Experience missing") &&
+      event.afterState?.includes("Target roles missing")
+    )).toBe(true);
+  });
 });
