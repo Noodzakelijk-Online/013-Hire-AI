@@ -142,7 +142,10 @@ export default function JobSearch() {
   } = trpc.applications.listDecisions.useQuery(undefined, {
     enabled: Boolean(user),
   });
-  const { data: operatingLedger } = trpc.applications.getOperatingLedger.useQuery(undefined, {
+  const {
+    data: operatingLedger,
+    refetch: refetchOperatingLedger,
+  } = trpc.applications.getOperatingLedger.useQuery(undefined, {
     enabled: Boolean(user),
   });
 
@@ -188,7 +191,7 @@ export default function JobSearch() {
   });
 
   const decideMutation = trpc.applications.decide.useMutation({
-    onSuccess: (result, variables) => {
+    onSuccess: async (result, variables) => {
       if (variables.decision === "save") {
         toast.success("Job saved with decision reason");
       } else if (variables.decision === "ignore") {
@@ -196,8 +199,11 @@ export default function JobSearch() {
       } else {
         toast.success(result.existing ? "Decision updated" : "Application decision recorded");
       }
-      refetchApplicationDecisions();
-      refetchAutonomousPlan();
+      await Promise.all([
+        refetchApplicationDecisions(),
+        refetchAutonomousPlan(),
+        refetchOperatingLedger(),
+      ]);
     },
     onError: (error) => {
       toast.error(error.message || "Failed to record decision");
@@ -205,7 +211,7 @@ export default function JobSearch() {
   });
 
   const autonomousRunMutation = trpc.automation.run.useMutation({
-    onSuccess: (result: any) => {
+    onSuccess: async (result: any) => {
       const counts = getAutonomousRunCounts(result);
       const message = formatAutonomousRunSummary(result);
       if (counts.failures > 0 || counts.resumeEvidenceBlockedActions > 0 || counts.profileReadinessBlockedActions > 0) {
@@ -213,16 +219,23 @@ export default function JobSearch() {
       } else {
         toast.success(message);
       }
-      refetchAutonomousPlan();
-      refetchJobs();
+      await Promise.all([
+        refetchApplicationDecisions(),
+        refetchAutonomousPlan(),
+        refetchJobs(),
+        refetchOperatingLedger(),
+      ]);
     },
     onError: () => toast.error("Autonomous run failed"),
   });
   const saveJobSearchPolicyMutation = trpc.profile.update.useMutation({
-    onSuccess: () => {
+    onSuccess: async () => {
       toast.success("Sourcing policy saved");
-      refetchProfileData();
-      refetchAutonomousPlan();
+      await Promise.all([
+        refetchProfileData(),
+        refetchAutonomousPlan(),
+        refetchOperatingLedger(),
+      ]);
     },
     onError: (error) => toast.error(error.message || "Failed to save sourcing policy"),
   });
