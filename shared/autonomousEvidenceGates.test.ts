@@ -73,4 +73,19 @@ describe("autonomous evidence gates", () => {
       blocks: ["document_discovery", "external_application_submission"],
     });
   });
+
+  it("does not turn optional external-provider consent into a submission block", () => {
+    const gates = buildAutonomousEvidenceGates({
+      profileEvidence: {
+        ...profileEvidence,
+        status: "limited",
+        label: "Evidence limited",
+        externalAccessGated: true,
+        blockers: [],
+        autoApplyEligible: true,
+      },
+    });
+
+    expect(gates).toEqual([]);
+  });
 });

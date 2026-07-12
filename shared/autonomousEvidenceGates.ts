@@ -69,15 +69,6 @@ export function buildAutonomousEvidenceGates(
       route: "/profile",
       blocks: ["external_application_submission", "follow_up_send"],
     });
-  } else if (profileEvidence?.externalAccessGated) {
-    gates.push({
-      id: "profile-external-evidence",
-      label: profileEvidence.label,
-      detail: profileEvidence.detail,
-      severity: "medium",
-      route: "/profile",
-      blocks: ["external_application_submission"],
-    });
   }
 
   for (const item of input.connectorReadiness || []) {

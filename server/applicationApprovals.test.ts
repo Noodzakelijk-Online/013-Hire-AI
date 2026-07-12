@@ -1,5 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TrpcContext } from "./_core/context";
+
+const mocks = vi.hoisted(() => ({
+  getActiveResume: vi.fn(),
+}));
+
+vi.mock("./resumeStorage", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./resumeStorage")>()),
+  getActiveResume: mocks.getActiveResume,
+}));
+
 import {
   createApplication,
   createApplicationApproval,
@@ -8,6 +18,7 @@ import {
   getUserOfferAttributionReviews,
   listUserApplicationApprovals,
   resolveApplicationApproval,
+  upsertUserProfile,
 } from "./db";
 import { getFollowUps } from "./applicationFeatures";
 import { appRouter } from "./routers";
@@ -37,6 +48,11 @@ function createContext(userId: number): TrpcContext {
 }
 
 describe("application approval ledger", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getActiveResume.mockResolvedValue(null);
+  });
+
   it("keeps one pending approval per action and resolves it", async () => {
     const userId = 98001;
     const applicationId = 43210;
@@ -182,6 +198,30 @@ describe("application approval ledger", () => {
 
   it("records a non-submission handoff attempt when approving an application submission gate", async () => {
     const userId = 98006;
+    mocks.getActiveResume.mockResolvedValue({
+      id: 980061,
+      userId,
+      fileName: "approved-handoff-resume.pdf",
+      fileUrl: "private://resumes/98006/approved-handoff-resume.pdf",
+      fileKey: "resumes/98006/approved-handoff-resume.pdf",
+      fileSize: 2048,
+      mimeType: "application/pdf",
+      version: 1,
+      isActive: true,
+      uploadedAt: new Date(),
+    });
+    await upsertUserProfile({
+      userId,
+      skills: "TypeScript, React, Node.js",
+      experience: "Built production web applications for five years.",
+      education: "BSc Computer Science",
+      desiredJobTypes: "Full Stack Engineer",
+      desiredLocations: "Remote",
+      salaryExpectationMin: 90000,
+      salaryExpectationMax: 140000,
+      resumeUrl: "private://resumes/98006/approved-handoff-resume.pdf",
+      resumeFileKey: "resumes/98006/approved-handoff-resume.pdf",
+    });
     const application = await createApplication({
       userId,
       jobId: 1,
@@ -222,6 +262,48 @@ describe("application approval ledger", () => {
     expect(artifacts.auditEvents.some((event) =>
       event.action === "approval_resolved" &&
       event.afterState?.includes("handoffAttemptId")
+    )).toBe(true);
+  });
+
+  it("keeps a submission approval pending when core evidence blocks external handoff", async () => {
+    const userId = 98009;
+    const application = await createApplication({
+      userId,
+      jobId: 1,
+      status: "pending",
+      notes: "Prepared application is missing the candidate evidence needed for handoff.",
+    });
+    const applicationId = Number(application.insertId);
+    const approval = await createApplicationApproval({
+      userId,
+      applicationId,
+      entityType: "application",
+      entityId: applicationId,
+      approvalType: "application_submission",
+      status: "pending",
+      riskLevel: "high",
+      requestedBy: "system",
+      title: "Approve prepared external submission",
+      description: "Prepared materials require explicit approval before external handoff.",
+    });
+
+    const caller = appRouter.createCaller(createContext(userId));
+    await expect(caller.applications.resolveApproval({
+      approvalId: Number(approval.insertId),
+      status: "approved",
+      decisionNote: "Attempted approval without a versioned resume.",
+    })).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: "Resolve the profile evidence gates before approving an external application handoff.",
+    });
+
+    expect((await listUserApplicationApprovals(userId, "all")).find((item) => item.id === Number(approval.insertId))?.status)
+      .toBe("pending");
+    const artifacts = await getApplicationLedgerArtifacts(applicationId, userId);
+    expect(artifacts.attempts).toHaveLength(0);
+    expect(artifacts.auditEvents.some((event) =>
+      event.action === "application_submission_approval_blocked_evidence" &&
+      event.afterState?.includes("profile-core-evidence")
     )).toBe(true);
   });
 

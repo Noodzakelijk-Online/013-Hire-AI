@@ -1189,6 +1189,7 @@ export const appRouter = router({
           createApplicationAttempt,
           getJobById,
           getUserApplications,
+          listUserApplicationApprovals,
         } = await import("./db");
         const {
           getApplicationSubmissionGateAttemptStatus,
@@ -1196,6 +1197,46 @@ export const appRouter = router({
           shouldRecordApplicationSubmissionGateAttempt,
         } = await import("./applicationApprovalResolution");
         try {
+          const approval = (await listUserApplicationApprovals(ctx.user.id, "all"))
+            .find((item) => item.id === input.approvalId);
+          if (
+            input.status === "approved" &&
+            approval?.approvalType === "application_submission" &&
+            approval.applicationId != null
+          ) {
+            const { getAutonomousEvidenceContext } = await import("./autonomousEvidence");
+            const evidenceContext = await getAutonomousEvidenceContext(ctx.user.id);
+            const blockingGates = evidenceContext.evidenceGates.filter((gate) =>
+              gate.blocks.includes("external_application_submission")
+            );
+            if (blockingGates.length > 0) {
+              await createAuditEvent({
+                userId: ctx.user.id,
+                entityType: "application",
+                entityId: approval.applicationId,
+                action: "application_submission_approval_blocked_evidence",
+                actor: "user",
+                source: "applications.resolveApproval",
+                approvalId: approval.id,
+                afterState: JSON.stringify({
+                  requestedStatus: input.status,
+                  decisionNote: input.decisionNote ?? null,
+                  blockingGates: blockingGates.map((gate) => ({
+                    id: gate.id,
+                    label: gate.label,
+                    detail: gate.detail,
+                    severity: gate.severity,
+                  })),
+                  externalSubmissionPerformed: false,
+                }),
+                riskLevel: "high",
+              });
+              throw new TRPCError({
+                code: "PRECONDITION_FAILED",
+                message: "Resolve the profile evidence gates before approving an external application handoff.",
+              });
+            }
+          }
           const result = await resolveApplicationApproval(
             input.approvalId,
             ctx.user.id,
@@ -1253,6 +1294,7 @@ export const appRouter = router({
           });
           return { success: true };
         } catch (error) {
+          if (error instanceof TRPCError) throw error;
           const message = error instanceof Error ? error.message : "Unable to resolve approval.";
           throw new TRPCError({
             code: message === "Approval not found." ? "NOT_FOUND" : "CONFLICT",

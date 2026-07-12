@@ -1945,7 +1945,8 @@ export default function Applications() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                disabled={resolveApprovalMutation.isPending}
+                                disabled={resolveApprovalMutation.isPending || evidenceBlocked}
+                                title={evidenceBlocked ? "Resolve profile evidence before approving this external handoff." : undefined}
                                 onClick={() => resolveApprovalMutation.mutate({
                                   approvalId: approval.id,
                                   status: "approved",
