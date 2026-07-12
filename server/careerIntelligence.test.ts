@@ -145,6 +145,21 @@ describe("Social Connections API", () => {
         type: "portfolio",
       });
       expect(invalidResult.isValid).toBe(false);
+
+      const nonWebResult = await caller.social.validateUrl({
+        url: "javascript:alert(1)",
+        type: "portfolio",
+      });
+      expect(nonWebResult.isValid).toBe(false);
+    });
+  });
+
+  describe("social profile analysis input controls", () => {
+    it("rejects blank and oversized pasted profile content before it reaches the LLM", async () => {
+      const caller = appRouter.createCaller(createAuthContext());
+
+      await expect(caller.social.analyzeLinkedIn({ profileText: "   " })).rejects.toThrow();
+      await expect(caller.social.analyzePortfolio({ portfolioText: "x".repeat(30_001) })).rejects.toThrow();
     });
   });
 });

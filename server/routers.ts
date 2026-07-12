@@ -81,6 +81,7 @@ const safeHttpUrl = z.string().trim().max(1000).url().refine((value) => {
   const protocol = new URL(value).protocol;
   return protocol === "https:" || protocol === "http:";
 }, "URL must use HTTP or HTTPS");
+const socialProfileText = z.string().trim().min(1).max(30_000);
 
 function defaultConnectorScopes(provider: z.infer<typeof connectorProvider>) {
   switch (provider) {
@@ -2424,21 +2425,21 @@ export const appRouter = router({
     }),
 
     analyzeLinkedIn: protectedProcedure
-      .input(z.object({ profileText: z.string() }))
+      .input(z.object({ profileText: socialProfileText }))
       .mutation(async ({ input }) => {
         const { analyzeLinkedInProfile } = await import("./socialConnections");
         return await analyzeLinkedInProfile(input.profileText);
       }),
 
     analyzeGitHub: protectedProcedure
-      .input(z.object({ profileText: z.string() }))
+      .input(z.object({ profileText: socialProfileText }))
       .mutation(async ({ input }) => {
         const { analyzeGitHubProfile } = await import("./socialConnections");
         return await analyzeGitHubProfile(input.profileText);
       }),
 
     analyzePortfolio: protectedProcedure
-      .input(z.object({ portfolioText: z.string() }))
+      .input(z.object({ portfolioText: socialProfileText }))
       .mutation(async ({ input }) => {
         const { analyzePortfolio } = await import("./socialConnections");
         return await analyzePortfolio(input.portfolioText);
