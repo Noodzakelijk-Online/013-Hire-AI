@@ -7,6 +7,7 @@ import { getDb } from "./db";
 import { jobDuplicates, jobs } from "../drizzle/schema";
 import { asc, desc, gt, and, eq, gte, inArray, like, or, sql } from "drizzle-orm";
 import { sampleJobDuplicateLinks, sampleJobs } from "./sampleData";
+import { matchesJobAlert } from "../shared/jobAlertMatching";
 
 const canonicalJobCondition = sql`NOT EXISTS (
   SELECT 1 FROM ${jobDuplicates}
@@ -36,6 +37,7 @@ export interface JobSummary {
   location: string | null;
   salaryMin: number | null;
   salaryMax: number | null;
+  jobType: "full-time" | "part-time" | "contract" | "temporary" | null;
   platformId: number;
   postedDate: Date | null;
   matchScore?: number;
@@ -60,6 +62,34 @@ export interface DiscoverySubscription {
     experienceLevels?: string[];
   };
   callback: (event: JobDiscoveryEvent) => void;
+}
+
+export function filterDiscoveryJobs(
+  jobList: JobSummary[],
+  filters: DiscoverySubscription["filters"]
+): JobSummary[] {
+  return jobList.filter((job) => {
+    if (filters.keywords?.length) {
+      const searchableText = `${job.title} ${job.company}`.toLowerCase();
+      if (!filters.keywords.some((keyword) => searchableText.includes(keyword.toLowerCase()))) return false;
+    }
+
+    if (filters.locations?.length) {
+      const location = (job.location || "").toLowerCase();
+      if (!filters.locations.some((item) => location.includes(item.toLowerCase()))) return false;
+    }
+
+    if (filters.platformIds?.length && !filters.platformIds.includes(job.platformId)) return false;
+
+    if (filters.jobTypes?.length && !filters.jobTypes.includes(job.jobType || "")) return false;
+
+    if (filters.minSalary && filters.minSalary > 0) {
+      const salaryCeiling = job.salaryMax ?? job.salaryMin;
+      if (typeof salaryCeiling !== "number" || salaryCeiling < filters.minSalary) return false;
+    }
+
+    return true;
+  });
 }
 
 // ============================================================================
@@ -146,6 +176,7 @@ class SubscriptionManager {
           location: jobs.location,
           salaryMin: jobs.salaryMin,
           salaryMax: jobs.salaryMax,
+          jobType: jobs.jobType,
           platformId: jobs.platformId,
           postedDate: jobs.postedDate,
           createdAt: jobs.createdAt,
@@ -213,37 +244,8 @@ class SubscriptionManager {
   /**
    * Filter jobs based on user preferences
    */
-  private filterJobsForUser(
-    jobList: JobSummary[],
-    filters: DiscoverySubscription["filters"]
-  ): JobSummary[] {
-    return jobList.filter((job) => {
-      if (filters.keywords && filters.keywords.length > 0) {
-        const titleLower = job.title.toLowerCase();
-        const hasKeyword = filters.keywords.some((kw) =>
-          titleLower.includes(kw.toLowerCase())
-        );
-        if (!hasKeyword) return false;
-      }
-
-      if (filters.locations && filters.locations.length > 0 && job.location) {
-        const locationLower = job.location.toLowerCase();
-        const hasLocation = filters.locations.some((loc) =>
-          locationLower.includes(loc.toLowerCase())
-        );
-        if (!hasLocation) return false;
-      }
-
-      if (filters.platformIds && filters.platformIds.length > 0) {
-        if (!filters.platformIds.includes(job.platformId)) return false;
-      }
-
-      if (filters.minSalary && job.salaryMin) {
-        if (job.salaryMin < filters.minSalary) return false;
-      }
-
-      return true;
-    });
+  private filterJobsForUser(jobList: JobSummary[], filters: DiscoverySubscription["filters"]): JobSummary[] {
+    return filterDiscoveryJobs(jobList, filters);
   }
 
   /**
@@ -261,6 +263,7 @@ class SubscriptionManager {
         location: jobs.location,
         salaryMin: jobs.salaryMin,
         salaryMax: jobs.salaryMax,
+        jobType: jobs.jobType,
         platformId: jobs.platformId,
         postedDate: jobs.postedDate,
       })
@@ -323,7 +326,13 @@ export async function getRecentJobs(options: {
       filteredJobs = filteredJobs.filter((job) => options.platformIds!.includes(job.platformId));
     }
     if (options.minSalary) {
-      filteredJobs = filteredJobs.filter((job) => !job.salaryMin || job.salaryMin >= options.minSalary!);
+      filteredJobs = filteredJobs.filter((job) => {
+        const salaryCeiling = job.salaryMax ?? job.salaryMin;
+        return typeof salaryCeiling === "number" && salaryCeiling >= options.minSalary!;
+      });
+    }
+    if (options.jobTypes?.length) {
+      filteredJobs = filteredJobs.filter((job) => job.jobType && options.jobTypes!.includes(job.jobType));
     }
 
     const mappedJobs = filteredJobs
@@ -335,6 +344,7 @@ export async function getRecentJobs(options: {
         location: job.location,
         salaryMin: job.salaryMin,
         salaryMax: job.salaryMax,
+        jobType: job.jobType,
         platformId: job.platformId,
         postedDate: job.postedDate,
       }));
@@ -371,10 +381,10 @@ export async function getRecentJobs(options: {
     conditions.push(inArray(jobs.platformId, options.platformIds));
   }
   if (options.minSalary) {
-    conditions.push(or(
-      sql`${jobs.salaryMin} IS NULL`,
-      gte(jobs.salaryMin, options.minSalary)
-    )!);
+    conditions.push(gte(sql`COALESCE(${jobs.salaryMax}, ${jobs.salaryMin})`, options.minSalary));
+  }
+  if (options.jobTypes?.length) {
+    conditions.push(inArray(jobs.jobType, options.jobTypes as Array<"full-time" | "part-time" | "contract" | "temporary">));
   }
 
   const jobList = await db
@@ -385,6 +395,7 @@ export async function getRecentJobs(options: {
       location: jobs.location,
       salaryMin: jobs.salaryMin,
       salaryMax: jobs.salaryMax,
+      jobType: jobs.jobType,
       platformId: jobs.platformId,
       postedDate: jobs.postedDate,
     })
@@ -527,6 +538,7 @@ export async function searchJobs(query: string, options?: {
         location: job.location,
         salaryMin: job.salaryMin,
         salaryMax: job.salaryMax,
+        jobType: job.jobType,
         platformId: job.platformId,
         postedDate: job.postedDate,
         matchScore: score,
@@ -551,6 +563,7 @@ export async function searchJobs(query: string, options?: {
       location: jobs.location,
       salaryMin: jobs.salaryMin,
       salaryMax: jobs.salaryMax,
+      jobType: jobs.jobType,
       platformId: jobs.platformId,
       postedDate: jobs.postedDate,
       description: jobs.description,
@@ -588,6 +601,7 @@ export async function searchJobs(query: string, options?: {
       location: j.location,
       salaryMin: j.salaryMin,
       salaryMax: j.salaryMax,
+      jobType: j.jobType,
       platformId: j.platformId,
       postedDate: j.postedDate,
       matchScore: j.score,
@@ -619,31 +633,13 @@ export interface JobAlert {
  * Check if a job matches an alert
  */
 export function jobMatchesAlert(job: JobSummary, alert: JobAlert): boolean {
-  if (alert.keywords.length > 0) {
-    const titleLower = job.title.toLowerCase();
-    const hasKeyword = alert.keywords.some((kw) =>
-      titleLower.includes(kw.toLowerCase())
-    );
-    if (!hasKeyword) return false;
-  }
-
-  if (alert.locations.length > 0 && job.location) {
-    const locationLower = job.location.toLowerCase();
-    const hasLocation = alert.locations.some((loc) =>
-      locationLower.includes(loc.toLowerCase())
-    );
-    if (!hasLocation) return false;
-  }
-
-  if (alert.platformIds.length > 0) {
-    if (!alert.platformIds.includes(job.platformId)) return false;
-  }
-
-  if (alert.minSalary && job.salaryMin) {
-    if (job.salaryMin < alert.minSalary) return false;
-  }
-
-  return true;
+  return matchesJobAlert(job, {
+    keywords: alert.keywords,
+    locations: alert.locations,
+    platformIds: alert.platformIds,
+    minSalary: alert.minSalary,
+    jobTypes: alert.jobTypes,
+  });
 }
 
 /**

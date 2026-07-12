@@ -24,6 +24,18 @@ describe("matchesJobAlert", () => {
     })).toBe(true);
   });
 
+  it("accepts array criteria for real-time discovery and requires a configured platform ID", () => {
+    expect(matchesJobAlert(remoteFrontendJob, {
+      keywords: ["TypeScript", "React"],
+      locations: ["Europe"],
+      platformIds: [18],
+      minSalary: 120000,
+      jobTypes: ["full-time"],
+    })).toBe(true);
+
+    expect(matchesJobAlert(remoteFrontendJob, { platformIds: [19] })).toBe(false);
+  });
+
   it.each([
     [{ keywords: "Go" }, "keywords"],
     [{ locations: "Asia" }, "locations"],

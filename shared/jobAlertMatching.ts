@@ -1,9 +1,10 @@
 export interface JobAlertCriteria {
-  keywords?: string | null;
-  locations?: string | null;
+  keywords?: string | string[] | null;
+  locations?: string | string[] | null;
   platforms?: string | null;
+  platformIds?: number[] | null;
   minSalary?: number | null;
-  jobTypes?: string | null;
+  jobTypes?: string | string[] | null;
 }
 
 export interface JobAlertMatchJob {
@@ -22,9 +23,8 @@ export interface JobAlertMatchJob {
   salaryMax?: number | null;
 }
 
-function commaSeparatedValues(value?: string | null) {
-  return (value || "")
-    .split(",")
+function commaSeparatedValues(value?: string | string[] | null) {
+  return (Array.isArray(value) ? value : (value || "").split(","))
     .map((item) => item.trim().toLowerCase())
     .filter(Boolean);
 }
@@ -62,10 +62,13 @@ export function matchesJobAlert(job: JobAlertMatchJob, criteria: JobAlertCriteri
   if (locations.length > 0 && !includesAny((job.location || "").toLowerCase(), locations)) return false;
 
   const platforms = commaSeparatedValues(criteria.platforms);
-  if (platforms.length > 0) {
+  const platformIds = criteria.platformIds || [];
+  if (platforms.length > 0 || platformIds.length > 0) {
     const platformName = (job.platformName || "").toLowerCase();
     const platformId = job.platformId == null ? "" : String(job.platformId);
-    if (!platforms.some((platform) => platform === platformName || platform === platformId)) return false;
+    const matchesNamedPlatform = platforms.length === 0 || platforms.some((platform) => platform === platformName || platform === platformId);
+    const matchesPlatformId = platformIds.length === 0 || (job.platformId != null && platformIds.includes(job.platformId));
+    if (!matchesNamedPlatform || !matchesPlatformId) return false;
   }
 
   const jobTypes = commaSeparatedValues(criteria.jobTypes);
