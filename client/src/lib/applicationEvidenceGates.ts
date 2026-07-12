@@ -44,35 +44,32 @@ function unique(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)));
 }
 
-function gateAppliesToApplication(
+function applicableBlocksForApplication(
   application: ApplicationEvidenceGateApplicationLike | null | undefined,
   gate: ApplicationEvidenceGateLike
 ) {
   const status = application?.status || "pending";
   const blocks = gate.blocks || [];
-  const pendingSubmission = status === "pending" && (
-    blocks.includes("external_application_submission") ||
-    blocks.includes("document_discovery")
-  );
-  const followUpOrReply = FOLLOW_UP_STATUSES.has(status) && (
-    blocks.includes("follow_up_send") ||
-    blocks.includes("reply_monitoring")
-  );
-
-  return pendingSubmission || followUpOrReply;
+  if (status === "pending") {
+    return blocks.filter((block) => block === "external_application_submission");
+  }
+  if (FOLLOW_UP_STATUSES.has(status)) {
+    return blocks.filter((block) => block === "follow_up_send" || block === "reply_monitoring");
+  }
+  return [];
 }
 
 export function getApplicationEvidenceGateSummary(
   application: ApplicationEvidenceGateApplicationLike | null | undefined,
   gates: ApplicationEvidenceGateLike[] = []
 ): ApplicationEvidenceGateSummary {
-  const relevantGates = gates.filter((gate) => gateAppliesToApplication(application, gate));
+  const relevantGates = gates.filter((gate) => applicableBlocksForApplication(application, gate).length > 0);
   const highestSeverity = relevantGates.reduce<ApplicationEvidenceGateSeverity>((current, gate) => {
     const severity = coerceSeverity(gate.severity);
     return SEVERITY_RANK[severity] > SEVERITY_RANK[current] ? severity : current;
   }, "low");
   const blockedCapabilities = unique(
-    relevantGates.flatMap((gate) => (gate.blocks || []).map(readableBlock))
+    relevantGates.flatMap((gate) => applicableBlocksForApplication(application, gate).map(readableBlock))
   );
   const firstGate = relevantGates[0];
 

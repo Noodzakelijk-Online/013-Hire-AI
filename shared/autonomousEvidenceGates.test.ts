@@ -70,7 +70,7 @@ describe("autonomous evidence gates", () => {
     });
     expect(gates[1]).toMatchObject({
       id: "connector-cloud-resume-discovery",
-      blocks: ["document_discovery", "external_application_submission"],
+      blocks: ["document_discovery"],
     });
   });
 

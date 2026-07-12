@@ -30,14 +30,12 @@ const gates = [
 ];
 
 describe("application evidence gates", () => {
-  it("matches pending applications to submission and document evidence gates", () => {
+  it("matches pending applications only to external-submission evidence gates", () => {
     const summary = getApplicationEvidenceGateSummary({ status: "pending" }, gates);
 
-    expect(summary.count).toBe(2);
+    expect(summary.count).toBe(1);
     expect(summary.highestSeverity).toBe("high");
-    expect(summary.blockedCapabilities).toEqual(
-      expect.arrayContaining(["external application submission", "document discovery"])
-    );
+    expect(summary.blockedCapabilities).toEqual(["external application submission"]);
   });
 
   it("matches active applications to follow-up and reply monitoring gates", () => {

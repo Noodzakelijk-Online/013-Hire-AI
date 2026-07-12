@@ -47,10 +47,6 @@ function connectorBlocks(item: ConnectorReadinessGateInput): AutonomousEvidenceG
   if (providerIds.some((providerId) => ["google_drive", "dropbox"].includes(providerId))) {
     blocks.push("document_discovery");
   }
-  if (item.id === "cloud-resume-discovery") {
-    blocks.push("external_application_submission", "document_discovery");
-  }
-
   return uniqueBlocks(blocks);
 }
 
