@@ -26,7 +26,7 @@ import {
   listUserApplicationApprovals,
   upsertUserProfile,
 } from "./db";
-import { getFollowUps } from "./applicationFeatures";
+import { getFollowUps, scheduleInterview, updateInterviewStatus } from "./applicationFeatures";
 import { runAutonomousForUser } from "./autonomousService";
 import { sampleJobs } from "./sampleData";
 
@@ -206,6 +206,57 @@ describe("autonomous submission approval gates", () => {
     expect(auditEvents.some((event) =>
       event.action === "autonomous_follow_up_safety_blocked" &&
       event.afterState?.includes("Employer response needs a reply")
+    )).toBe(true);
+  });
+
+  it("does not draft routine follow-ups after an interview is cancelled", async () => {
+    const userId = 99106;
+    const staleDate = new Date(Date.now() - 8 * 86400000);
+
+    await upsertUserProfile({
+      userId,
+      skills: "React, TypeScript",
+      experience: "Five years building production web applications.",
+      desiredJobTypes: "full-time",
+      desiredLocations: "remote",
+      preferences: JSON.stringify({
+        autonomousEnabled: true,
+        minMatchScore: 100,
+        dailyApplicationLimit: 1,
+        createFollowUps: true,
+      }),
+    });
+
+    const application = await createApplication({
+      userId,
+      jobId: 2,
+      status: "interview",
+      appliedDate: staleDate,
+      lastActivity: staleDate,
+      notes: "Interview was later cancelled.",
+    });
+    const applicationId = Number(application.insertId);
+    const interview = await scheduleInterview({
+      applicationId,
+      interviewType: "video",
+      scheduledAt: new Date(Date.now() + 3 * 86400000),
+    }, userId);
+    await updateInterviewStatus(interview.id, "cancelled", userId);
+
+    const result = await runAutonomousForUser(userId, {
+      createFollowUps: true,
+      minMatchScore: 100,
+      dailyApplicationLimit: 1,
+    });
+    const followUps = await getFollowUps(applicationId, userId);
+    const auditEvents = await getAuditEventsForEntity(userId, "application", applicationId);
+
+    expect(result.queuedFollowUps).toBe(0);
+    expect(result.skippedSafetyBlockedFollowUps).toBe(1);
+    expect(followUps).toHaveLength(0);
+    expect(auditEvents.some((event) =>
+      event.action === "autonomous_follow_up_safety_blocked" &&
+      event.afterState?.includes("Interview schedule was cancelled")
     )).toBe(true);
   });
 

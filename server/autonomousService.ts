@@ -226,10 +226,17 @@ async function getAutonomousFollowUpSafetyBlock(
 
   if (followUp.status === "interview") {
     const schedules = await getInterviewSchedules(followUp.applicationId, userId);
-    const hasSchedule = schedules.some((schedule) =>
-      ["scheduled", "rescheduled", "completed", "cancelled"].includes(schedule.status || "scheduled")
+    const hasActiveSchedule = schedules.some((schedule) =>
+      ["scheduled", "rescheduled"].includes(schedule.status || "scheduled")
     );
-    if (!hasSchedule) {
+    if (hasActiveSchedule) return null;
+
+    if (schedules.some((schedule) => schedule.status === "cancelled")) {
+      return "Interview schedule was cancelled and needs review before routine follow-up automation continues.";
+    }
+
+    const hasCompletedSchedule = schedules.some((schedule) => schedule.status === "completed");
+    if (!hasCompletedSchedule) {
       return "Interview invite needs scheduling before routine follow-up automation continues.";
     }
   }
