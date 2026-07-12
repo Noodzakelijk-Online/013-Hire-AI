@@ -389,12 +389,12 @@ export function getConnectorReadinessQueue(input: {
       riskLevel: provider.category === "inbox" ? "medium" : "low",
     }));
 
-  const hasPendingOrConnectedInbox = ["gmail", "outlook"].some((providerId) => {
+  const hasConnectedInbox = ["gmail", "outlook"].some((providerId) => {
     const provider = providerById.get(providerId as ProfileEvidenceProvider["id"]);
-    return providerIsConnected(provider) || provider?.connectionStatus === "connection_requested";
+    return providerIsConnected(provider);
   });
   const responseApplications = activeResponseApplicationCount(input.applications);
-  if (responseApplications > 0 && !hasPendingOrConnectedInbox) {
+  if (responseApplications > 0 && !hasConnectedInbox) {
     items.push(connectorReadinessItem({
       id: "inbox-response-monitoring",
       label: "Inbox response monitoring",
@@ -407,11 +407,11 @@ export function getConnectorReadinessQueue(input: {
   }
 
   const hasResumeEvidence = Boolean(input.profile?.resumeUrl || input.profile?.resumeFileKey);
-  const hasPendingOrConnectedCloud = ["google_drive", "dropbox"].some((providerId) => {
+  const hasConnectedCloud = ["google_drive", "dropbox"].some((providerId) => {
     const provider = providerById.get(providerId as ProfileEvidenceProvider["id"]);
-    return providerIsConnected(provider) || provider?.connectionStatus === "connection_requested";
+    return providerIsConnected(provider);
   });
-  if (!hasResumeEvidence && !hasPendingOrConnectedCloud) {
+  if (!hasResumeEvidence && !hasConnectedCloud) {
     items.push(connectorReadinessItem({
       id: "cloud-resume-discovery",
       label: "Cloud resume discovery",

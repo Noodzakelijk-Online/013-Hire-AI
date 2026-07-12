@@ -238,6 +238,49 @@ describe("application campaign operating ledger", () => {
     expect(JSON.stringify(ledger)).not.toContain("accessToken");
   });
 
+  it("keeps inbox response monitoring blocked until a requested connector is actually connected", async () => {
+    const userId = 99010;
+    await upsertUserProfile({
+      userId,
+      skills: "TypeScript, React, Node.js",
+      experience: "Five years building production web applications.",
+      desiredJobTypes: "Frontend Engineer",
+      desiredLocations: "Remote",
+      resumeUrl: "https://example.com/resume.pdf",
+      resumeFileKey: "resumes/99010/resume.pdf",
+    });
+    await createApplication({
+      userId,
+      jobId: 2,
+      status: "applied",
+      notes: "Submitted application awaiting an employer response.",
+    });
+    await requestUserConnectorConnection({
+      userId,
+      provider: "gmail",
+      consentScopes: ["email.metadata.read", "email.messages.read_recruiting"],
+    });
+
+    const ledger = await getUserOperatingLedger(userId);
+
+    expect(ledger.queues.connectorReadiness).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "gmail",
+          status: "connection_requested",
+        }),
+        expect.objectContaining({
+          id: "inbox-response-monitoring",
+          providerIds: ["gmail", "outlook"],
+          affectedApplications: 1,
+        }),
+      ])
+    );
+    expect(ledger.queues.evidenceGates.map((gate) => gate.id)).toEqual(
+      expect.arrayContaining(["connector-gmail", "connector-inbox-response-monitoring"])
+    );
+  });
+
   it("surfaces success-fee compliance obligations in the operating ledger", async () => {
     const userId = 99008;
     const overdueDate = new Date(Date.now() - 2 * 86400000);
