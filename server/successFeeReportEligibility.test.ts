@@ -166,6 +166,33 @@ describe("success fee report-hire eligibility", () => {
     expect(mocks.mockDb.insert).not.toHaveBeenCalled();
   });
 
+  it("rejects a duplicate hire report while the employer fee is still pending verification", async () => {
+    mocks.selectLimit
+      .mockResolvedValueOnce([{ id: 51, status: "accepted" }])
+      .mockResolvedValueOnce([{ id: 77, status: "pending_verification" }]);
+    mocks.selectOrderLimit.mockResolvedValueOnce([]);
+    const caller = successFeesRouter.createCaller(createContext(190095));
+
+    await expect(caller.reportHire({
+      employerName: "Example Employer",
+      jobTitle: "Example Role",
+      monthlySalary: 5000,
+      currency: "USD",
+      startDate: "2026-07-10",
+      applicationId: 51,
+      offerLetterBase64: "cHJvb2Y=",
+      offerLetterMimeType: "text/plain",
+      offerLetterFileName: "offer.txt",
+      termsAccepted: true,
+    })).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: expect.stringContaining("active or pending"),
+    });
+
+    expect(mocks.storagePut).not.toHaveBeenCalled();
+    expect(mocks.mockDb.insert).not.toHaveBeenCalled();
+  });
+
   it("supersedes the source offer review when a linked accepted hire is reported", async () => {
     mocks.selectLimit
       .mockResolvedValueOnce([{ id: 51, status: "accepted" }])

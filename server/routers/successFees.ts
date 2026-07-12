@@ -10,7 +10,7 @@ import {
   getUserSuccessFees,
 } from "../db";
 import { applicationApprovals, applications, successFees, employmentVerifications, feePayments, users } from "../../drizzle/schema";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, inArray } from "drizzle-orm";
 import { isAcceptedOfferApplicationStatus } from "@shared/offerEligibility";
 import { storagePut } from "../storage";
 import { scanSensitiveUpload, validateUploadedFile, VERIFICATION_MIME_TYPES } from "../uploadValidation";
@@ -110,7 +110,8 @@ export const successFeesRouter = router({
         });
       }
 
-      // Check if user already has an active fee for this employer
+      // A pending verification already has offer proof and may already have a Stripe subscription.
+      // Do not allow a retry to create a second fee while that ledger record is unresolved.
       const existingFee = await db
         .select()
         .from(successFees)
@@ -118,7 +119,7 @@ export const successFeesRouter = router({
           and(
             eq(successFees.userId, userId),
             eq(successFees.employerName, input.employerName),
-            eq(successFees.status, "active")
+            inArray(successFees.status, ["active", "pending_verification"])
           )
         )
         .limit(1);
@@ -126,7 +127,7 @@ export const successFeesRouter = router({
       if (existingFee.length > 0) {
         throw new TRPCError({
           code: "CONFLICT",
-          message: "You already have an active success fee for this employer.",
+          message: "You already have an active or pending success fee for this employer.",
         });
       }
 
