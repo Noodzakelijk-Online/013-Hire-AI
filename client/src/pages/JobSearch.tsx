@@ -5,6 +5,7 @@ import { trpc } from "@/lib/trpc";
 import { formatAutonomousRunSummary, getAutonomousRunCounts } from "@/lib/autonomousRunSummary";
 import { getAutonomousPolicyControlAction } from "@/lib/autonomousPolicyControl";
 import { buildJobDecisionMutationInput, type JobDecisionLifecycleAction } from "@/lib/jobDecisionActions";
+import { getApplicationEvidenceGateSummary } from "@/lib/applicationEvidenceGates";
 import { getSafeExternalUrl, openExternalUrl } from "@/lib/externalUrl";
 import { getJobMatchDecisionSummary } from "@/lib/jobMatchDecisionSummary";
 import { getJobSourcingControlSummary } from "@/lib/jobSourcingControl";
@@ -153,6 +154,13 @@ export default function JobSearch() {
   } = trpc.applications.getOperatingLedger.useQuery(undefined, {
     enabled: Boolean(user),
   });
+  const preparationEvidenceGate = useMemo(() => {
+    const summary = getApplicationEvidenceGateSummary(
+      { status: "pending" },
+      autonomousPlan?.evidenceGates || []
+    );
+    return summary.gates[0] || null;
+  }, [autonomousPlan?.evidenceGates]);
 
   const autonomousEnabled = useMemo(() => {
     try {
@@ -342,6 +350,11 @@ export default function JobSearch() {
   const handleApply = async (job: any) => {
     if (!user) {
       toast.error("Please log in to apply");
+      return;
+    }
+    if (preparationEvidenceGate) {
+      toast.info(preparationEvidenceGate.detail || "Resolve profile evidence before preparing an application.");
+      setLocation(preparationEvidenceGate.route || "/profile");
       return;
     }
     const summary = getJobMatchDecisionSummary(
@@ -1380,16 +1393,24 @@ export default function JobSearch() {
                     )}
                   </div>
                   <Button
+                    data-testid="job-prepare-or-resolve-evidence"
+                    title={preparationEvidenceGate?.detail || "Queue a controlled application review"}
                     onClick={() => handleApply(selectedJob)}
                     disabled={decideMutation.isPending}
-                    className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700"
+                    className={preparationEvidenceGate
+                      ? "border border-amber-500/50 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20"
+                      : "bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700"}
                   >
                     {decideMutation.isPending ? (
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : preparationEvidenceGate ? (
+                      <AlertCircle className="w-4 h-4 mr-2" />
                     ) : (
                       <Send className="w-4 h-4 mr-2" />
                     )}
-                    {selectedJobSummary?.recommendedDecision === "manual_apply"
+                    {preparationEvidenceGate
+                      ? "Resolve Evidence"
+                      : selectedJobSummary?.recommendedDecision === "manual_apply"
                       ? "Queue Manual Task"
                       : selectedJobSummary?.recommendedDecision === "ignore"
                         ? "Queue Exception Review"
