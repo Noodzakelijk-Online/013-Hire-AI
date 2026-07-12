@@ -1,6 +1,6 @@
 import express, { type Express } from "express";
 import Stripe from "stripe";
-import { createAuditEvent, getDb } from "./db";
+import { createAdminReviewItem, createAuditEvent, getDb } from "./db";
 import { successFees, feePayments } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { getStripeClient } from "./stripeClient";
@@ -154,6 +154,15 @@ export function registerStripeWebhook(app: Express) {
               beforeState: JSON.stringify({ status: fee.status }),
               afterState: JSON.stringify({ status: "suspended", stripeEventId: event.id, stripeInvoiceId: invoice.id }),
               riskLevel: "high",
+            });
+            await createAdminReviewItem({
+              userId: fee.userId,
+              entityType: "success_fee",
+              entityId: fee.id,
+              category: "payment_failed",
+              priority: "high",
+              title: "Stripe payment failed",
+              description: `Stripe could not collect ${invoice.amount_due} ${invoice.currency.toUpperCase()} for ${fee.employerName} (${fee.jobTitle}). Review billing recovery before any escalation.`,
             });
 
             console.log(`[Stripe Webhook] Payment failed for fee ${fee.id}`);
