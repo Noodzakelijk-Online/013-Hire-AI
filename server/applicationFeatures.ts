@@ -649,6 +649,7 @@ function existingEmployerResponseResult(response: {
     cancelledFollowUpApprovalIds: [] as number[],
     cancelledOfferAttributionApprovalIds: [] as number[],
     dismissedOfferAttributionReviewIds: [] as number[],
+    cancelledInterviewIds: [] as number[],
   };
 }
 
@@ -669,6 +670,13 @@ function shouldRetireOfferAttribution(
 
 function staleOfferAttributionCancellationNote(responseId: number) {
   return `Employer response ${responseId} withdrew or rejected the offer, so offer attribution is no longer actionable.`;
+}
+
+function shouldCancelOutstandingInterviews(
+  currentStatus: ApplicationStatus,
+  responseType: EmployerResponseInput["responseType"]
+) {
+  return currentStatus === "interview" && responseType === "rejection";
 }
 
 export async function recordEmployerResponse(input: RecordEmployerResponseInput, userId: number) {
@@ -837,6 +845,36 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
       }
     }
 
+    const cancelledInterviewIds: number[] = [];
+    if (shouldCancelOutstandingInterviews(currentStatus, response.responseType)) {
+      const cancelledInterviews = memoryInterviewSchedules.filter((interview) =>
+        interview.applicationId === input.applicationId &&
+        ["scheduled", "rescheduled"].includes(interview.status || "scheduled")
+      );
+      for (const interview of cancelledInterviews) {
+        interview.status = "cancelled";
+        interview.updatedAt = response.receivedAt;
+        cancelledInterviewIds.push(interview.id);
+      }
+      if (cancelledInterviewIds.length > 0) {
+        await createAuditEvent({
+          userId,
+          entityType: "application",
+          entityId: input.applicationId,
+          action: "interviews_cancelled_after_employer_rejection",
+          actor: "system",
+          source: "applications.recordResponse",
+          afterState: JSON.stringify({
+            responseId,
+            responseType: response.responseType,
+            cancelledInterviewIds,
+            externalCancellationSent: false,
+          }),
+          riskLevel: "medium",
+        });
+      }
+    }
+
     await createAuditEvent({
       userId,
       entityType: "application",
@@ -896,6 +934,7 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
       cancelledFollowUpApprovalIds,
       cancelledOfferAttributionApprovalIds,
       dismissedOfferAttributionReviewIds,
+      cancelledInterviewIds,
     };
   }
 
@@ -955,6 +994,7 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
     const cancelledFollowUpApprovalIds: number[] = [];
     const cancelledOfferAttributionApprovalIds: number[] = [];
     const dismissedOfferAttributionReviewIds: number[] = [];
+    const cancelledInterviewIds: number[] = [];
 
     if (response.responseType === "interview_invite") {
       const notification = await tx.insert(applicationNotifications).values({
@@ -1046,6 +1086,41 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
             responseType: response.responseType,
             cancelledApprovalIds: cancelledFollowUpApprovalIds,
             cancelledStatuses: staleApprovals.map((approval) => approval.status),
+          }),
+          riskLevel: "medium",
+        });
+      }
+    }
+
+    if (shouldCancelOutstandingInterviews(application[0].status, response.responseType)) {
+      const scheduledInterviews = await tx
+        .select({ id: interviewSchedules.id })
+        .from(interviewSchedules)
+        .where(and(
+          eq(interviewSchedules.applicationId, input.applicationId),
+          inArray(interviewSchedules.status, ["scheduled", "rescheduled"])
+        ));
+      if (scheduledInterviews.length > 0) {
+        await tx
+          .update(interviewSchedules)
+          .set({ status: "cancelled" })
+          .where(and(
+            inArray(interviewSchedules.id, scheduledInterviews.map((interview) => interview.id)),
+            inArray(interviewSchedules.status, ["scheduled", "rescheduled"])
+          ));
+        cancelledInterviewIds.push(...scheduledInterviews.map((interview) => interview.id));
+        await tx.insert(auditEvents).values({
+          userId,
+          entityType: "application",
+          entityId: input.applicationId,
+          action: "interviews_cancelled_after_employer_rejection",
+          actor: "system",
+          source: "applications.recordResponse",
+          afterState: JSON.stringify({
+            responseId,
+            responseType: response.responseType,
+            cancelledInterviewIds,
+            externalCancellationSent: false,
           }),
           riskLevel: "medium",
         });
@@ -1197,6 +1272,7 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
       cancelledFollowUpApprovalIds,
       cancelledOfferAttributionApprovalIds,
       dismissedOfferAttributionReviewIds,
+      cancelledInterviewIds,
     };
   });
 }

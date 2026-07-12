@@ -198,6 +198,45 @@ describe("response and interview memory fallback", () => {
     )).toBe(false);
   });
 
+  it("cancels upcoming interview records when an employer rejects an interview-stage application", async () => {
+    const userId = 98207;
+    const application = await createApplication({
+      userId,
+      jobId: 2,
+      status: "interview",
+      notes: "Interview was scheduled before the employer rejected the application.",
+    });
+    const applicationId = Number(application.insertId);
+    const scheduled = await scheduleInterview({
+      applicationId,
+      interviewType: "video",
+      scheduledAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+      location: "Video call",
+    }, userId);
+
+    expect((await getUpcomingInterviews(userId)).some((item) => item.interview.id === scheduled.id)).toBe(true);
+
+    const rejection = await recordEmployerResponse({
+      applicationId,
+      responseType: "rejection",
+      source: "email",
+      summary: "Employer cancelled the interview process after final review.",
+      receivedAt: new Date(),
+    }, userId);
+
+    expect(rejection.status).toBe("rejected");
+    expect(rejection.cancelledInterviewIds).toContain(scheduled.id);
+    expect((await getInterviewSchedules(applicationId, userId)).find((interview) => interview.id === scheduled.id)?.status).toBe("cancelled");
+    expect((await getUpcomingInterviews(userId)).some((item) => item.interview.id === scheduled.id)).toBe(false);
+
+    const artifacts = await getApplicationLedgerArtifacts(applicationId, userId);
+    expect(artifacts.auditEvents.some((event) =>
+      event.action === "interviews_cancelled_after_employer_rejection" &&
+      event.afterState?.includes(String(scheduled.id)) &&
+      event.afterState?.includes("externalCancellationSent\":false")
+    )).toBe(true);
+  });
+
   it("keeps pending follow-up approval when only a view signal is recorded", async () => {
     const userId = 98205;
     const application = await createApplication({
