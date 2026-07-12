@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TrpcContext } from "./_core/context";
-import { recordEmployerResponse } from "./applicationFeatures";
+import { recordEmployerResponse, scheduleInterview } from "./applicationFeatures";
 import { getAuditEventsForEntity, createApplication, listUnreadInterviewNotifications } from "./db";
 import { getUserOperatingLedger } from "./applicationCampaigns";
 import { appRouter } from "./routers";
@@ -107,5 +107,32 @@ describe("interview notification ledger", () => {
     expect(retry).toMatchObject({ success: true, changed: false });
     expect(await listUnreadInterviewNotifications(userId)).toHaveLength(0);
     expect(auditEvents.filter((event) => event.action === "interview_notification_read")).toHaveLength(1);
+  });
+
+  it("acknowledges pending interview invitations when the user schedules the interview", async () => {
+    const userId = 99174;
+    const application = await createApplication({ userId, jobId: 3, status: "applied" });
+    const applicationId = Number(application.insertId);
+    await recordEmployerResponse({
+      applicationId,
+      responseType: "interview_invite",
+      source: "email",
+      sourceReference: "gmail-interview-99174",
+      summary: "The recruiter invited the candidate to a technical interview.",
+    }, userId);
+    const [notification] = await listUnreadInterviewNotifications(userId);
+
+    await scheduleInterview({
+      applicationId,
+      interviewType: "technical",
+      scheduledAt: new Date(Date.now() + 3 * 86_400_000),
+    }, userId);
+
+    expect(await listUnreadInterviewNotifications(userId)).toHaveLength(0);
+    const auditEvents = await getAuditEventsForEntity(userId, "application", applicationId);
+    expect(auditEvents.some((event) =>
+      event.action === "interview_notifications_acknowledged_by_scheduling" &&
+      event.afterState?.includes(String(notification.id))
+    )).toBe(true);
   });
 });

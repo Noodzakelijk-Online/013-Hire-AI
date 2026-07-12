@@ -20,6 +20,7 @@ import {
   getJobById,
   getUserApplications,
   listUserApplicationApprovals,
+  markUnreadInterviewNotificationsReadForApplication,
   resolveApplicationApproval,
   touchApplicationActivity,
   updateApplicationStatus,
@@ -1324,6 +1325,23 @@ async function findOwnedMemoryInterview(interviewId: number, userId: number) {
   return interview;
 }
 
+async function acknowledgeInterviewNotificationsAfterScheduling(applicationId: number, userId: number) {
+  const { notificationIds } = await markUnreadInterviewNotificationsReadForApplication(applicationId, userId);
+  if (notificationIds.length > 0) {
+    await createAuditEvent({
+      userId,
+      entityType: "application",
+      entityId: applicationId,
+      action: "interview_notifications_acknowledged_by_scheduling",
+      actor: "user",
+      source: "applications.scheduleInterview",
+      afterState: JSON.stringify({ notificationIds }),
+      riskLevel: "low",
+    });
+  }
+  return notificationIds;
+}
+
 export async function scheduleInterview(input: ScheduleInterviewInput, userId: number) {
   const db = await getDb();
   if (input.scheduledAt.getTime() <= Date.now()) {
@@ -1403,10 +1421,11 @@ export async function scheduleInterview(input: ScheduleInterviewInput, userId: n
       approvalId,
     });
 
+    await acknowledgeInterviewNotificationsAfterScheduling(input.applicationId, userId);
     return { id: record.id, approvalId };
   }
 
-  return await db.transaction(async (tx) => {
+  const scheduledInterview = await db.transaction(async (tx) => {
     const application = await tx
       .select({ status: applications.status })
       .from(applications)
@@ -1488,6 +1507,8 @@ export async function scheduleInterview(input: ScheduleInterviewInput, userId: n
 
     return { id: interviewId, approvalId };
   });
+  await acknowledgeInterviewNotificationsAfterScheduling(input.applicationId, userId);
+  return scheduledInterview;
 }
 
 export async function getInterviewSchedules(applicationId: number, userId: number) {

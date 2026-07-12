@@ -1643,6 +1643,43 @@ export async function markInterviewNotificationRead(notificationId: number, user
   return { notification: updated[0], changed: true };
 }
 
+export async function markUnreadInterviewNotificationsReadForApplication(applicationId: number, userId: number) {
+  const db = await getDb();
+  if (!db) {
+    const notificationIds = memoryApplicationNotifications
+      .filter((notification) =>
+        notification.applicationId === applicationId &&
+        notification.userId === userId &&
+        !notification.readAt
+      )
+      .map((notification) => {
+        notification.readAt = new Date();
+        return notification.id;
+      });
+    return { notificationIds };
+  }
+
+  const notifications = await db
+    .select({ id: applicationNotifications.id })
+    .from(applicationNotifications)
+    .where(and(
+      eq(applicationNotifications.applicationId, applicationId),
+      eq(applicationNotifications.userId, userId),
+      isNull(applicationNotifications.readAt)
+    ));
+  const notificationIds = notifications.map((notification) => notification.id);
+  if (notificationIds.length > 0) {
+    await db
+      .update(applicationNotifications)
+      .set({ readAt: new Date() })
+      .where(and(
+        inArray(applicationNotifications.id, notificationIds),
+        isNull(applicationNotifications.readAt)
+      ));
+  }
+  return { notificationIds };
+}
+
 function parseApprovalPayload(payload?: string | null): Record<string, unknown> | null {
   if (!payload) return null;
   try {
