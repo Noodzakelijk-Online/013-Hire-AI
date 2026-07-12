@@ -19,6 +19,7 @@ import {
   getUserApplicationDecisions,
   listAdminReviewItems,
   listUserApplicationApprovals,
+  upsertUserProfile,
 } from "./db";
 import { getUserOperatingLedger } from "./applicationCampaigns";
 
@@ -44,6 +45,18 @@ function createContext(userId: number): TrpcContext {
     } as TrpcContext["req"],
     res: {} as TrpcContext["res"],
   };
+}
+
+async function makePreparationReady(userId: number) {
+  await upsertUserProfile({
+    userId,
+    resumeUrl: `https://storage.example.local/resumes/${userId}/active-resume.pdf`,
+    resumeFileKey: `resumes/${userId}/active-resume.pdf`,
+    skills: "TypeScript, React, Node.js",
+    experience: "Five years building production web applications.",
+    desiredJobTypes: "Frontend Engineer",
+    desiredLocations: "Remote, worldwide",
+  });
 }
 
 describe("application decision ledger", () => {
@@ -123,6 +136,7 @@ describe("application decision ledger", () => {
 
   it("does not duplicate generated review artifacts when the same job is queued again", async () => {
     const userId = 94002;
+    await makePreparationReady(userId);
     const caller = appRouter.createCaller(createContext(userId));
 
     const first = await caller.applications.decide({
@@ -180,6 +194,7 @@ describe("application decision ledger", () => {
 
   it("closes stale prepared application work when a review item is ignored", async () => {
     const userId = 94003;
+    await makePreparationReady(userId);
     const caller = appRouter.createCaller(createContext(userId));
 
     const queued = await caller.applications.decide({

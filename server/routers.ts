@@ -671,6 +671,17 @@ export const appRouter = router({
             message: "An active versioned resume is required before Hire.AI can prepare an application.",
           });
         }
+        const {
+          applicationPreparationBlockMessage,
+          getApplicationPreparationSafety,
+        } = await import("./applicationPreparationSafety");
+        const preparationSafety = await getApplicationPreparationSafety(ctx.user.id);
+        if (!preparationSafety.allowed) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: applicationPreparationBlockMessage(preparationSafety),
+          });
+        }
         const application = await createApplication({
           userId: ctx.user.id,
           jobId: input.jobId,
@@ -774,10 +785,11 @@ export const appRouter = router({
         }
 
         const createsPreparedApplication = ["apply", "review", "manual_apply"].includes(input.decision);
-        const activeResume = createsPreparedApplication
-          ? await getActiveResume(ctx.user.id)
+        const preparationSafety = createsPreparedApplication
+          ? await (await import("./applicationPreparationSafety")).getApplicationPreparationSafety(ctx.user.id)
           : null;
-        if (createsPreparedApplication && !activeResume) {
+
+        if (preparationSafety?.blockers.some((blocker) => blocker.key === "resume")) {
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "An active versioned resume is required before Hire.AI can queue an application for review.",
@@ -812,6 +824,43 @@ export const appRouter = router({
           }),
           riskLevel: input.riskLevel === "high" ? "high" : reviewRequired ? "medium" : "low",
         });
+
+        if (createsPreparedApplication && preparationSafety && !preparationSafety.allowed) {
+          await createAuditEvent({
+            userId: ctx.user.id,
+            entityType: "job",
+            entityId: input.jobId,
+            action: "application_preparation_blocked_profile_readiness",
+            actor: "system",
+            source: "applications.decide",
+            afterState: JSON.stringify({
+              decisionId: Number(result.insertId),
+              decision: input.decision,
+              readinessScore: preparationSafety.readinessScore,
+              blockers: preparationSafety.blockers,
+              externalSubmissionPerformed: false,
+            }),
+            riskLevel: "high",
+          });
+          return {
+            success: true,
+            decisionId: Number(result.insertId),
+            applicationRecordId: null,
+            existing: result.existing === true,
+            preparationBlocked: true,
+            blockers: preparationSafety.blockers,
+          };
+        }
+
+        const activeResume = createsPreparedApplication
+          ? await getActiveResume(ctx.user.id)
+          : null;
+        if (createsPreparedApplication && !activeResume) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "An active versioned resume is required before Hire.AI can queue an application for review.",
+          });
+        }
 
         let applicationRecordId: number | null = null;
         if (input.decision === "apply" || input.decision === "review" || input.decision === "manual_apply") {
@@ -2357,6 +2406,14 @@ export const appRouter = router({
         const activeResume = await getActiveResume(ctx.user.id);
         if (!activeResume) {
           throw new Error("An active versioned resume is required before Hire.AI can prepare an application. Upload or select a resume on your profile first.");
+        }
+        const {
+          applicationPreparationBlockMessage,
+          getApplicationPreparationSafety,
+        } = await import("./applicationPreparationSafety");
+        const preparationSafety = await getApplicationPreparationSafety(ctx.user.id);
+        if (!preparationSafety.allowed) {
+          throw new Error(applicationPreparationBlockMessage(preparationSafety));
         }
         const profileForApplication = {
           ...profile,

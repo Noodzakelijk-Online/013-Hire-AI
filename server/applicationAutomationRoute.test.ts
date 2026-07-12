@@ -12,6 +12,8 @@ vi.mock("./resumeStorage", async (importOriginal) => ({
 import {
   getApplicationLedgerArtifacts,
   getAuditEventsForEntity,
+  getAuditEventsForUser,
+  getUserApplicationDecisions,
   getUserApplications,
   listUserApplicationApprovals,
   upsertUserProfile,
@@ -61,6 +63,10 @@ describe("automation application preparation route", () => {
     await upsertUserProfile({
       userId,
       resumeUrl: "https://example.com/resume.pdf",
+      skills: "TypeScript, React, Node.js",
+      experience: "Five years building production web applications.",
+      desiredJobTypes: "Frontend Engineer",
+      desiredLocations: "Remote, worldwide",
     });
     const caller = appRouter.createCaller(createContext(userId));
 
@@ -134,5 +140,56 @@ describe("automation application preparation route", () => {
       "active versioned resume"
     );
     expect(await getUserApplications(userId)).toHaveLength(0);
+  });
+
+  it("refuses direct preparation when core profile evidence is incomplete", async () => {
+    const userId = 98403;
+    await upsertUserProfile({
+      userId,
+      resumeUrl: "https://example.com/resume.pdf",
+    });
+    const caller = appRouter.createCaller(createContext(userId));
+
+    await expect(caller.automation.applyToJob({ jobId: 1 })).rejects.toThrow(
+      "Core profile evidence is required"
+    );
+    await expect(caller.applications.create({ jobId: 1 })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringContaining("Core profile evidence is required"),
+    });
+    expect(await getUserApplications(userId)).toHaveLength(0);
+    expect(await listUserApplicationApprovals(userId, "all")).toHaveLength(0);
+  });
+
+  it("records a blocked decision without creating application materials", async () => {
+    const userId = 98404;
+    await upsertUserProfile({
+      userId,
+      resumeUrl: "https://example.com/resume.pdf",
+    });
+    const caller = appRouter.createCaller(createContext(userId));
+
+    const result = await caller.applications.decide({
+      jobId: 1,
+      decision: "review",
+      decisionReason: "This role should be considered once the candidate profile is complete.",
+      reviewRequired: true,
+    });
+    const decisions = await getUserApplicationDecisions(userId);
+    const auditEvents = await getAuditEventsForUser(userId, 10);
+
+    expect(result).toMatchObject({
+      success: true,
+      applicationRecordId: null,
+      preparationBlocked: true,
+    });
+    expect(decisions).toHaveLength(1);
+    expect(await getUserApplications(userId)).toHaveLength(0);
+    expect(await listUserApplicationApprovals(userId, "all")).toHaveLength(0);
+    expect(auditEvents.some((event) =>
+      event.action === "application_preparation_blocked_profile_readiness" &&
+      event.afterState?.includes("Experience missing") &&
+      event.afterState?.includes("Target roles missing")
+    )).toBe(true);
   });
 });
