@@ -12,6 +12,7 @@ import { getApplicationDeepLink } from "@/lib/applicationDeepLinks";
 import { getApprovalEvidenceGateSummary } from "@/lib/applicationEvidenceGates";
 import { getAutonomousPolicyControlAction } from "@/lib/autonomousPolicyControl";
 import { getCommandCenterSummary } from "@/lib/commandCenterSummary";
+import { formatDashboardActivityTarget } from "@/lib/dashboardActivity";
 import { getSuccessFeeComplianceAction, getSuccessFeeComplianceSummary } from "@/lib/successFeeCompliance";
 import {
   formatApplicationDecision,
@@ -1481,7 +1482,9 @@ export default function Dashboard() {
                         <p className="text-sm text-white font-medium">
                           {app.status === "pending" ? "Queued" : app.status}
                         </p>
-                        <p className="text-xs text-slate-400 truncate">Job ID: {app.jobId}</p>
+                        <p className="text-xs text-slate-400 truncate">
+                          {formatDashboardActivityTarget(app.job)}
+                        </p>
                         <p className="text-xs text-slate-500 mt-1">
                           {app.status === "pending" ? "Queued" : "Applied"}{" "}
                           {new Date(app.appliedDate || app.createdAt).toLocaleDateString()}
