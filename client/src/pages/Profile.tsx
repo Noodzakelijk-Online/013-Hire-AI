@@ -23,7 +23,8 @@ import {
   ShieldCheck,
   LockKeyhole,
   AlertTriangle,
-  CheckCircle2
+  CheckCircle2,
+  Unplug,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { getLoginUrl } from "@/const";
@@ -112,6 +113,13 @@ export default function Profile() {
       evidenceReadinessQuery.refetch();
     },
     onError: (error) => toast.error(error.message || "Failed to record connector request"),
+  });
+  const disconnectConnector = trpc.connectors.disconnect.useMutation({
+    onSuccess: async () => {
+      toast.success("Connector access disabled");
+      await evidenceReadinessQuery.refetch();
+    },
+    onError: (error) => toast.error(error.message || "Unable to disable connector access"),
   });
   const parseResumeFile = trpc.resume.parseFile.useMutation({
     onSuccess: async ({ resume }) => {
@@ -257,6 +265,10 @@ export default function Profile() {
     requestConnectorConnection.mutate({ provider });
   };
 
+  const handleDisconnectConnector = (provider: ConnectorProviderId) => {
+    disconnectConnector.mutate({ provider });
+  };
+
   const handleLinkedInConnect = () => handleRequestConnectorConnection("linkedin");
 
   const handleGitHubConnect = () => handleRequestConnectorConnection("github");
@@ -363,9 +375,15 @@ export default function Profile() {
                   key={provider.id}
                   provider={provider}
                   isRequesting={requestConnectorConnection.isPending}
+                  isDisconnecting={disconnectConnector.isPending}
                   onRequestConnection={
                     canRequestProviderConnector(provider)
                       ? handleRequestConnectorConnection
+                      : undefined
+                  }
+                  onDisconnect={
+                    canRequestProviderConnector(provider)
+                      ? handleDisconnectConnector
                       : undefined
                   }
                 />
@@ -969,11 +987,15 @@ function EvidenceMetric({ label, value }: { label: string; value: number }) {
 function EvidenceProviderRow({
   provider,
   isRequesting = false,
+  isDisconnecting = false,
   onRequestConnection,
+  onDisconnect,
 }: {
   provider: ProfileEvidenceProvider;
   isRequesting?: boolean;
+  isDisconnecting?: boolean;
   onRequestConnection?: (provider: ConnectorProviderId) => void;
+  onDisconnect?: (provider: ConnectorProviderId) => void;
 }) {
   const Icon = provider.status === "connected"
     ? CheckCircle2
@@ -982,6 +1004,9 @@ function EvidenceProviderRow({
       : LockKeyhole;
   const connectorAlreadyRequested = provider.connectionStatus === "connection_requested";
   const connectorActionAvailable = onRequestConnection && provider.status !== "connected";
+  const connectorCanDisconnect = onDisconnect && ["connection_requested", "connected", "needs_reauth"].includes(
+    provider.connectionStatus || ""
+  );
 
   return (
     <div
@@ -1016,6 +1041,20 @@ function EvidenceProviderRow({
               onClick={() => onRequestConnection(provider.id as ConnectorProviderId)}
             >
               {connectorAlreadyRequested ? "Requested" : "Request"}
+            </Button>
+          ) : null}
+          {connectorCanDisconnect ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              data-testid={`profile-evidence-disconnect-${provider.id}`}
+              className="h-7 px-2 text-xs text-slate-400 hover:bg-red-500/10 hover:text-red-200"
+              disabled={isDisconnecting}
+              onClick={() => onDisconnect(provider.id as ConnectorProviderId)}
+            >
+              <Unplug className="mr-1 h-3 w-3" />
+              {connectorAlreadyRequested ? "Cancel" : "Disconnect"}
             </Button>
           ) : null}
         </div>
