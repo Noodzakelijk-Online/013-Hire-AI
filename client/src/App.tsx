@@ -1,43 +1,57 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import NotFound from "@/pages/NotFound";
+import { lazy, Suspense } from "react";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
-import LandingPage from "./pages/LandingPage";
-import Dashboard from "./pages/Dashboard";
-import Profile from "./pages/Profile";
-import Settings from "./pages/Settings";
-import AIPreferences from "./pages/AIPreferences";
-import SavedJobs from "./pages/SavedJobs";
-import Billing from "./pages/Billing";
-import AdminPanel from "./pages/AdminPanel";
-import TermsOfService from "./pages/TermsOfService";
-import JobSearch from "./pages/JobSearch";
-import Applications from "./pages/Applications";
-import JobAlerts from "./pages/JobAlerts";
-import ReviewQueue from "./pages/ReviewQueue";
+
+const LandingPage = lazy(() => import("./pages/LandingPage"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Profile = lazy(() => import("./pages/Profile"));
+const Settings = lazy(() => import("./pages/Settings"));
+const AIPreferences = lazy(() => import("./pages/AIPreferences"));
+const SavedJobs = lazy(() => import("./pages/SavedJobs"));
+const Billing = lazy(() => import("./pages/Billing"));
+const AdminPanel = lazy(() => import("./pages/AdminPanel"));
+const TermsOfService = lazy(() => import("./pages/TermsOfService"));
+const JobSearch = lazy(() => import("./pages/JobSearch"));
+const Applications = lazy(() => import("./pages/Applications"));
+const JobAlerts = lazy(() => import("./pages/JobAlerts"));
+const ReviewQueue = lazy(() => import("./pages/ReviewQueue"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+
+function RouteLoadingFallback() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-300">
+      <div className="flex items-center gap-3 text-sm" role="status" aria-live="polite">
+        <span className="h-4 w-4 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent" />
+        Loading Hire.AI...
+      </div>
+    </div>
+  );
+}
 
 function Router() {
   return (
-    <Switch>
-      <Route path={"/"} component={LandingPage} />
-      <Route path={"/dashboard"} component={Dashboard} />
-      <Route path={"/jobs"} component={JobSearch} />
-      <Route path={"/applications"} component={Applications} />
-      <Route path={"/review-queue"} component={ReviewQueue} />
-      <Route path={"/alerts"} component={JobAlerts} />
-      <Route path={"/profile"} component={Profile} />
-      <Route path={"/settings"} component={Settings} />
-      <Route path={"/ai-preferences"} component={AIPreferences} />
-      <Route path={"/saved"} component={SavedJobs} />
-      <Route path={"/billing"} component={Billing} />
-      <Route path={"/admin"} component={AdminPanel} />
-      <Route path={"/terms"} component={TermsOfService} />
-      <Route path={"/404"} component={NotFound} />
-      {/* Final fallback route */}
-      <Route component={NotFound} />
-    </Switch>
+    <Suspense fallback={<RouteLoadingFallback />}>
+      <Switch>
+        <Route path={"/"} component={LandingPage} />
+        <Route path={"/dashboard"} component={Dashboard} />
+        <Route path={"/jobs"} component={JobSearch} />
+        <Route path={"/applications"} component={Applications} />
+        <Route path={"/review-queue"} component={ReviewQueue} />
+        <Route path={"/alerts"} component={JobAlerts} />
+        <Route path={"/profile"} component={Profile} />
+        <Route path={"/settings"} component={Settings} />
+        <Route path={"/ai-preferences"} component={AIPreferences} />
+        <Route path={"/saved"} component={SavedJobs} />
+        <Route path={"/billing"} component={Billing} />
+        <Route path={"/admin"} component={AdminPanel} />
+        <Route path={"/terms"} component={TermsOfService} />
+        <Route path={"/404"} component={NotFound} />
+        <Route component={NotFound} />
+      </Switch>
+    </Suspense>
   );
 }
 
