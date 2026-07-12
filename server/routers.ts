@@ -2439,11 +2439,17 @@ export const appRouter = router({
           ...(input || {}),
         };
 
-        const plan = buildAutonomousPlan(jobList, profile, applications as any, resolvedPreferences);
         const evidenceContext = await getAutonomousEvidenceContext(ctx.user.id, {
           profile,
           applications,
         });
+        const plan = buildAutonomousPlan(
+          jobList,
+          profile,
+          applications as any,
+          resolvedPreferences,
+          evidenceContext.readiness.signals.hasResume
+        );
 
         return {
           ...plan,

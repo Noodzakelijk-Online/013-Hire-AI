@@ -1163,6 +1163,7 @@ export default function Dashboard() {
                   ["Slots left", autonomousPlan.summary.dailyRemaining],
                   ["Review", autonomousPlan.summary.queuedForReview],
                   ["Manual", autonomousPlan.summary.manualApply],
+                  ["Blocked", autonomousPlan.summary.blocked || 0],
                   ["Follow-ups", autonomousPlan.summary.followUpsDue],
                   ["Gates", autonomousPlan.evidenceGates?.length || 0],
                   ["Expired", autonomousPlan.summary.expiredJobsSkipped || 0],

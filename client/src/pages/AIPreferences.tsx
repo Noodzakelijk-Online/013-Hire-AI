@@ -364,14 +364,16 @@ export default function AIPreferences() {
                   {autonomousPlan?.decisions.slice(0, 5).map((decision: any) => (
                     <ActivityLogItem
                       key={decision.jobId}
-                      icon={decision.action === "skip"
+                      icon={decision.action === "blocked"
+                        ? <AlertTriangle className="w-4 h-4 text-red-300" />
+                        : decision.action === "skip"
                         ? <XCircle className="w-4 h-4 text-slate-400" />
                         : decision.action === "queue_for_review"
                           ? <Eye className="w-4 h-4 text-blue-400" />
                           : <Send className="w-4 h-4 text-cyan-400" />}
                       action={`${decision.action.replace(/_/g, " ")}: ${decision.title} at ${decision.company}`}
                       time={`${decision.matchScore}% match`}
-                      status={decision.action === "skip" ? "skipped" : decision.action === "queue_for_review" ? "info" : "success"}
+                      status={decision.action === "blocked" ? "error" : decision.action === "skip" ? "skipped" : decision.action === "queue_for_review" ? "info" : "success"}
                     />
                   ))}
                   {!autonomousPlan?.decisions.length && (
@@ -493,6 +495,7 @@ export default function AIPreferences() {
                     ["Eligible", autonomousPlan?.summary.eligible || 0],
                     ["Review", autonomousPlan?.summary.queuedForReview || 0],
                     ["Manual", autonomousPlan?.summary.manualApply || 0],
+                    ["Blocked", autonomousPlan?.summary.blocked || 0],
                     ["Follow-ups", autonomousPlan?.summary.followUpsDue || 0],
                     ["Gates", evidenceGateSummary.total],
                     ["Expired", autonomousPlan?.summary.expiredJobsSkipped || 0],

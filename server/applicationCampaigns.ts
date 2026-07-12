@@ -482,7 +482,13 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
     })),
   });
   const preferences = parseAutonomousPreferences(profile?.preferences);
-  const plan = buildAutonomousPlan(jobs, profile, applications as Application[], preferences);
+  const plan = buildAutonomousPlan(
+    jobs,
+    profile,
+    applications as Application[],
+    preferences,
+    Boolean(activeResume)
+  );
   const userAdminReviews = options.includeAdminReviews
     ? adminReviews.filter((item) =>
         item.userId === userId && ["open", "in_progress"].includes(item.status)

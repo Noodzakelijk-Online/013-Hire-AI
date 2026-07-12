@@ -684,6 +684,9 @@ export default function JobSearch() {
                   <p className="text-sm text-slate-400">
                     Scanned {autonomousPlan.summary.scanned} current jobs, found {autonomousPlan.summary.eligible} eligible matches,
                     prepared {autonomousPlan.summary.queuedForReview} for review and identified {autonomousPlan.summary.manualApply} manual tasks.
+                    {autonomousPlan.summary.blocked > 0
+                      ? ` ${autonomousPlan.summary.blocked} high-fit role${autonomousPlan.summary.blocked === 1 ? " is" : "s are"} blocked by missing profile evidence.`
+                      : ""}
                     {autonomousPlan.summary.expiredJobsSkipped > 0
                       ? ` Excluded ${autonomousPlan.summary.expiredJobsSkipped} expired posting${autonomousPlan.summary.expiredJobsSkipped === 1 ? "" : "s"}.`
                       : ""}
@@ -729,7 +732,7 @@ export default function JobSearch() {
                     <p className="mt-1 text-sm text-slate-400">{autonomousControl.detail}</p>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-center">
+                <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-7">
                   <div className="rounded-md bg-slate-800 px-3 py-2">
                     <p className="text-lg font-bold text-white">{autonomousPlan.summary.eligible}</p>
                     <p className="text-xs text-slate-400">Eligible</p>
@@ -741,6 +744,10 @@ export default function JobSearch() {
                   <div className="rounded-md bg-slate-800 px-3 py-2">
                     <p className="text-lg font-bold text-amber-400">{autonomousPlan.summary.manualApply}</p>
                     <p className="text-xs text-slate-400">Manual</p>
+                  </div>
+                  <div className="rounded-md bg-slate-800 px-3 py-2">
+                    <p className="text-lg font-bold text-red-300">{autonomousPlan.summary.blocked || 0}</p>
+                    <p className="text-xs text-slate-400">Blocked</p>
                   </div>
                   <div className="rounded-md bg-slate-800 px-3 py-2">
                     <p className="text-lg font-bold text-purple-400">{autonomousPlan.summary.followUpsDue}</p>

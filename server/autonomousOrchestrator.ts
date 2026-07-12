@@ -25,7 +25,7 @@ export interface AutonomousJobDecision {
   confidence: "high" | "medium" | "low";
   atsType: string;
   automationSupported: boolean;
-  action: "auto_apply" | "queue_for_review" | "manual_apply" | "skip";
+  action: "auto_apply" | "queue_for_review" | "manual_apply" | "blocked" | "skip";
   priority: "urgent" | "high" | "normal" | "low";
   reasons: string[];
   blockers: string[];
@@ -52,6 +52,7 @@ export interface AutonomousPlan {
     queuedForApply: number;
     queuedForReview: number;
     manualApply: number;
+    blocked: number;
     skipped: number;
     followUpsDue: number;
     dailyRemaining: number;
@@ -240,7 +241,8 @@ export function buildAutonomousPlan(
   jobs: Job[],
   profile?: Partial<UserProfile> | null,
   applications: Application[] = [],
-  preferences: AutonomousPreferences = {}
+  preferences: AutonomousPreferences = {},
+  hasActiveResumeArtifact?: boolean
 ): AutonomousPlan {
   const mode = preferences.mode || "review_first";
   const minMatchScore = Math.min(100, Math.max(0, Math.round(preferences.minMatchScore ?? 70)));
@@ -263,12 +265,13 @@ export function buildAutonomousPlan(
   const alreadyQueuedToday = applications.filter(hasAppliedToday).length;
   const dailyRemaining = Math.max(0, dailyLimit - alreadyQueuedToday);
   const policyWarnings: string[] = [];
+  const hasResumeEvidence = hasActiveResumeArtifact ?? Boolean(profile?.resumeUrl || profile?.resumeFileKey);
 
   if (mode === "auto_apply" && requireHumanReview) {
     policyWarnings.push("Human review is enabled, so high-fit jobs will be queued for review before submission.");
   }
-  if (!profile?.resumeUrl && !profile?.resumeFileKey) {
-    policyWarnings.push("No resume is connected. Autonomous application records can be prepared, but submissions should not run.");
+  if (!hasResumeEvidence) {
+    policyWarnings.push("No active versioned resume is connected. Autonomous application preparation and submission are blocked.");
   }
   if (!profile?.skills) {
     policyWarnings.push("Profile skills are incomplete, reducing match confidence.");
@@ -344,7 +347,7 @@ export function buildAutonomousPlan(
         blockers.push("Remote-only mode is enabled");
       }
 
-      if (!profile?.resumeUrl && !profile?.resumeFileKey) {
+      if (!hasResumeEvidence) {
         blockers.push("Resume is required before autonomous submission");
       }
 
@@ -360,8 +363,8 @@ export function buildAutonomousPlan(
 
       if (score >= minMatchScore && hardBlockers.length === 0) {
         if (resumeMissing) {
-          action = "queue_for_review";
-          automationNotes.push("A resume must be connected before this job can enter the submission queue.");
+          action = "blocked";
+          automationNotes.push("An active versioned resume is required before Hire.AI can prepare application materials for this role.");
         } else if (support.preparationSupported) {
           action = "queue_for_review";
           automationNotes.push("The form may be prepared automatically, but final submission requires user review.");
@@ -414,11 +417,15 @@ export function buildAutonomousPlan(
   const queuedForApply = decisions.filter((decision) => decision.action === "auto_apply").length;
   const queuedForReview = decisions.filter((decision) => decision.action === "queue_for_review").length;
   const manualApply = decisions.filter((decision) => decision.action === "manual_apply").length;
+  const blocked = decisions.filter((decision) => decision.action === "blocked").length;
   const skipped = decisions.filter((decision) => decision.action === "skip").length;
 
   const nextActions: string[] = [];
-  if (!profile?.resumeUrl && !profile?.resumeFileKey) {
-    nextActions.push("Upload or connect a resume before autonomous submissions can be fully trusted.");
+  if (!hasResumeEvidence) {
+    nextActions.push("Upload and select an active versioned resume before autonomous application preparation can run.");
+  }
+  if (blocked > 0) {
+    nextActions.push(`Resolve profile evidence to reconsider ${blocked} high-fit role${blocked === 1 ? "" : "s"}.`);
   }
   if (queuedForReview > 0) {
     nextActions.push(`Review ${queuedForReview} high-fit jobs before submission.`);
@@ -444,10 +451,11 @@ export function buildAutonomousPlan(
     summary: {
       scanned: currentJobs.length,
       expiredJobsSkipped,
-      eligible: decisions.filter((decision) => decision.action !== "skip").length,
+      eligible: decisions.filter((decision) => !["skip", "blocked"].includes(decision.action)).length,
       queuedForApply,
       queuedForReview,
       manualApply,
+      blocked,
       skipped,
       followUpsDue,
       dailyRemaining,

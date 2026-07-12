@@ -255,7 +255,7 @@ describe("autonomous orchestrator", () => {
     expect(plan.nextActions).toContain("Excluded 1 expired job posting from autonomous preparation.");
   });
 
-  it("never auto-applies without a connected resume", () => {
+  it("marks high-fit roles as blocked instead of prepared when no resume is connected", () => {
     const plan = buildAutonomousPlan([baseJob], { ...profile, resumeUrl: null }, [], {
       mode: "auto_apply",
       requireHumanReview: false,
@@ -263,8 +263,23 @@ describe("autonomous orchestrator", () => {
     });
 
     expect(plan.summary.queuedForApply).toBe(0);
-    expect(plan.summary.queuedForReview).toBe(1);
+    expect(plan.summary.queuedForReview).toBe(0);
+    expect(plan.summary.blocked).toBe(1);
+    expect(plan.summary.eligible).toBe(0);
+    expect(plan.decisions[0].action).toBe("blocked");
     expect(plan.decisions[0].reviewRequired).toBe(true);
+    expect(getExecutableDecisions(plan).review).toHaveLength(0);
+    expect(plan.nextActions).toContain("Upload and select an active versioned resume before autonomous application preparation can run.");
+  });
+
+  it("uses the active resume ledger instead of profile metadata when planning preparation", () => {
+    const plan = buildAutonomousPlan([baseJob], profile, [], {
+      minMatchScore: 70,
+    }, false);
+
+    expect(plan.summary.blocked).toBe(1);
+    expect(plan.summary.queuedForReview).toBe(0);
+    expect(plan.decisions[0].action).toBe("blocked");
   });
 
   it("plans follow-ups for stale applied applications", () => {

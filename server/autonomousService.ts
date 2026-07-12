@@ -252,7 +252,13 @@ async function executeAutonomousRun(
     ...parseAutonomousPreferences(profile?.preferences),
     ...overrides,
   };
-  const plan = buildAutonomousPlan(jobList, profile, applications as any, resolvedPreferences);
+  const plan = buildAutonomousPlan(
+    jobList,
+    profile,
+    applications as any,
+    resolvedPreferences,
+    Boolean(activeResume)
+  );
   const executable = getExecutableDecisions(plan);
   const evidenceContext = await getAutonomousEvidenceContext(userId, {
     profile,
@@ -265,7 +271,7 @@ async function executeAutonomousRun(
     followUpSendCandidates: resolvedPreferences.createFollowUps ? executable.followUps.length : 0,
   });
   const applicationPreparationCandidates =
-    executable.autoApply.length + executable.review.length + executable.manual.length;
+    executable.autoApply.length + executable.review.length + executable.manual.length + plan.summary.blocked;
   const profileReadinessBlockers = evidenceContext.readiness.blockers.filter((gap) => gap.key !== "resume");
   const skippedProfileReadinessActions = profileReadinessBlockers.length > 0
     ? applicationPreparationCandidates
