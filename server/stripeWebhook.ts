@@ -1,11 +1,26 @@
 import express, { type Express } from "express";
 import Stripe from "stripe";
 import { createAdminReviewItem, createAuditEvent, getDb } from "./db";
-import { successFees, feePayments } from "../drizzle/schema";
+import { successFees, feePayments, type SuccessFee } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { getStripeClient } from "./stripeClient";
 import { claimStripeWebhookEvent, completeStripeWebhookEvent, failStripeWebhookEvent } from "./stripeWebhookLedger";
 import { canTransitionSuccessFeeStatus } from "./successFeeStateMachine";
+
+async function createPaymentFailureReview(
+  fee: Pick<SuccessFee, "id" | "userId" | "employerName" | "jobTitle">,
+  description: string
+) {
+  await createAdminReviewItem({
+    userId: fee.userId,
+    entityType: "success_fee",
+    entityId: fee.id,
+    category: "payment_failed",
+    priority: "high",
+    title: "Stripe payment failed",
+    description,
+  });
+}
 
 export function registerStripeWebhook(app: Express) {
   app.post(
@@ -155,15 +170,10 @@ export function registerStripeWebhook(app: Express) {
               afterState: JSON.stringify({ status: "suspended", stripeEventId: event.id, stripeInvoiceId: invoice.id }),
               riskLevel: "high",
             });
-            await createAdminReviewItem({
-              userId: fee.userId,
-              entityType: "success_fee",
-              entityId: fee.id,
-              category: "payment_failed",
-              priority: "high",
-              title: "Stripe payment failed",
-              description: `Stripe could not collect ${invoice.amount_due} ${invoice.currency.toUpperCase()} for ${fee.employerName} (${fee.jobTitle}). Review billing recovery before any escalation.`,
-            });
+            await createPaymentFailureReview(
+              fee,
+              `Stripe could not collect ${invoice.amount_due} ${invoice.currency.toUpperCase()} for ${fee.employerName} (${fee.jobTitle}). Review billing recovery before any escalation.`
+            );
 
             console.log(`[Stripe Webhook] Payment failed for fee ${fee.id}`);
             break;
@@ -212,15 +222,40 @@ export function registerStripeWebhook(app: Express) {
 
             if (!fee) break;
 
-            // Handle subscription status changes
             if (subscription.status === "active" && fee.status !== "active" && canTransitionSuccessFeeStatus(fee.status, "active")) {
               await db.update(successFees)
                 .set({ status: "active" })
                 .where(eq(successFees.id, fee.id));
+              await createAuditEvent({
+                userId: fee.userId,
+                entityType: "success_fee",
+                entityId: fee.id,
+                action: "stripe_subscription_status_updated",
+                actor: "system",
+                source: `stripe:${event.type}`,
+                beforeState: JSON.stringify({ status: fee.status }),
+                afterState: JSON.stringify({ status: "active", stripeEventId: event.id, stripeStatus: subscription.status }),
+                riskLevel: "high",
+              });
             } else if (subscription.status === "past_due" && fee.status !== "suspended" && canTransitionSuccessFeeStatus(fee.status, "suspended")) {
               await db.update(successFees)
                 .set({ status: "suspended" })
                 .where(eq(successFees.id, fee.id));
+              await createAuditEvent({
+                userId: fee.userId,
+                entityType: "success_fee",
+                entityId: fee.id,
+                action: "stripe_subscription_status_updated",
+                actor: "system",
+                source: `stripe:${event.type}`,
+                beforeState: JSON.stringify({ status: fee.status }),
+                afterState: JSON.stringify({ status: "suspended", stripeEventId: event.id, stripeStatus: subscription.status }),
+                riskLevel: "high",
+              });
+              await createPaymentFailureReview(
+                fee,
+                `Stripe marked the subscription for ${fee.employerName} (${fee.jobTitle}) as past due. Review billing recovery before any escalation.`
+              );
             }
             break;
           }

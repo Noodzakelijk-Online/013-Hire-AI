@@ -127,4 +127,34 @@ describe("Stripe payment failure webhook", () => {
     }));
     expect(mocks.completeStripeWebhookEvent).toHaveBeenCalledWith("evt_payment_failure_701");
   });
+
+  it("records a past-due subscription transition and opens the recovery review", async () => {
+    const response = await postWebhook({
+      id: "evt_subscription_past_due_701",
+      type: "customer.subscription.updated",
+      data: {
+        object: {
+          id: "sub_failed_701",
+          status: "past_due",
+        },
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.createAuditEvent).toHaveBeenCalledWith(expect.objectContaining({
+      entityType: "success_fee",
+      entityId: 701,
+      action: "stripe_subscription_status_updated",
+      riskLevel: "high",
+      afterState: expect.stringContaining('"suspended"'),
+    }));
+    expect(mocks.createAdminReviewItem).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 81,
+      entityType: "success_fee",
+      entityId: 701,
+      category: "payment_failed",
+      priority: "high",
+    }));
+    expect(mocks.completeStripeWebhookEvent).toHaveBeenCalledWith("evt_subscription_past_due_701");
+  });
 });
