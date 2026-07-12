@@ -92,6 +92,26 @@ describe("job match decision summary", () => {
     expect(summary.blockers).toContain("No application destination found");
   });
 
+  it("does not call jurisdiction-restricted remote jobs a location fit", () => {
+    const summary = getJobMatchDecisionSummary(
+      {
+        title: "Software Engineer",
+        company: "Example Co",
+        location: "Remote - US Only",
+        skills: "React",
+        applicationUrl: "https://boards.example.com/jobs/1",
+      },
+      {
+        skills: "React",
+        desiredLocations: "Europe",
+        resumeUrl: "https://example.com/resume.pdf",
+      }
+    );
+
+    expect(summary.locationFit).toBe("gap");
+    expect(summary.blockers).toContain("Location does not match stated preferences");
+  });
+
   it("uses persisted operating-ledger decisions after refresh", () => {
     const summary = getJobMatchDecisionSummary(
       {

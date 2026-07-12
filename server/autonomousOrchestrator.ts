@@ -1,6 +1,7 @@
 import type { Application, Job, UserProfile } from "../drizzle/schema";
 import { detectATSType, isAutomationSupported } from "./applicationAutomation";
 import { normalizeExperienceLevel, normalizeLocation } from "./jobNormalization";
+import { getLocationPreferenceFit } from "../shared/locationEligibility";
 
 export type AutonomousMode = "review_first" | "auto_apply";
 
@@ -186,11 +187,13 @@ export function scoreJobForProfile(job: Job, profile?: Partial<UserProfile> | nu
     reasons.push("Remote-compatible role");
   }
   if (desiredLocations.length > 0) {
-    const locationText = `${job.location || ""} ${normalizedLocation.country} ${normalizedLocation.region}`.toLowerCase();
-    const locationMatch = desiredLocations.some((location) => locationText.includes(location));
-    if (locationMatch) {
+    const locationFit = getLocationPreferenceFit(job.location, profile?.desiredLocations);
+    if (locationFit === "fit") {
       score += 8;
       reasons.push("Location matches stated preferences");
+    } else if (locationFit === "gap") {
+      blockers.push("Location does not match the user's stated preferences");
+      score -= 20;
     }
   }
 

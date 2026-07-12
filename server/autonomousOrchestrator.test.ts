@@ -93,6 +93,23 @@ describe("autonomous orchestrator", () => {
     expect(plan.decisions[0].blockers).toContain("Role does not match the user's target preferences");
   });
 
+  it("keeps jurisdiction-restricted remote roles out of incompatible location queues", () => {
+    const usOnlyRemoteJob: Job = {
+      ...baseJob,
+      location: "Remote - US Only",
+    };
+    const plan = buildAutonomousPlan([usOnlyRemoteJob], {
+      ...profile,
+      desiredLocations: "Europe",
+    }, [], {
+      minMatchScore: 0,
+      dailyApplicationLimit: 2,
+    });
+
+    expect(plan.decisions[0].action).toBe("skip");
+    expect(plan.decisions[0].blockers).toContain("Location does not match the user's stated preferences");
+  });
+
   it("enforces daily limits for review preparation", () => {
     const todayApplication: Application = {
       id: 20,

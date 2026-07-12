@@ -131,12 +131,7 @@ function getSalaryFit(job: JobMatchJobLike, profile?: JobMatchProfileLike | null
 }
 
 function getLocationFit(job: JobMatchJobLike, profile?: JobMatchProfileLike | null): JobMatchFitStatus {
-  const location = (job.location || "").toLowerCase();
-  const desiredLocations = splitList(profile?.desiredLocations).map(canonical);
-  if (!location && desiredLocations.length === 0) return "unknown";
-  if (location.includes("remote")) return "fit";
-  if (desiredLocations.length === 0) return "partial";
-  return desiredLocations.some((desired) => canonical(location).includes(desired)) ? "fit" : "gap";
+  return getLocationPreferenceFit(job.location, profile?.desiredLocations);
 }
 
 function actionToDecision(action?: string | null): JobMatchRecommendedDecision | null {
@@ -327,3 +322,4 @@ export function getJobMatchDecisionSummary(
             : "Ignore this job unless the role or profile data changes.",
   };
 }
+import { getLocationPreferenceFit } from "@shared/locationEligibility";
