@@ -8,6 +8,7 @@ import { getDb } from "./db";
 import { users } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { normalizeSalary, normalizeLocation, normalizeJobType, normalizeExperienceLevel, extractSkills, extractBenefits, getDeduplicator } from "./jobNormalization";
+import { isJobCurrentForAutonomousProcessing } from "./autonomousOrchestrator";
 import { getRecentJobs, searchJobs, getDiscoveryStats, getSubscriptionManager } from "./realTimeDiscovery";
 import { successFeesRouter } from "./routers/successFees";
 import { adminRouter } from "./routers/admin";
@@ -141,6 +142,15 @@ function profileSnapshotForApplication(
       portfolioUrl: profile.portfolioUrl || null,
     } : null,
   });
+}
+
+function assertJobCurrentForPreparation(job: Awaited<ReturnType<typeof import("./db")["getJobById"]>>) {
+  if (!job || !isJobCurrentForAutonomousProcessing(job)) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: "This job is no longer active. Refresh discovery before preparing an application.",
+    });
+  }
 }
 
 export const appRouter = router({
@@ -670,7 +680,13 @@ export const appRouter = router({
           createAuditEvent,
           createAdminReviewItem,
           createApplicationApproval,
+          getJobById,
         } = await import("./db");
+        const job = await getJobById(input.jobId);
+        if (!job) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Job not found" });
+        }
+        assertJobCurrentForPreparation(job);
         const activeResume = await getActiveResume(ctx.user.id);
         if (!activeResume) {
           throw new TRPCError({
@@ -709,6 +725,7 @@ export const appRouter = router({
           applicationId,
           userId: ctx.user.id,
           jobId: input.jobId,
+          platformId: job.platformId,
           attemptType: "prepare",
           status: "review_required",
           finishedAt: new Date(),
@@ -792,6 +809,9 @@ export const appRouter = router({
         }
 
         const createsPreparedApplication = ["apply", "review", "manual_apply"].includes(input.decision);
+        if (createsPreparedApplication) {
+          assertJobCurrentForPreparation(job);
+        }
         const preparationSafety = createsPreparedApplication
           ? await (await import("./applicationPreparationSafety")).getApplicationPreparationSafety(ctx.user.id)
           : null;
@@ -1752,6 +1772,7 @@ export const appRouter = router({
         if (!job) {
           throw new Error("Job not found");
         }
+        assertJobCurrentForPreparation(job);
 
         const match = await calculateJobMatch(profile, job);
 
@@ -2591,6 +2612,7 @@ export const appRouter = router({
         if (!job) {
           throw new Error("Job not found");
         }
+        assertJobCurrentForPreparation(job);
 
         if (!job.applicationUrl) {
           throw new Error("Job does not have an application URL");

@@ -19,6 +19,7 @@ import {
   upsertUserProfile,
 } from "./db";
 import { appRouter } from "./routers";
+import { sampleJobs } from "./sampleData";
 
 function createContext(userId: number): TrpcContext {
   return {
@@ -140,6 +141,25 @@ describe("automation application preparation route", () => {
       "active versioned resume"
     );
     expect(await getUserApplications(userId)).toHaveLength(0);
+  });
+
+  it("refuses automation preparation for an expired listing before creating ledger artifacts", async () => {
+    const userId = 98405;
+    const caller = appRouter.createCaller(createContext(userId));
+    const job = sampleJobs.find((item) => item.id === 1)!;
+    const originalExpiry = job.expiryDate;
+    job.expiryDate = new Date(Date.now() - 60_000);
+    try {
+      await expect(caller.automation.applyToJob({ jobId: job.id })).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message: expect.stringContaining("no longer active"),
+      });
+    } finally {
+      job.expiryDate = originalExpiry;
+    }
+
+    expect(await getUserApplications(userId)).toHaveLength(0);
+    expect(await listUserApplicationApprovals(userId, "all")).toHaveLength(0);
   });
 
   it("refuses direct preparation when core profile evidence is incomplete", async () => {

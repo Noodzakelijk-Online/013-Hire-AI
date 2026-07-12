@@ -22,6 +22,7 @@ import {
   upsertUserProfile,
 } from "./db";
 import { getUserOperatingLedger } from "./applicationCampaigns";
+import { sampleJobs } from "./sampleData";
 
 function createContext(userId: number): TrpcContext {
   return {
@@ -130,6 +131,40 @@ describe("application decision ledger", () => {
       code: "BAD_REQUEST",
       message: expect.stringContaining("active versioned resume"),
     });
+
+    expect(await getUserApplications(userId)).toHaveLength(0);
+  });
+
+  it("refuses direct or decision preparation for missing and expired jobs", async () => {
+    const userId = 94005;
+    await makePreparationReady(userId);
+    const caller = appRouter.createCaller(createContext(userId));
+
+    await expect(caller.applications.create({ jobId: 999999 })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Job not found",
+    });
+
+    const job = sampleJobs.find((item) => item.id === 1)!;
+    const originalExpiry = job.expiryDate;
+    job.expiryDate = new Date(Date.now() - 60_000);
+    try {
+      await expect(caller.applications.create({ jobId: job.id })).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message: expect.stringContaining("no longer active"),
+      });
+      await expect(caller.applications.decide({
+        jobId: job.id,
+        decision: "review",
+        decisionReason: "Prepare this role after the listing refreshes.",
+        reviewRequired: true,
+      })).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message: expect.stringContaining("no longer active"),
+      });
+    } finally {
+      job.expiryDate = originalExpiry;
+    }
 
     expect(await getUserApplications(userId)).toHaveLength(0);
   });
