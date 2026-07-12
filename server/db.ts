@@ -522,6 +522,7 @@ export async function searchJobs(filters: {
   offset?: number;
 }) {
   const db = await getDb();
+  const now = new Date();
   if (!db) {
     const title = filters.title?.toLowerCase();
     const company = filters.company?.toLowerCase();
@@ -532,7 +533,7 @@ export async function searchJobs(filters: {
     const boundedOffset = Math.max(filters.offset || 0, 0);
 
     return sampleJobs
-      .filter((job) => job.isActive === 1)
+      .filter((job) => job.isActive === 1 && (!job.expiryDate || job.expiryDate > now))
       .filter((job) => !sampleDuplicateJobIds.has(job.id))
       .filter((job) => !title || job.title.toLowerCase().includes(title))
       .filter((job) => !company || job.company.toLowerCase().includes(company))
@@ -541,7 +542,11 @@ export async function searchJobs(filters: {
       .slice(boundedOffset, boundedOffset + boundedLimit);
   }
 
-  const conditions: SQL[] = [eq(jobs.isActive, 1), canonicalJobCondition];
+  const conditions: SQL[] = [
+    eq(jobs.isActive, 1),
+    or(isNull(jobs.expiryDate), gt(jobs.expiryDate, now))!,
+    canonicalJobCondition,
+  ];
 
   if (filters.title?.trim()) {
     conditions.push(like(jobs.title, searchTerm(filters.title)));
