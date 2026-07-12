@@ -1,7 +1,7 @@
 import type { TrpcContext } from "./_core/context";
 import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
-import { createApplication, createApplicationApproval, getApplicationLedgerArtifacts, listUserApplicationApprovals, resolveApplicationApproval } from "./db";
+import { createApplication, createApplicationApproval, getApplicationLedgerArtifacts, getUserApplications, listUserApplicationApprovals, resolveApplicationApproval } from "./db";
 import { createFollowUp, markFollowUpSent } from "./applicationFeatures";
 
 function createContext(userId: number): TrpcContext {
@@ -89,6 +89,53 @@ describe("application withdrawal", () => {
     expect(artifacts.auditEvents.some((event) =>
       event.action === "application_status_updated" &&
       event.afterState?.includes("withdrawn")
+    )).toBe(true);
+  });
+
+  it("records an explicit offer decline and cancels pending attribution review", async () => {
+    const userId = 98302;
+    const application = await createApplication({
+      userId,
+      jobId: 3,
+      status: "offer",
+      notes: "Employer made an offer that needs an explicit user decision.",
+    });
+    const applicationId = Number(application.insertId);
+    const attributionApproval = await createApplicationApproval({
+      userId,
+      applicationId,
+      entityType: "application",
+      entityId: applicationId,
+      approvalType: "offer_attribution",
+      status: "pending",
+      riskLevel: "high",
+      requestedBy: "system",
+      decidedBy: null,
+      title: "Confirm offer attribution",
+      description: "Review whether the offer resulted from this application.",
+      payload: null,
+      decidedAt: null,
+    });
+
+    const caller = appRouter.createCaller(createContext(userId));
+    await caller.applications.declineOffer({
+      applicationId,
+      confirmed: true,
+      declineNote: "Declined after reviewing the written offer terms.",
+    });
+
+    expect((await getUserApplications(userId)).find((item) => item.id === applicationId)?.status).toBe("withdrawn");
+    expect((await listUserApplicationApprovals(userId, "all")).find((approval) =>
+      approval.id === Number(attributionApproval.insertId)
+    )?.status).toBe("cancelled");
+    const artifacts = await getApplicationLedgerArtifacts(applicationId, userId);
+    expect(artifacts.auditEvents.some((event) =>
+      event.action === "offer_declined" &&
+      event.afterState?.includes("externalCommunicationSent\":false")
+    )).toBe(true);
+    expect(artifacts.auditEvents.some((event) =>
+      event.action === "application_external_actions_cancelled" &&
+      event.afterState?.includes(String(attributionApproval.insertId))
     )).toBe(true);
   });
 });

@@ -2076,16 +2076,23 @@ const WITHDRAWAL_CANCELLATION_NOTE = "Application was withdrawn, so this unsent 
 
 function isWithdrawalCancellableApproval(
   approval: { approvalType: string; entityId: number; status: string },
-  unsentFollowUpIds: Set<number>
+  unsentFollowUpIds: Set<number>,
+  cancelOfferAttribution: boolean
 ) {
   if (!["pending", "approved"].includes(approval.status)) return false;
   if (approval.approvalType === "application_submission") return true;
+  if (cancelOfferAttribution && approval.approvalType === "offer_attribution") return true;
   return approval.approvalType === "follow_up_send" && unsentFollowUpIds.has(approval.entityId);
 }
 
-export async function withdrawApplication(applicationId: number, userId: number) {
+export async function withdrawApplication(
+  applicationId: number,
+  userId: number,
+  options: { cancelOfferAttribution?: boolean } = {}
+) {
   const db = await getDb();
   const cancelledAt = new Date();
+  const cancelOfferAttribution = options.cancelOfferAttribution === true;
 
   if (!db) {
     const userApplications = await getUserApplications(userId);
@@ -2098,7 +2105,7 @@ export async function withdrawApplication(applicationId: number, userId: number)
     );
     const cancellableApprovals = (await listUserApplicationApprovals(userId, "all")).filter((approval) =>
       approval.applicationId === applicationId &&
-      isWithdrawalCancellableApproval(approval, unsentFollowUpIds)
+      isWithdrawalCancellableApproval(approval, unsentFollowUpIds, cancelOfferAttribution)
     );
 
     await updateApplicationStatus(applicationId, "withdrawn", userId);
@@ -2122,6 +2129,9 @@ export async function withdrawApplication(applicationId: number, userId: number)
 
     const cancelledSubmissionApprovalIds = cancellableApprovals
       .filter((approval) => approval.approvalType === "application_submission")
+      .map((approval) => approval.id);
+    const cancelledOfferAttributionApprovalIds = cancellableApprovals
+      .filter((approval) => approval.approvalType === "offer_attribution")
       .map((approval) => approval.id);
     for (const approvalId of cancelledSubmissionApprovalIds) {
       await createApplicationAttempt({
@@ -2150,6 +2160,7 @@ export async function withdrawApplication(applicationId: number, userId: number)
           status: "withdrawn",
           cancelledApprovalIds: cancellableApprovals.map((approval) => approval.id),
           cancelledSubmissionApprovalIds,
+          cancelledOfferAttributionApprovalIds,
         }),
         riskLevel: "medium",
       });
@@ -2159,6 +2170,7 @@ export async function withdrawApplication(applicationId: number, userId: number)
       success: true,
       cancelledApprovalIds: cancellableApprovals.map((approval) => approval.id),
       cancelledSubmissionApprovalIds,
+      cancelledOfferAttributionApprovalIds,
     };
   }
 
@@ -2192,7 +2204,7 @@ export async function withdrawApplication(applicationId: number, userId: number)
         inArray(applicationApprovals.status, ["pending", "approved"])
       ));
     const cancellableApprovals = activeApprovals.filter((approval) =>
-      isWithdrawalCancellableApproval(approval, unsentFollowUpIds)
+      isWithdrawalCancellableApproval(approval, unsentFollowUpIds, cancelOfferAttribution)
     );
 
     if (application[0].status !== "withdrawn") {
@@ -2228,6 +2240,9 @@ export async function withdrawApplication(applicationId: number, userId: number)
     const cancelledSubmissionApprovalIds = cancellableApprovals
       .filter((approval) => approval.approvalType === "application_submission")
       .map((approval) => approval.id);
+    const cancelledOfferAttributionApprovalIds = cancellableApprovals
+      .filter((approval) => approval.approvalType === "offer_attribution")
+      .map((approval) => approval.id);
     if (cancelledSubmissionApprovalIds.length > 0) {
       const job = await tx
         .select({ platformId: jobs.platformId })
@@ -2260,6 +2275,7 @@ export async function withdrawApplication(applicationId: number, userId: number)
           status: "withdrawn",
           cancelledApprovalIds: cancellableApprovals.map((approval) => approval.id),
           cancelledSubmissionApprovalIds,
+          cancelledOfferAttributionApprovalIds,
         }),
         riskLevel: "medium",
       });
@@ -2269,6 +2285,7 @@ export async function withdrawApplication(applicationId: number, userId: number)
       success: true,
       cancelledApprovalIds: cancellableApprovals.map((approval) => approval.id),
       cancelledSubmissionApprovalIds,
+      cancelledOfferAttributionApprovalIds,
     };
   });
 }

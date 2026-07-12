@@ -1383,6 +1383,56 @@ export const appRouter = router({
 
         return { success: true };
       }),
+    declineOffer: protectedProcedure
+      .input(z.object({
+        applicationId: z.number(),
+        confirmed: z.literal(true),
+        declineNote: z.string().trim().min(8).max(5000),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { createAuditEvent, getUserApplications } = await import("./db");
+        const application = (await getUserApplications(ctx.user.id)).find((item) => item.id === input.applicationId);
+        if (!application) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Application not found." });
+        }
+        if (application.status !== "offer") {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Only a recorded offer can be declined.",
+          });
+        }
+
+        try {
+          const result = await withdrawApplication(input.applicationId, ctx.user.id, {
+            cancelOfferAttribution: true,
+          });
+          await createAuditEvent({
+            userId: ctx.user.id,
+            entityType: "application",
+            entityId: input.applicationId,
+            action: "offer_declined",
+            actor: "user",
+            source: "applications.declineOffer",
+            beforeState: JSON.stringify({ status: "offer" }),
+            afterState: JSON.stringify({
+              status: "withdrawn",
+              confirmed: input.confirmed,
+              declineNote: input.declineNote,
+              cancelledOfferAttributionApprovalIds: result.cancelledOfferAttributionApprovalIds,
+              externalCommunicationSent: false,
+            }),
+            riskLevel: "high",
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unable to decline offer.";
+          throw new TRPCError({
+            code: message === "Application not found." ? "NOT_FOUND" : "CONFLICT",
+            message,
+          });
+        }
+
+        return { success: true };
+      }),
     confirmSubmission: protectedProcedure
       .input(z.object({
         applicationId: z.number(),

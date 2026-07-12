@@ -140,6 +140,9 @@ export default function Applications() {
   const [acceptingOfferApplication, setAcceptingOfferApplication] = useState<any>(null);
   const [offerAcceptanceConfirmed, setOfferAcceptanceConfirmed] = useState(false);
   const [offerAcceptanceNote, setOfferAcceptanceNote] = useState("");
+  const [decliningOfferApplication, setDecliningOfferApplication] = useState<any>(null);
+  const [offerDeclineConfirmed, setOfferDeclineConfirmed] = useState(false);
+  const [offerDeclineNote, setOfferDeclineNote] = useState("");
 
   // Fetch applications
   const { data: applications, isLoading, refetch } = trpc.applications.list.useQuery();
@@ -211,6 +214,21 @@ export default function Applications() {
       refetchOperatingLedger();
     },
     onError: (error) => toast.error(error.message || "Failed to record offer acceptance"),
+  });
+  const declineOfferMutation = trpc.applications.declineOffer.useMutation({
+    onSuccess: () => {
+      toast.success("Offer decline recorded");
+      setDecliningOfferApplication(null);
+      setOfferDeclineConfirmed(false);
+      setOfferDeclineNote("");
+      setSelectedApplication(null);
+      refetch();
+      refetchApprovals();
+      refetchLedgerArtifacts();
+      refetchOfferAttributionReviews();
+      refetchOperatingLedger();
+    },
+    onError: (error) => toast.error(error.message || "Failed to record offer decline"),
   });
   const generateFollowUpMutation = trpc.applications.generateFollowUpEmail.useMutation({
     onSuccess: ({ email }, variables) => {
@@ -607,6 +625,12 @@ export default function Applications() {
     setAcceptingOfferApplication(application);
     setOfferAcceptanceConfirmed(false);
     setOfferAcceptanceNote("");
+  };
+
+  const openOfferDeclineDialog = (application: any) => {
+    setDecliningOfferApplication(application);
+    setOfferDeclineConfirmed(false);
+    setOfferDeclineNote("");
   };
 
   const getNextActionIcon = (actionId: ApplicationNextActionId) => {
@@ -1987,17 +2011,19 @@ export default function Applications() {
                         </div>
                       );
                     })()}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        updateStatusMutation.mutate({ applicationId: selectedApplication.id, status: "withdrawn" });
-                      }}
-                        disabled={updateStatusMutation.isPending || ["withdrawn", "rejected", "offer", "accepted"].includes(selectedApplication.status)}
-                    >
-                      <XCircle className="w-4 h-4 mr-1" />
-                      Withdraw
-                    </Button>
+                    {selectedApplication.status !== "offer" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          updateStatusMutation.mutate({ applicationId: selectedApplication.id, status: "withdrawn" });
+                        }}
+                        disabled={updateStatusMutation.isPending || ["withdrawn", "rejected", "accepted"].includes(selectedApplication.status)}
+                      >
+                        <XCircle className="w-4 h-4 mr-1" />
+                        Withdraw
+                      </Button>
+                    )}
                   </div>
                   <div className="flex flex-wrap justify-end gap-2">
                     <Button
@@ -2013,15 +2039,26 @@ export default function Applications() {
                       Record Response
                     </Button>
                     {selectedApplication.status === "offer" && (
-                      <Button
-                        data-testid="confirm-offer-acceptance-open"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openOfferAcceptanceDialog(selectedApplication)}
-                      >
-                        <CheckCircle className="w-4 h-4 mr-1" />
-                        Confirm Acceptance
-                      </Button>
+                      <>
+                        <Button
+                          data-testid="confirm-offer-acceptance-open"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openOfferAcceptanceDialog(selectedApplication)}
+                        >
+                          <CheckCircle className="w-4 h-4 mr-1" />
+                          Confirm Acceptance
+                        </Button>
+                        <Button
+                          data-testid="decline-offer-open"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openOfferDeclineDialog(selectedApplication)}
+                        >
+                          <XCircle className="w-4 h-4 mr-1" />
+                          Decline Offer
+                        </Button>
+                      </>
                     )}
                     <Button
                       variant="outline"
@@ -2598,6 +2635,86 @@ export default function Applications() {
               >
                 {confirmOfferAcceptanceMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 Record Acceptance
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={Boolean(decliningOfferApplication)}
+          onOpenChange={(open) => {
+            if (!open && !declineOfferMutation.isPending) {
+              setDecliningOfferApplication(null);
+              setOfferDeclineConfirmed(false);
+              setOfferDeclineNote("");
+            }
+          }}
+        >
+          <DialogContent className="bg-slate-900 border-slate-700">
+            <DialogHeader>
+              <DialogTitle className="text-white">Decline Offer</DialogTitle>
+              <DialogDescription className="text-slate-400">
+                This records that you declined the offer. It does not contact the employer or create billing.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="rounded-md border border-slate-700 bg-slate-800/70 p-3 text-sm text-slate-300">
+                <p className="font-medium text-white">{decliningOfferApplication?.job?.title || "Offer"}</p>
+                <p>{decliningOfferApplication?.job?.company || "Employer"}</p>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-300" htmlFor="offer-decline-note">
+                  Decision note
+                </label>
+                <Textarea
+                  id="offer-decline-note"
+                  data-testid="offer-decline-note"
+                  value={offerDeclineNote}
+                  onChange={(event) => setOfferDeclineNote(event.target.value)}
+                  placeholder="Example: I am declining this offer after reviewing the terms."
+                  className="min-h-24 bg-slate-800 border-slate-700 text-white"
+                />
+              </div>
+              <label className="flex items-start gap-3 text-sm text-slate-300">
+                <Checkbox
+                  data-testid="offer-decline-confirmed"
+                  checked={offerDeclineConfirmed}
+                  onCheckedChange={(checked) => setOfferDeclineConfirmed(checked === true)}
+                />
+                <span>I confirm that I declined this employer offer.</span>
+              </label>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                disabled={declineOfferMutation.isPending}
+                onClick={() => {
+                  setDecliningOfferApplication(null);
+                  setOfferDeclineConfirmed(false);
+                  setOfferDeclineNote("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                data-testid="decline-offer-submit"
+                disabled={
+                  !decliningOfferApplication ||
+                  !offerDeclineConfirmed ||
+                  offerDeclineNote.trim().length < 8 ||
+                  declineOfferMutation.isPending
+                }
+                onClick={() => {
+                  if (!decliningOfferApplication || !offerDeclineConfirmed) return;
+                  declineOfferMutation.mutate({
+                    applicationId: decliningOfferApplication.id,
+                    confirmed: true,
+                    declineNote: offerDeclineNote.trim(),
+                  });
+                }}
+              >
+                {declineOfferMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Record Decline
               </Button>
             </div>
           </DialogContent>
