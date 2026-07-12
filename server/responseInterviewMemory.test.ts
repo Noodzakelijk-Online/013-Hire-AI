@@ -392,6 +392,7 @@ describe("response and interview memory fallback", () => {
     const artifacts = await getApplicationLedgerArtifacts(applicationId, userId);
     expect(artifacts.employerResponses[0]).toMatchObject({
       id: outcome.responseId,
+      interviewId: scheduled.id,
       responseType: "rejection",
       statusAfter: "rejected",
     });
@@ -447,6 +448,7 @@ describe("response and interview memory fallback", () => {
     expect(outcome.status).toBe("interview");
     expect(artifacts.employerResponses[0]).toMatchObject({
       id: outcome.responseId,
+      interviewId: scheduled.id,
       responseType: "no_response",
       source: "other",
       statusAfter: "interview",

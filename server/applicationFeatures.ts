@@ -629,6 +629,7 @@ export async function confirmApplicationSubmission(input: ConfirmSubmissionInput
 
 export interface RecordEmployerResponseInput extends EmployerResponseInput {
   applicationId: number;
+  interviewId?: number | null;
 }
 
 function existingEmployerResponseResult(response: {
@@ -706,6 +707,7 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
     const statusAfter = response.nextStatus || currentStatus;
     const responseWrite = await createEmployerResponse({
       applicationId: input.applicationId,
+      interviewId: input.interviewId ?? null,
       userId,
       responseType: response.responseType,
       source: response.source,
@@ -983,6 +985,7 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
 
     const responseWrite = await tx.insert(employerResponses).values({
       applicationId: input.applicationId,
+      interviewId: input.interviewId ?? null,
       userId,
       responseType: response.responseType,
       source: response.source,
@@ -1851,6 +1854,7 @@ export async function recordInterviewOutcome(input: RecordInterviewOutcomeInput,
 
     const response = await recordEmployerResponse({
       applicationId: interview.applicationId,
+      interviewId: input.interviewId,
       responseType: interviewOutcomeResponseType(input.outcome),
       source: interviewOutcomeSource(input),
       summary: interviewOutcomeSummary(input),
@@ -1902,6 +1906,7 @@ export async function recordInterviewOutcome(input: RecordInterviewOutcomeInput,
 
   const response = await recordEmployerResponse({
     applicationId: interview[0].applicationId,
+    interviewId: input.interviewId,
     responseType: interviewOutcomeResponseType(input.outcome),
     source: interviewOutcomeSource(input),
     summary: interviewOutcomeSummary(input),

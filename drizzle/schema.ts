@@ -258,6 +258,7 @@ export const applicationAttempts = mysqlTable("application_attempts", {
 export const employerResponses = mysqlTable("employer_responses", {
   id: int("id").autoincrement().primaryKey(),
   applicationId: int("application_id").notNull(),
+  interviewId: int("interview_id"),
   userId: int("user_id").notNull(),
   responseType: mysqlEnum("response_type", [
     "viewed",

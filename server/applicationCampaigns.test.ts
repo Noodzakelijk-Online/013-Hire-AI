@@ -530,6 +530,82 @@ describe("application campaign operating ledger", () => {
     expect(ledgerAfterScheduling.queues.interviewScheduling).toHaveLength(0);
   });
 
+  it("surfaces completed interviews until their linked outcome is recorded", async () => {
+    const userId = 99013;
+    const application = await createApplication({
+      userId,
+      jobId: 2,
+      status: "interview",
+      notes: "A completed interview needs a result in the operating ledger.",
+    });
+    const applicationId = Number(application.insertId);
+    const interview = await scheduleInterview({
+      applicationId,
+      interviewType: "video",
+      scheduledAt: new Date(Date.now() + 2 * 86400000),
+    }, userId);
+    await updateInterviewStatus(interview.id, "completed", userId);
+
+    const ledger = await getUserOperatingLedger(userId);
+
+    expect(ledger.metrics.interviewOutcomesNeeded).toBe(1);
+    expect(ledger.metrics.followUpsDue).toBe(0);
+    expect(ledger.queues.interviewOutcomesNeeded).toMatchObject([
+      { interviewId: interview.id, applicationId, interviewType: "video" },
+    ]);
+    expect(ledger.nextActions).toContain("Record outcomes for 1 completed interview before routine follow-ups continue.");
+
+    const outcome = await recordInterviewOutcome({
+      interviewId: interview.id,
+      outcome: "no_response",
+      source: "email",
+      summary: "No employer response has arrived since the completed interview.",
+    }, userId);
+    const ledgerAfterOutcome = await getUserOperatingLedger(userId);
+
+    expect(outcome.responseType).toBe("no_response");
+    expect(ledgerAfterOutcome.metrics.interviewOutcomesNeeded).toBe(0);
+    expect(ledgerAfterOutcome.queues.interviewOutcomesNeeded).toHaveLength(0);
+  });
+
+  it("tracks outcomes separately for each completed interview round", async () => {
+    const userId = 99014;
+    const application = await createApplication({
+      userId,
+      jobId: 2,
+      status: "interview",
+      notes: "The first round progressed and the second round still needs an outcome.",
+    });
+    const applicationId = Number(application.insertId);
+    const firstRound = await scheduleInterview({
+      applicationId,
+      interviewType: "video",
+      scheduledAt: new Date(Date.now() + 2 * 86400000),
+    }, userId);
+    await updateInterviewStatus(firstRound.id, "completed", userId);
+    await recordInterviewOutcome({
+      interviewId: firstRound.id,
+      outcome: "next_round",
+      source: "email",
+      summary: "Recruiter confirmed that the candidate will progress to a technical interview.",
+    }, userId);
+
+    const secondRound = await scheduleInterview({
+      applicationId,
+      interviewType: "technical",
+      scheduledAt: new Date(Date.now() + 5 * 86400000),
+    }, userId);
+    await updateInterviewStatus(secondRound.id, "completed", userId);
+
+    const ledger = await getUserOperatingLedger(userId);
+
+    expect(ledger.metrics.interviewOutcomesNeeded).toBe(1);
+    expect(ledger.queues.interviewOutcomesNeeded).toMatchObject([
+      { interviewId: secondRound.id, applicationId, interviewType: "technical" },
+    ]);
+    expect(ledger.queues.interviewOutcomesNeeded.some((item) => item.interviewId === firstRound.id)).toBe(false);
+  });
+
   it("suppresses routine follow-up queue items once an active draft approval exists", async () => {
     const userId = 99003;
     const oldDate = new Date(Date.now() - 8 * 86400000);

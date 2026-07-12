@@ -64,6 +64,7 @@ describe("operating review queue helpers", () => {
         adminReviews: [{ id: 4 }],
         interviewScheduling: [{ applicationId: 5 }],
         interviewPreparationNeeded: [{ applicationId: 9 }],
+        interviewOutcomesNeeded: [{ applicationId: 10 }],
         employerResponsesNeedingReply: [{ applicationId: 6 }],
         followUpsDue: [{ applicationId: 7 }],
         approvedFollowUpsReadyToSend: [{ followUpId: 8 }],
@@ -80,6 +81,7 @@ describe("operating review queue helpers", () => {
       reviewDecisions: 1,
       interviewScheduling: 1,
       interviewPreparationNeeded: 1,
+      interviewOutcomesNeeded: 1,
       employerResponsesNeedingReply: 1,
       followUpsDue: 1,
       approvedFollowUpsReadyToSend: 1,
@@ -89,7 +91,7 @@ describe("operating review queue helpers", () => {
       adminReviews: 0,
       profileBlockers: 1,
       profileWarnings: 2,
-      total: 14,
+      total: 15,
     });
   });
 

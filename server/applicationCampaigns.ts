@@ -339,6 +339,39 @@ async function getInterviewPreparationQueue(userId: number) {
   return items.filter((item): item is NonNullable<typeof item> => item !== null);
 }
 
+async function getInterviewOutcomeQueue(applications: UserApplicationRecord[], userId: number) {
+  const interviewApplications = applications.filter((application) => application.status === "interview");
+  const outcomeState = await Promise.all(interviewApplications.map(async (application) => {
+    const [schedules, responses] = await Promise.all([
+      getInterviewSchedules(application.id, userId),
+      getEmployerResponses(application.id, userId),
+    ]);
+    const recordedOutcomeInterviewIds = new Set(
+      responses
+        .map((response) => response.interviewId)
+        .filter((interviewId): interviewId is number => typeof interviewId === "number")
+    );
+    return schedules
+      .filter((schedule) => schedule.status === "completed" && !recordedOutcomeInterviewIds.has(schedule.id))
+      .map((schedule) => ({
+        interviewId: schedule.id,
+        applicationId: application.id,
+        jobId: application.jobId,
+        completedAt: schedule.updatedAt,
+        interviewType: schedule.interviewType,
+        status: application.status,
+        job: application.job ? {
+          id: application.job.id,
+          title: application.job.title,
+          company: application.job.company,
+          location: application.job.location,
+        } : null,
+      }));
+  }));
+
+  return outcomeState.flat();
+}
+
 function activeResponseApplicationCount(applications: UserApplicationRecord[]) {
   return applications.filter((application) =>
     ["applied", "viewed", "interview"].includes(application.status || "pending")
@@ -521,11 +554,13 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
   const interviewSchedulingQueue = await getInterviewSchedulingQueue(applications, userId);
   const interviewNotificationQueue = await getInterviewNotificationQueue(applications, userId);
   const interviewPreparationQueue = await getInterviewPreparationQueue(userId);
+  const interviewOutcomeQueue = await getInterviewOutcomeQueue(applications, userId);
   const employerResponseQueue = await getEmployerResponseQueue(applications, userId, followUpSuppressionState);
   const successFeeCompliance = getSuccessFeeComplianceSummary(successFees, offerAttributionReviews);
   const successFeeComplianceQueue = getSuccessFeeComplianceQueue(successFees, offerAttributionReviews);
   const followUpExcludedApplicationIds = new Set([
     ...interviewSchedulingQueue.map((item) => item.applicationId),
+    ...interviewOutcomeQueue.map((item) => item.applicationId),
     ...employerResponseQueue.map((item) => item.applicationId),
   ]);
   const followUpDueQueue = preferences.createFollowUps
@@ -564,6 +599,9 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
       : "",
     interviewPreparationQueue.length > 0
       ? `Prepare for ${interviewPreparationQueue.length} upcoming interview${interviewPreparationQueue.length === 1 ? "" : "s"}.`
+      : "",
+    interviewOutcomeQueue.length > 0
+      ? `Record outcomes for ${interviewOutcomeQueue.length} completed interview${interviewOutcomeQueue.length === 1 ? "" : "s"} before routine follow-ups continue.`
       : "",
     employerResponseQueue.length > 0
       ? `Reply to ${employerResponseQueue.length} employer question${employerResponseQueue.length === 1 ? "" : "s"} before routine follow-ups continue.`
@@ -649,6 +687,7 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
       unreadInterviewNotifications: interviewNotificationQueue.length,
       interviewSchedulingNeeded: interviewSchedulingQueue.length,
       interviewPreparationNeeded: interviewPreparationQueue.length,
+      interviewOutcomesNeeded: interviewOutcomeQueue.length,
       offers: applicationStatusCount(applications, ["offer", "accepted"]),
       activeSuccessFees: successFeeCompliance.activeFees,
       pendingOfferAttributions: successFeeCompliance.pendingOfferAttributions,
@@ -673,6 +712,7 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
       interviewNotifications: interviewNotificationQueue,
       interviewScheduling: interviewSchedulingQueue.slice(0, 5),
       interviewPreparationNeeded: interviewPreparationQueue.slice(0, 5),
+      interviewOutcomesNeeded: interviewOutcomeQueue.slice(0, 5),
       employerResponsesNeedingReply: employerResponseQueue.slice(0, 5),
       followUpsDue: followUpDueQueue.slice(0, 5),
       approvedFollowUpsReadyToSend: approvedFollowUpsReadyToSend.slice(0, 5),

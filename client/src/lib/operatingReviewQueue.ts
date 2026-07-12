@@ -8,6 +8,7 @@ export type ReviewQueueActionKind =
   | "job_decision"
   | "interview_scheduling"
   | "interview_preparation"
+  | "interview_outcome"
   | "employer_reply"
   | "follow_up"
   | "success_fee"
@@ -41,6 +42,7 @@ export type ReviewQueueControlSection =
   | "job-decisions"
   | "interview-scheduling"
   | "interview-preparation"
+  | "interview-outcomes"
   | "employer-replies"
   | "follow-ups"
   | "success-fees"
@@ -69,6 +71,7 @@ export interface OperatingReviewQueueInput {
     adminReviews?: unknown[];
     interviewScheduling?: unknown[];
     interviewPreparationNeeded?: unknown[];
+    interviewOutcomesNeeded?: unknown[];
     employerResponsesNeedingReply?: unknown[];
     followUpsDue?: unknown[];
     approvedFollowUpsReadyToSend?: unknown[];
@@ -233,6 +236,16 @@ export function getReviewQueueActionSummary(
         approvalGated: false,
         externalAction: "none",
       };
+    case "interview_outcome":
+      return {
+        label: "Interview outcome",
+        detail: "Record the verified post-interview result so follow-up, offer, and success-fee workflows use the correct ledger state.",
+        cta: "Open application",
+        route: applicationRoute(typeof item.applicationId === "number" ? item.applicationId : null, "view"),
+        risk: "medium",
+        approvalGated: false,
+        externalAction: "none",
+      };
     case "employer_reply":
       return {
         label: "Employer reply",
@@ -384,6 +397,7 @@ export function getOperatingReviewQueueCounts(input?: OperatingReviewQueueInput 
   const reviewDecisions = input?.queues?.reviewDecisions?.length ?? 0;
   const interviewScheduling = input?.queues?.interviewScheduling?.length ?? 0;
   const interviewPreparationNeeded = input?.queues?.interviewPreparationNeeded?.length ?? 0;
+  const interviewOutcomesNeeded = input?.queues?.interviewOutcomesNeeded?.length ?? 0;
   const employerResponsesNeedingReply = input?.queues?.employerResponsesNeedingReply?.length ?? 0;
   const followUpsDue = input?.queues?.followUpsDue?.length ?? 0;
   const approvedFollowUpsReadyToSend = input?.queues?.approvedFollowUpsReadyToSend?.length ?? 0;
@@ -401,6 +415,7 @@ export function getOperatingReviewQueueCounts(input?: OperatingReviewQueueInput 
     reviewDecisions,
     interviewScheduling,
     interviewPreparationNeeded,
+    interviewOutcomesNeeded,
     employerResponsesNeedingReply,
     followUpsDue,
     approvedFollowUpsReadyToSend,
@@ -410,7 +425,7 @@ export function getOperatingReviewQueueCounts(input?: OperatingReviewQueueInput 
     adminReviews,
     profileBlockers,
     profileWarnings,
-    total: pendingApprovals + reviewDecisions + interviewScheduling + interviewPreparationNeeded + employerResponsesNeedingReply + followUpsDue + approvedFollowUpsReadyToSend + evidenceGates + successFeeCompliance + connectorReadiness + adminReviews + profileBlockers + profileWarnings,
+    total: pendingApprovals + reviewDecisions + interviewScheduling + interviewPreparationNeeded + interviewOutcomesNeeded + employerResponsesNeedingReply + followUpsDue + approvedFollowUpsReadyToSend + evidenceGates + successFeeCompliance + connectorReadiness + adminReviews + profileBlockers + profileWarnings,
   };
 }
 
@@ -551,6 +566,21 @@ export function getReviewQueueControlSummary(
       cta: "Open interview scheduling",
       section: "interview-scheduling",
       count: counts.interviewScheduling,
+      risk: "medium",
+      approvalGated: false,
+      externalAction: "none",
+    });
+  }
+
+  if (counts.interviewOutcomesNeeded > 0) {
+    return controlSummary({
+      status: "attention",
+      label: "Interview outcome",
+      headline: `${counts.interviewOutcomesNeeded} completed interview${counts.interviewOutcomesNeeded === 1 ? " needs" : "s need"} an outcome.`,
+      detail: "Record the verified result so Hire.AI can coordinate follow-up, offers, and success-fee workflows from the correct state.",
+      cta: "Review interview outcomes",
+      section: "interview-outcomes",
+      count: counts.interviewOutcomesNeeded,
       risk: "medium",
       approvalGated: false,
       externalAction: "none",

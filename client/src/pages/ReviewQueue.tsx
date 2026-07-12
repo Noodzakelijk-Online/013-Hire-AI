@@ -112,6 +112,7 @@ export default function ReviewQueue() {
     ["Job decisions", counts.reviewDecisions],
     ["Interviews", counts.interviewScheduling],
     ["Interview prep", counts.interviewPreparationNeeded],
+    ["Outcomes", counts.interviewOutcomesNeeded],
     ["Evidence gates", counts.evidenceGates],
     ["Connectors", counts.connectorReadiness],
     ["Employer replies", counts.employerResponsesNeedingReply],
@@ -724,6 +725,54 @@ export default function ReviewQueue() {
                   </div>
                 ) : (
                   <EmptyQueueLine label="No scheduled interviews need preparation." />
+                )}
+              </section>
+
+              <section id="review-queue-section-interview-outcomes" data-testid="review-queue-section-interview-outcomes" className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-lg font-semibold">Interview Outcomes</h2>
+                  <Badge variant="outline">{counts.interviewOutcomesNeeded}</Badge>
+                </div>
+                {operatingLedger?.queues.interviewOutcomesNeeded.length ? (
+                  <div className="space-y-3">
+                    {operatingLedger.queues.interviewOutcomesNeeded.map((item) => (
+                      <Card key={item.interviewId}>
+                        <CardContent className="space-y-4 pt-6">
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                              <p className="font-medium">
+                                {item.job?.title || `Application #${item.applicationId}`}
+                              </p>
+                              <p className="mt-1 text-sm text-muted-foreground">
+                                {item.job?.company || "Employer"}
+                                {item.completedAt ? ` - completed ${new Date(item.completedAt).toLocaleDateString()}` : ""}
+                              </p>
+                            </div>
+                            <Badge variant="outline" className="border-amber-500/40 text-amber-300">
+                              Outcome needed
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            Record whether the completed interview led to another round, an offer, a rejection, no response, or another verified result.
+                          </p>
+                          <QueueActionStrip
+                            summary={getQueueAction("interview_outcome", item)}
+                            onOpen={setLocation}
+                          />
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setLocation(getApplicationDeepLink(item.applicationId, "view"))}
+                          >
+                            <Briefcase className="mr-2 h-4 w-4" />
+                            Record Outcome
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyQueueLine label="No completed interviews need an outcome." />
                 )}
               </section>
 

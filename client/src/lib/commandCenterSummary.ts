@@ -31,6 +31,7 @@ export interface CommandCenterSummary {
   interviewSchedulingNeeded: number;
   unreadInterviewNotifications: number;
   interviewPreparationNeeded: number;
+  interviewOutcomesNeeded: number;
   employerResponsesNeedingReply: number;
   followUpsDue: number;
   approvedFollowUpsReadyToSend: number;
@@ -53,6 +54,7 @@ export interface CommandCenterLedgerInput extends OperatingReviewQueueInput {
     interviewSchedulingNeeded?: number | null;
     unreadInterviewNotifications?: number | null;
     interviewPreparationNeeded?: number | null;
+    interviewOutcomesNeeded?: number | null;
     employerResponsesNeedingReply?: number | null;
     followUpsDue?: number | null;
     approvedFollowUpsReadyToSend?: number | null;
@@ -95,6 +97,8 @@ export function getCommandCenterSummary(
   const unreadInterviewNotifications = positiveNumber(ledger?.metrics?.unreadInterviewNotifications);
   const interviewPreparationNeeded =
     positiveNumber(ledger?.metrics?.interviewPreparationNeeded) || queueCounts.interviewPreparationNeeded;
+  const interviewOutcomesNeeded =
+    positiveNumber(ledger?.metrics?.interviewOutcomesNeeded) || queueCounts.interviewOutcomesNeeded;
   const employerResponsesNeedingReply =
     positiveNumber(ledger?.metrics?.employerResponsesNeedingReply) || queueCounts.employerResponsesNeedingReply;
   const followUpsDue = positiveNumber(ledger?.metrics?.followUpsDue) || queueCounts.followUpsDue;
@@ -116,6 +120,7 @@ export function getCommandCenterSummary(
     interviewSchedulingNeeded +
     unreadInterviewNotifications +
     interviewPreparationNeeded +
+    interviewOutcomesNeeded +
     employerResponsesNeedingReply +
     followUpsDue +
     approvedFollowUpsReadyToSend +
@@ -131,6 +136,7 @@ export function getCommandCenterSummary(
     interviewSchedulingNeeded,
     unreadInterviewNotifications,
     interviewPreparationNeeded,
+    interviewOutcomesNeeded,
     employerResponsesNeedingReply,
     followUpsDue,
     approvedFollowUpsReadyToSend,
