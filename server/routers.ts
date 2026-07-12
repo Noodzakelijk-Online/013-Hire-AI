@@ -31,6 +31,7 @@ import {
   recordEmployerResponse,
   createFollowUp,
   getFollowUps,
+  withdrawApplication,
   markFollowUpSent,
   markFollowUpResponseReceived,
   generateInterviewPreparationForApplication,
@@ -1310,9 +1311,8 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const { updateApplicationStatus } = await import("./db");
         try {
-          await updateApplicationStatus(input.applicationId, input.status, ctx.user.id);
+          const result = await withdrawApplication(input.applicationId, ctx.user.id);
           const { createAuditEvent } = await import("./db");
           await createAuditEvent({
             userId: ctx.user.id,
@@ -1321,7 +1321,11 @@ export const appRouter = router({
             action: "application_status_updated",
             actor: "user",
             source: "applications.updateStatus",
-            afterState: JSON.stringify({ status: input.status }),
+            afterState: JSON.stringify({
+              status: input.status,
+              cancelledApprovalIds: result.cancelledApprovalIds,
+              cancelledSubmissionApprovalIds: result.cancelledSubmissionApprovalIds,
+            }),
             riskLevel: input.status === "withdrawn" ? "medium" : "low",
           });
         } catch (error) {

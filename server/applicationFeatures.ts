@@ -2072,6 +2072,207 @@ export async function getFollowUps(applicationId: number, userId: number) {
     .orderBy(desc(followUps.createdAt));
 }
 
+const WITHDRAWAL_CANCELLATION_NOTE = "Application was withdrawn, so this unsent external action is no longer permitted.";
+
+function isWithdrawalCancellableApproval(
+  approval: { approvalType: string; entityId: number; status: string },
+  unsentFollowUpIds: Set<number>
+) {
+  if (!["pending", "approved"].includes(approval.status)) return false;
+  if (approval.approvalType === "application_submission") return true;
+  return approval.approvalType === "follow_up_send" && unsentFollowUpIds.has(approval.entityId);
+}
+
+export async function withdrawApplication(applicationId: number, userId: number) {
+  const db = await getDb();
+  const cancelledAt = new Date();
+
+  if (!db) {
+    const userApplications = await getUserApplications(userId);
+    const application = userApplications.find((item) => item.id === applicationId);
+    if (!application) throw new Error("Application not found.");
+
+    const followUpsForApplication = await getFollowUps(applicationId, userId);
+    const unsentFollowUpIds = new Set(
+      followUpsForApplication.filter((followUp) => !followUp.sentDate).map((followUp) => followUp.id)
+    );
+    const cancellableApprovals = (await listUserApplicationApprovals(userId, "all")).filter((approval) =>
+      approval.applicationId === applicationId &&
+      isWithdrawalCancellableApproval(approval, unsentFollowUpIds)
+    );
+
+    await updateApplicationStatus(applicationId, "withdrawn", userId);
+    for (const approval of cancellableApprovals) {
+      if (approval.status === "pending") {
+        await resolveApplicationApproval(
+          approval.id,
+          userId,
+          "cancelled",
+          WITHDRAWAL_CANCELLATION_NOTE,
+          "user"
+        );
+      } else {
+        approval.status = "cancelled";
+        approval.decidedBy = "user";
+        approval.decisionNote = WITHDRAWAL_CANCELLATION_NOTE;
+        approval.decidedAt = cancelledAt;
+        approval.updatedAt = cancelledAt;
+      }
+    }
+
+    const cancelledSubmissionApprovalIds = cancellableApprovals
+      .filter((approval) => approval.approvalType === "application_submission")
+      .map((approval) => approval.id);
+    for (const approvalId of cancelledSubmissionApprovalIds) {
+      await createApplicationAttempt({
+        applicationId,
+        userId,
+        jobId: application.jobId,
+        platformId: application.job?.platformId ?? undefined,
+        attemptType: "external_handoff",
+        status: "cancelled",
+        startedAt: cancelledAt,
+        finishedAt: cancelledAt,
+        confirmationText: `Submission approval ${approvalId} was cancelled because the application was withdrawn.`,
+        retryCount: 0,
+      });
+    }
+
+    if (cancellableApprovals.length > 0) {
+      await createAuditEvent({
+        userId,
+        entityType: "application",
+        entityId: applicationId,
+        action: "application_external_actions_cancelled",
+        actor: "user",
+        source: "applications.withdraw",
+        afterState: JSON.stringify({
+          status: "withdrawn",
+          cancelledApprovalIds: cancellableApprovals.map((approval) => approval.id),
+          cancelledSubmissionApprovalIds,
+        }),
+        riskLevel: "medium",
+      });
+    }
+
+    return {
+      success: true,
+      cancelledApprovalIds: cancellableApprovals.map((approval) => approval.id),
+      cancelledSubmissionApprovalIds,
+    };
+  }
+
+  return await db.transaction(async (tx) => {
+    const application = await tx
+      .select({ id: applications.id, status: applications.status, jobId: applications.jobId })
+      .from(applications)
+      .where(and(eq(applications.id, applicationId), eq(applications.userId, userId)))
+      .limit(1);
+    if (!application[0]) throw new Error("Application not found.");
+    if (!canTransitionApplicationStatus(application[0].status, "withdrawn")) {
+      throw new Error(`Application cannot move from ${application[0].status} to withdrawn.`);
+    }
+
+    const unsentFollowUpRows = await tx
+      .select({ id: followUps.id })
+      .from(followUps)
+      .where(and(eq(followUps.applicationId, applicationId), isNull(followUps.sentDate)));
+    const unsentFollowUpIds = new Set(unsentFollowUpRows.map((followUp) => followUp.id));
+    const activeApprovals = await tx
+      .select({
+        id: applicationApprovals.id,
+        approvalType: applicationApprovals.approvalType,
+        entityId: applicationApprovals.entityId,
+        status: applicationApprovals.status,
+      })
+      .from(applicationApprovals)
+      .where(and(
+        eq(applicationApprovals.userId, userId),
+        eq(applicationApprovals.applicationId, applicationId),
+        inArray(applicationApprovals.status, ["pending", "approved"])
+      ));
+    const cancellableApprovals = activeApprovals.filter((approval) =>
+      isWithdrawalCancellableApproval(approval, unsentFollowUpIds)
+    );
+
+    if (application[0].status !== "withdrawn") {
+      const statusUpdate = await tx
+        .update(applications)
+        .set({ status: "withdrawn", lastActivity: cancelledAt })
+        .where(and(
+          eq(applications.id, applicationId),
+          eq(applications.userId, userId),
+          eq(applications.status, application[0].status)
+        ));
+      if (Number(statusUpdate[0].affectedRows) === 0) {
+        throw new Error("Application status changed concurrently. Refresh and try again.");
+      }
+    }
+
+    if (cancellableApprovals.length > 0) {
+      await tx
+        .update(applicationApprovals)
+        .set({
+          status: "cancelled",
+          decidedBy: "user",
+          decisionNote: WITHDRAWAL_CANCELLATION_NOTE,
+          decidedAt: cancelledAt,
+        })
+        .where(and(
+          eq(applicationApprovals.userId, userId),
+          inArray(applicationApprovals.id, cancellableApprovals.map((approval) => approval.id)),
+          inArray(applicationApprovals.status, ["pending", "approved"])
+        ));
+    }
+
+    const cancelledSubmissionApprovalIds = cancellableApprovals
+      .filter((approval) => approval.approvalType === "application_submission")
+      .map((approval) => approval.id);
+    if (cancelledSubmissionApprovalIds.length > 0) {
+      const job = await tx
+        .select({ platformId: jobs.platformId })
+        .from(jobs)
+        .where(eq(jobs.id, application[0].jobId))
+        .limit(1);
+      await tx.insert(applicationAttempts).values(cancelledSubmissionApprovalIds.map((approvalId) => ({
+        applicationId,
+        userId,
+        jobId: application[0].jobId,
+        platformId: job[0]?.platformId ?? null,
+        attemptType: "external_handoff" as const,
+        status: "cancelled" as const,
+        startedAt: cancelledAt,
+        finishedAt: cancelledAt,
+        confirmationText: `Submission approval ${approvalId} was cancelled because the application was withdrawn.`,
+        retryCount: 0,
+      })));
+    }
+
+    if (cancellableApprovals.length > 0) {
+      await tx.insert(auditEvents).values({
+        userId,
+        entityType: "application",
+        entityId: applicationId,
+        action: "application_external_actions_cancelled",
+        actor: "user",
+        source: "applications.withdraw",
+        afterState: JSON.stringify({
+          status: "withdrawn",
+          cancelledApprovalIds: cancellableApprovals.map((approval) => approval.id),
+          cancelledSubmissionApprovalIds,
+        }),
+        riskLevel: "medium",
+      });
+    }
+
+    return {
+      success: true,
+      cancelledApprovalIds: cancellableApprovals.map((approval) => approval.id),
+      cancelledSubmissionApprovalIds,
+    };
+  });
+}
+
 export async function markFollowUpSent(followUpId: number, userId: number) {
   const db = await getDb();
   if (!db) {

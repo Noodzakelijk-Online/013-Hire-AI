@@ -190,6 +190,7 @@ export default function Applications() {
   const updateStatusMutation = trpc.applications.updateStatus.useMutation({
     onSuccess: () => {
       toast.success("Application updated");
+      setSelectedApplication(null);
       refetch();
       refetchOperatingLedger();
     },
@@ -1991,7 +1992,6 @@ export default function Applications() {
                       size="sm"
                       onClick={() => {
                         updateStatusMutation.mutate({ applicationId: selectedApplication.id, status: "withdrawn" });
-                        setSelectedApplication(null);
                       }}
                         disabled={updateStatusMutation.isPending || ["withdrawn", "rejected", "offer", "accepted"].includes(selectedApplication.status)}
                     >
