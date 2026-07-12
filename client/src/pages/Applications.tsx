@@ -191,6 +191,7 @@ export default function Applications() {
     onSuccess: () => {
       toast.success("Application updated");
       refetch();
+      refetchOperatingLedger();
     },
     onError: (error) => {
       toast.error(error.message || "Failed to update application");
@@ -238,6 +239,7 @@ export default function Applications() {
       refetchFollowUps();
       refetchApprovals();
       refetchLedgerArtifacts();
+      refetchOperatingLedger();
     },
     onError: (error) => toast.error(error.message || "Failed to save follow-up"),
   });
@@ -247,6 +249,7 @@ export default function Applications() {
       refetchFollowUps();
       refetchApprovals();
       refetch();
+      refetchOperatingLedger();
     },
     onError: (error) => toast.error(error.message || "Failed to update follow-up"),
   });
@@ -255,6 +258,7 @@ export default function Applications() {
       toast.success("Response recorded");
       refetchFollowUps();
       refetch();
+      refetchOperatingLedger();
     },
     onError: (error) => toast.error(error.message || "Failed to record response"),
   });
@@ -266,6 +270,9 @@ export default function Applications() {
       setSubmissionEvidence("");
       setSubmissionConfirmationUrl("");
       refetch();
+      refetchApprovals();
+      refetchLedgerArtifacts();
+      refetchOperatingLedger();
     },
     onError: (error) => toast.error(error.message || "Failed to confirm submission"),
   });
@@ -279,7 +286,10 @@ export default function Applications() {
       setEmployerResponseSourceReference("");
       setEmployerResponseSummary("");
       refetch();
+      refetchApprovals();
+      refetchLedgerArtifacts();
       refetchOfferAttributionReviews();
+      refetchOperatingLedger();
     },
     onError: (error) => toast.error(error.message || "Failed to record employer response"),
   });
@@ -297,6 +307,7 @@ export default function Applications() {
       refetchInterviews();
       refetchLedgerArtifacts();
       refetch();
+      refetchOperatingLedger();
     },
     onError: (error) => toast.error(error.message || "Failed to schedule interview"),
   });
@@ -306,6 +317,7 @@ export default function Applications() {
       refetchInterviews();
       refetchLedgerArtifacts();
       refetch();
+      refetchOperatingLedger();
     },
     onError: (error) => toast.error(error.message || "Failed to update interview"),
   });
@@ -321,6 +333,7 @@ export default function Applications() {
       refetchApprovals();
       refetchOfferAttributionReviews();
       refetch();
+      refetchOperatingLedger();
     },
     onError: (error) => toast.error(error.message || "Failed to record interview outcome"),
   });
@@ -332,6 +345,7 @@ export default function Applications() {
       refetchLedgerArtifacts();
       refetchOfferAttributionReviews();
       refetchSuccessFees();
+      refetchOperatingLedger();
     },
     onError: (error) => toast.error(error.message || "Failed to update approval"),
   });
