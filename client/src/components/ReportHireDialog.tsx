@@ -39,12 +39,10 @@ export function ReportHireDialog({ open, onOpenChange, applicationId, onSuccess 
   const { data: applications = [] } = trpc.applications.list.useQuery(undefined, { enabled: open });
   const { data: offerAttributionReviews = [] } = trpc.successFees.getOfferAttributionReviews.useQuery(undefined, { enabled: open });
   const offerApplications = applications.filter((application: any) =>
-    ["offer", "accepted"].includes(application.status)
+    application.status === "accepted"
   );
   const linkedApplication = applications.find((application: any) => application.id === selectedApplicationId);
-  const selectableApplications = linkedApplication && !offerApplications.some((application: any) => application.id === linkedApplication.id)
-    ? [linkedApplication, ...offerApplications]
-    : offerApplications;
+  const selectableApplications = offerApplications;
   const selectedAttributionReview = offerAttributionReviews.find((review: any) => {
     const reviewApplicationId = review?.approval?.applicationId ?? review?.application?.id;
     return selectedApplicationId && reviewApplicationId === selectedApplicationId;

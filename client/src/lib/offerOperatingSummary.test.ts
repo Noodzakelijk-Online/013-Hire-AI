@@ -17,7 +17,7 @@ describe("offer operating summary", () => {
     );
 
     expect(summary.status).toBe("attribution_review");
-    expect(summary.canReportHire).toBe(true);
+    expect(summary.canReportHire).toBe(false);
     expect(summary.hasOfferAttributionReview).toBe(true);
   });
 
@@ -37,6 +37,14 @@ describe("offer operating summary", () => {
 
     expect(summary.status).toBe("report_hire");
     expect(summary.canReportHire).toBe(true);
+  });
+
+  it("requires an explicit offer decision before hire reporting", () => {
+    const summary = getOfferOperatingSummary({ status: "offer" }, null, null);
+
+    expect(summary.status).toBe("offer_decision");
+    expect(summary.canReportHire).toBe(false);
+    expect(summary.nextAction).toContain("Confirm acceptance or decline");
   });
 
   it("tracks initial verification after a success fee is created", () => {

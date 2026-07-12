@@ -87,14 +87,38 @@ describe("success fee report-hire eligibility", () => {
       termsAccepted: true,
     })).rejects.toMatchObject({
       code: "CONFLICT",
-      message: expect.stringContaining("offer is recorded"),
+      message: expect.stringContaining("confirms offer acceptance"),
     });
 
     expect(mocks.storagePut).not.toHaveBeenCalled();
   });
 
-  it("rejects a cancelled or rejected attribution before proof upload or success-fee creation", async () => {
+  it("rejects a linked unaccepted offer before uploading proof or creating billing state", async () => {
     mocks.selectLimit.mockResolvedValue([{ id: 51, status: "offer" }]);
+    const caller = successFeesRouter.createCaller(createContext(190093));
+
+    await expect(caller.reportHire({
+      employerName: "Example Employer",
+      jobTitle: "Example Role",
+      monthlySalary: 5000,
+      currency: "USD",
+      startDate: "2026-07-10",
+      applicationId: 51,
+      offerLetterBase64: "cHJvb2Y=",
+      offerLetterMimeType: "text/plain",
+      offerLetterFileName: "offer.txt",
+      termsAccepted: true,
+    })).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: expect.stringContaining("confirms offer acceptance"),
+    });
+
+    expect(mocks.storagePut).not.toHaveBeenCalled();
+    expect(mocks.mockDb.insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects a cancelled or rejected attribution before proof upload or success-fee creation", async () => {
+    mocks.selectLimit.mockResolvedValue([{ id: 51, status: "accepted" }]);
     mocks.selectOrderLimit.mockResolvedValue([{ id: 77, status: "rejected" }]);
     const caller = successFeesRouter.createCaller(createContext(190092));
 

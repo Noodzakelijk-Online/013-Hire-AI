@@ -4,7 +4,7 @@ import { router, protectedProcedure } from "../_core/trpc";
 import { createAdminReviewItem, createAuditEvent, getDb, getUserOfferAttributionReviews, getUserSuccessFees } from "../db";
 import { applicationApprovals, applications, successFees, employmentVerifications, feePayments, users } from "../../drizzle/schema";
 import { eq, desc, and } from "drizzle-orm";
-import { isOfferEligibleApplicationStatus } from "@shared/offerEligibility";
+import { isAcceptedOfferApplicationStatus } from "@shared/offerEligibility";
 import { storagePut } from "../storage";
 import { scanSensitiveUpload, validateUploadedFile, VERIFICATION_MIME_TYPES } from "../uploadValidation";
 import Stripe from "stripe";
@@ -71,10 +71,10 @@ export const successFeesRouter = router({
         if (!linkedApplication[0]) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Linked application not found." });
         }
-        if (!isOfferEligibleApplicationStatus(linkedApplication[0].status)) {
+        if (!isAcceptedOfferApplicationStatus(linkedApplication[0].status)) {
           throw new TRPCError({
             code: "CONFLICT",
-            message: "A linked application can be reported as a hire only after an offer is recorded or accepted.",
+            message: "A linked application can be reported as a hire only after the user confirms offer acceptance.",
           });
         }
       }

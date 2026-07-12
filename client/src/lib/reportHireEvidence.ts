@@ -1,5 +1,5 @@
 export type ReportHireEvidenceState = "complete" | "pending" | "review";
-export type ReportHireEvidenceStatus = "ready" | "needs_proof" | "needs_terms" | "unlinked_review" | "application_not_offer";
+export type ReportHireEvidenceStatus = "ready" | "needs_proof" | "needs_terms" | "unlinked_review" | "application_not_accepted";
 export type ReportHireEvidenceRisk = "high" | "critical";
 
 export interface ReportHireApplicationLike {
@@ -83,7 +83,7 @@ export interface ReportHireCompletionSummary {
 }
 
 function hasAcceptedOfferStatus(application?: ReportHireApplicationLike | null) {
-  return application?.status === "offer" || application?.status === "accepted";
+  return application?.status === "accepted";
 }
 
 export function getReportHireEvidenceSummary(input: ReportHireEvidenceInput): ReportHireEvidenceSummary {
@@ -107,8 +107,8 @@ export function getReportHireEvidenceSummary(input: ReportHireEvidenceInput): Re
       detail: hasOfferResponse
         ? "An employer offer response is already connected to this application."
         : applicationLooksOfferReady
-          ? "The linked application is already marked as offer or accepted."
-          : "No employer offer response is attached yet; offer-letter proof must carry the report.",
+          ? "The linked application records a confirmed offer acceptance."
+          : "Offer acceptance must be confirmed before a linked hire can be reported.",
     },
     {
       id: "offer_proof",
@@ -136,9 +136,9 @@ export function getReportHireEvidenceSummary(input: ReportHireEvidenceInput): Re
 
   if (linkedApplication && !applicationLooksOfferReady) {
     return {
-      status: "application_not_offer",
-      label: "Offer required",
-      nextAction: "Record an employer offer or accepted outcome before reporting a hire against this application.",
+      status: "application_not_accepted",
+      label: "Acceptance required",
+      nextAction: "Confirm offer acceptance before reporting a hire against this linked application.",
       risk: "high",
       approvalGated: true,
       canContinueToTerms: false,

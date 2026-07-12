@@ -449,6 +449,7 @@ export default function Applications() {
     switch (status) {
       case "attribution_review":
       case "report_hire":
+      case "offer_decision":
         return "border-amber-500/30 text-amber-300";
       case "verification_pending":
         return "border-blue-500/30 text-blue-300";

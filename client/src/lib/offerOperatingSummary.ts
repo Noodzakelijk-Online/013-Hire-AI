@@ -2,6 +2,7 @@ import { isOfferEligibleApplicationStatus } from "@shared/offerEligibility";
 
 export type OfferOperatingStatus =
   | "not_applicable"
+  | "offer_decision"
   | "attribution_review"
   | "report_hire"
   | "verification_pending"
@@ -63,14 +64,17 @@ export function getOfferOperatingSummary(
   };
 
   const offerLifecycleActive = isOfferEligibleApplicationStatus(applicationStatus);
+  const acceptanceConfirmed = applicationStatus === "accepted";
 
   if (hasOfferAttributionReview && offerLifecycleActive) {
     return {
       ...base,
       status: "attribution_review",
       label: "Offer attribution",
-      nextAction: "Review whether this offer came from Hire.AI activity, then report the hire with offer-letter proof if accepted.",
-      canReportHire: true,
+      nextAction: acceptanceConfirmed
+        ? "Review whether this offer came from Hire.AI activity, then report the hire with offer-letter proof."
+        : "Confirm acceptance or decline the offer before it can be reported as a hire.",
+      canReportHire: acceptanceConfirmed,
     };
   }
 
@@ -114,13 +118,23 @@ export function getOfferOperatingSummary(
     };
   }
 
-  if (offerLifecycleActive) {
+  if (acceptanceConfirmed) {
     return {
       ...base,
       status: "report_hire",
       label: "Report hire",
-      nextAction: "If the offer is accepted, upload the offer letter and accept success-fee terms before billing is set up.",
+      nextAction: "Upload the offer letter and accept success-fee terms before billing is set up.",
       canReportHire: true,
+    };
+  }
+
+  if (offerLifecycleActive) {
+    return {
+      ...base,
+      status: "offer_decision",
+      label: "Offer decision",
+      nextAction: "Confirm acceptance or decline the offer before reporting any hire or billing activity.",
+      canReportHire: false,
     };
   }
 

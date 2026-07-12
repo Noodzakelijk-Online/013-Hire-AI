@@ -2,9 +2,25 @@ import { describe, expect, it } from "vitest";
 import { getReportHireCompletionSummary, getReportHireEvidenceSummary } from "./reportHireEvidence";
 
 describe("report hire evidence summary", () => {
-  it("marks a linked offer with proof and terms ready to report", () => {
+  it("keeps a linked offer blocked until acceptance is confirmed", () => {
     const summary = getReportHireEvidenceSummary({
       application: { id: 10, status: "offer", job: { title: "Engineer", company: "Acme" } },
+      attributionReview: {
+        approval: { id: 50, status: "pending", riskLevel: "high" },
+        latestEmployerResponse: { summary: "Employer sent a written offer." },
+      },
+      hasOfferLetter: true,
+      termsAccepted: true,
+    });
+
+    expect(summary.status).toBe("application_not_accepted");
+    expect(summary.canConfirm).toBe(false);
+    expect(summary.risk).toBe("high");
+  });
+
+  it("marks a linked accepted offer with proof and terms ready to report", () => {
+    const summary = getReportHireEvidenceSummary({
+      application: { id: 10, status: "accepted", job: { title: "Engineer", company: "Acme" } },
       attributionReview: {
         approval: { id: 50, status: "pending", riskLevel: "high" },
         latestEmployerResponse: { summary: "Employer sent a written offer." },
@@ -50,7 +66,7 @@ describe("report hire evidence summary", () => {
       termsAccepted: true,
     });
 
-    expect(summary.status).toBe("application_not_offer");
+    expect(summary.status).toBe("application_not_accepted");
     expect(summary.canContinueToTerms).toBe(false);
     expect(summary.canConfirm).toBe(false);
   });
