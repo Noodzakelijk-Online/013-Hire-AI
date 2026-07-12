@@ -31,6 +31,7 @@ import {
   getInterviewSchedules,
 } from "./applicationFeatures";
 import { getUserOperatingLedger } from "./applicationCampaigns";
+import { getInterviewSchedulingRequirement } from "./interviewScheduling";
 import { AutonomousExecutionGuard } from "./autonomousExecutionGuard";
 import { AutonomousRunRegistry } from "./autonomousRunRegistry";
 import {
@@ -226,17 +227,14 @@ async function getAutonomousFollowUpSafetyBlock(
 
   if (followUp.status === "interview") {
     const schedules = await getInterviewSchedules(followUp.applicationId, userId);
-    const hasActiveSchedule = schedules.some((schedule) =>
-      ["scheduled", "rescheduled"].includes(schedule.status || "scheduled")
-    );
-    if (hasActiveSchedule) return null;
-
-    if (schedules.some((schedule) => schedule.status === "cancelled")) {
+    const schedulingRequirement = getInterviewSchedulingRequirement(schedules, responses);
+    if (schedulingRequirement === "cancelled_schedule") {
       return "Interview schedule was cancelled and needs review before routine follow-up automation continues.";
     }
-
-    const hasCompletedSchedule = schedules.some((schedule) => schedule.status === "completed");
-    if (!hasCompletedSchedule) {
+    if (schedulingRequirement === "new_invite") {
+      return "A newer interview invite needs scheduling before routine follow-up automation continues.";
+    }
+    if (schedulingRequirement === "missing_schedule") {
       return "Interview invite needs scheduling before routine follow-up automation continues.";
     }
   }

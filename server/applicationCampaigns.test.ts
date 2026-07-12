@@ -9,7 +9,7 @@ vi.mock("./resumeStorage", async (importOriginal) => ({
   getActiveResume: mocks.getActiveResume,
 }));
 import { getUserOperatingLedger } from "./applicationCampaigns";
-import { createFollowUp, markFollowUpSent, recordEmployerResponse, scheduleInterview, updateInterviewStatus } from "./applicationFeatures";
+import { createFollowUp, markFollowUpSent, recordEmployerResponse, recordInterviewOutcome, scheduleInterview, updateInterviewStatus } from "./applicationFeatures";
 import {
   createAdminReviewItem,
   createApplication,
@@ -485,6 +485,49 @@ describe("application campaign operating ledger", () => {
       schedulingRequirement: "cancelled_schedule",
     });
     expect(ledger.nextActions).toContain("Review 1 interview scheduling item before follow-up automation continues.");
+  });
+
+  it("returns a later interview invite to the scheduling queue after a completed round", async () => {
+    const userId = 99012;
+    const application = await createApplication({
+      userId,
+      jobId: 2,
+      status: "interview",
+      notes: "The first interview round was completed.",
+    });
+    const applicationId = Number(application.insertId);
+    const firstRound = await scheduleInterview({
+      applicationId,
+      interviewType: "video",
+      scheduledAt: new Date(Date.now() + 2 * 86400000),
+    }, userId);
+
+    await recordInterviewOutcome({
+      interviewId: firstRound.id,
+      outcome: "next_round",
+      source: "email",
+      summary: "The recruiter invited the candidate to a technical interview next week.",
+    }, userId);
+
+    const ledger = await getUserOperatingLedger(userId);
+
+    expect(ledger.metrics.interviewSchedulingNeeded).toBe(1);
+    expect(ledger.metrics.followUpsDue).toBe(0);
+    expect(ledger.queues.interviewScheduling).toHaveLength(1);
+    expect(ledger.queues.interviewScheduling[0]).toMatchObject({
+      applicationId,
+      schedulingRequirement: "new_invite",
+    });
+
+    await scheduleInterview({
+      applicationId,
+      interviewType: "technical",
+      scheduledAt: new Date(Date.now() + 5 * 86400000),
+    }, userId);
+
+    const ledgerAfterScheduling = await getUserOperatingLedger(userId);
+    expect(ledgerAfterScheduling.metrics.interviewSchedulingNeeded).toBe(0);
+    expect(ledgerAfterScheduling.queues.interviewScheduling).toHaveLength(0);
   });
 
   it("suppresses routine follow-up queue items once an active draft approval exists", async () => {

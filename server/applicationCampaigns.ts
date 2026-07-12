@@ -31,6 +31,7 @@ import {
   getSuccessFeeComplianceQueue,
   getSuccessFeeComplianceSummary,
 } from "./successFeeCompliance";
+import { getInterviewSchedulingRequirement } from "./interviewScheduling";
 
 function unique(items: string[]): string[] {
   return Array.from(new Set(items.map((item) => item.trim()).filter(Boolean)));
@@ -176,26 +177,14 @@ async function getFollowUpSuppressionState(
   return state;
 }
 
-function getInterviewSchedulingRequirement(
-  schedules: Awaited<ReturnType<typeof getInterviewSchedules>>
-): "missing_schedule" | "cancelled_schedule" | null {
-  if (schedules.some((schedule) => ["scheduled", "rescheduled"].includes(schedule.status || "scheduled"))) {
-    return null;
-  }
-  if (schedules.some((schedule) => schedule.status === "cancelled")) {
-    return "cancelled_schedule";
-  }
-  if (schedules.some((schedule) => schedule.status === "completed")) {
-    return null;
-  }
-  return "missing_schedule";
-}
-
 async function getInterviewSchedulingQueue(applications: UserApplicationRecord[], userId: number) {
   const interviewApplications = applications.filter((application) => application.status === "interview");
   const schedulingState = await Promise.all(interviewApplications.map(async (application) => ({
     application,
-    schedulingRequirement: getInterviewSchedulingRequirement(await getInterviewSchedules(application.id, userId)),
+    schedulingRequirement: getInterviewSchedulingRequirement(
+      await getInterviewSchedules(application.id, userId),
+      await getEmployerResponses(application.id, userId)
+    ),
   })));
 
   return schedulingState

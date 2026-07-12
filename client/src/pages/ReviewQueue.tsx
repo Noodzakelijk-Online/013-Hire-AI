@@ -618,6 +618,7 @@ export default function ReviewQueue() {
                         <CardContent className="space-y-4 pt-6">
                           {(() => {
                             const cancelledSchedule = item.schedulingRequirement === "cancelled_schedule";
+                            const newInvite = item.schedulingRequirement === "new_invite";
                             return <>
                           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                             <div>
@@ -630,12 +631,14 @@ export default function ReviewQueue() {
                               </p>
                             </div>
                             <Badge variant="outline" className={cancelledSchedule ? "border-amber-500/40 text-amber-300" : "border-blue-500/40 text-blue-300"}>
-                              {cancelledSchedule ? "Schedule cancelled" : "Interview invite"}
+                              {cancelledSchedule ? "Schedule cancelled" : newInvite ? "New interview round" : "Interview invite"}
                             </Badge>
                           </div>
                           <p className="text-sm text-muted-foreground">
                             {cancelledSchedule
                               ? "The recorded interview schedule was cancelled. Review the application before recording a new time or closing the interview stage."
+                              : newInvite
+                                ? "A later interview invite was recorded after the prior round. Capture the new time, channel, and interviewer details before follow-up automation continues."
                               : "This employer response has moved to interview status, but no interview time, channel, or interviewer context has been recorded yet."}
                           </p>
                           <QueueActionStrip
@@ -648,7 +651,7 @@ export default function ReviewQueue() {
                             onClick={() => setLocation(getApplicationDeepLink(item.applicationId, "schedule-interview"))}
                           >
                             <Calendar className="mr-2 h-4 w-4" />
-                            {cancelledSchedule ? "Review in Ledger" : "Schedule in Ledger"}
+                            {cancelledSchedule ? "Review in Ledger" : newInvite ? "Schedule Next Round" : "Schedule in Ledger"}
                           </Button>
                             </>;
                           })()}
