@@ -132,6 +132,7 @@ export default function Applications() {
   const [interviewerTitle, setInterviewerTitle] = useState("");
   const [interviewNotes, setInterviewNotes] = useState("");
   const [outcomeInterview, setOutcomeInterview] = useState<any>(null);
+  const [pendingOutcomeInterviewId, setPendingOutcomeInterviewId] = useState<number | null>(null);
   const [interviewOutcome, setInterviewOutcome] = useState<InterviewOutcomeType>("next_round");
   const [interviewOutcomeSource, setInterviewOutcomeSource] = useState<EmployerResponseSource>("email");
   const [interviewOutcomeSummary, setInterviewOutcomeSummary] = useState("");
@@ -702,7 +703,7 @@ export default function Applications() {
     const deepLink = parseApplicationDeepLink(deepLinkSource);
     if (!deepLink) return;
 
-    const signature = `${deepLink.applicationId}:${deepLink.action}`;
+    const signature = `${deepLink.applicationId}:${deepLink.action}:${deepLink.interviewId ?? ""}`;
     if (handledDeepLink === signature) return;
 
     const application = applications.find((item: any) => item.id === deepLink.applicationId);
@@ -726,7 +727,9 @@ export default function Applications() {
     }
 
     setSelectedApplication(application);
-    if (deepLink.action === "follow-up" && canGenerateFollowUp(application.status)) {
+    if (deepLink.action === "record-interview-outcome" && deepLink.interviewId) {
+      setPendingOutcomeInterviewId(deepLink.interviewId);
+    } else if (deepLink.action === "follow-up" && canGenerateFollowUp(application.status)) {
       generateFollowUpMutation.mutate({
         applicationId: application.id,
         type: getFollowUpType(application.status),
@@ -735,6 +738,26 @@ export default function Applications() {
       setPendingEmployerReplyApplicationId(application.id);
     }
   }, [applications, handledDeepLink, location]);
+
+  useEffect(() => {
+    if (pendingOutcomeInterviewId === null || !selectedApplication || !interviews) {
+      return;
+    }
+
+    const interview = interviews.find((item: any) =>
+      item.id === pendingOutcomeInterviewId && item.status === "completed"
+    );
+    setPendingOutcomeInterviewId(null);
+    if (!interview) {
+      toast.error("The requested interview is no longer eligible for outcome recording.");
+      return;
+    }
+
+    setOutcomeInterview(interview);
+    setInterviewOutcome("next_round");
+    setInterviewOutcomeSource("email");
+    setInterviewOutcomeSummary("");
+  }, [interviews, pendingOutcomeInterviewId, selectedApplication]);
 
   useEffect(() => {
     if (

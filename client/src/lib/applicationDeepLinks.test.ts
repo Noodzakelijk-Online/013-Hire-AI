@@ -10,6 +10,9 @@ describe("application deep links", () => {
     expect(getApplicationDeepLink(42, "schedule-interview")).toBe(
       "/applications?applicationId=42&action=schedule-interview"
     );
+    expect(getApplicationDeepLink(42, "record-interview-outcome", 9)).toBe(
+      "/applications?applicationId=42&action=record-interview-outcome&interviewId=9"
+    );
     expect(getApplicationDeepLink(42, "follow-up")).toBe(
       "/applications?applicationId=42&action=follow-up"
     );
@@ -42,12 +45,21 @@ describe("application deep links", () => {
       applicationId: 11,
       action: "send-follow-up",
     });
+    expect(parseApplicationDeepLink("?applicationId=12&action=record-interview-outcome&interviewId=18")).toEqual({
+      applicationId: 12,
+      action: "record-interview-outcome",
+      interviewId: 18,
+    });
   });
 
   it("rejects invalid ids and falls back for unknown actions", () => {
     expect(parseApplicationDeepLink("?applicationId=0")).toBeNull();
     expect(parseApplicationDeepLink("?applicationId=nope")).toBeNull();
     expect(parseApplicationDeepLink("?applicationId=8&action=delete")).toEqual({
+      applicationId: 8,
+      action: "view",
+    });
+    expect(parseApplicationDeepLink("?applicationId=8&action=record-interview-outcome")).toEqual({
       applicationId: 8,
       action: "view",
     });

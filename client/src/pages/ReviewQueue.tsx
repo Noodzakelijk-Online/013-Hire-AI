@@ -762,7 +762,7 @@ export default function ReviewQueue() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => setLocation(getApplicationDeepLink(item.applicationId, "view"))}
+                            onClick={() => setLocation(getApplicationDeepLink(item.applicationId, "record-interview-outcome", item.interviewId))}
                           >
                             <Briefcase className="mr-2 h-4 w-4" />
                             Record Outcome

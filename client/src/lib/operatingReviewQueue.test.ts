@@ -180,6 +180,20 @@ describe("operating review queue helpers", () => {
     });
   });
 
+  it("routes interview outcome work to the exact completed interview", () => {
+    expect(getReviewQueueActionSummary("interview_outcome", {
+      applicationId: 9,
+      interviewId: 17,
+    })).toMatchObject({
+      label: "Interview outcome",
+      cta: "Record outcome",
+      route: "/applications?applicationId=9&action=record-interview-outcome&interviewId=17",
+      risk: "medium",
+      approvalGated: false,
+      externalAction: "none",
+    });
+  });
+
   it("routes connector readiness to profile evidence without external side effects", () => {
     expect(getReviewQueueActionSummary("connector_readiness", {
       id: "inbox-response-monitoring",

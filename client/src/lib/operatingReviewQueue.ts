@@ -110,12 +110,15 @@ function coerceRisk(value?: string | null): ReviewQueueActionRisk {
     : "medium";
 }
 
-function applicationRoute(applicationId?: number | null, action?: string) {
+function applicationRoute(applicationId?: number | null, action?: string, interviewId?: number | null) {
   if (!applicationId) return "/applications";
   const params = new URLSearchParams();
   params.set("applicationId", String(applicationId));
   if (action && action !== "view") {
     params.set("action", action);
+  }
+  if (action === "record-interview-outcome" && typeof interviewId === "number" && interviewId > 0) {
+    params.set("interviewId", String(interviewId));
   }
   return `/applications?${params.toString()}`;
 }
@@ -240,8 +243,12 @@ export function getReviewQueueActionSummary(
       return {
         label: "Interview outcome",
         detail: "Record the verified post-interview result so follow-up, offer, and success-fee workflows use the correct ledger state.",
-        cta: "Open application",
-        route: applicationRoute(typeof item.applicationId === "number" ? item.applicationId : null, "view"),
+        cta: "Record outcome",
+        route: applicationRoute(
+          typeof item.applicationId === "number" ? item.applicationId : null,
+          "record-interview-outcome",
+          typeof item.interviewId === "number" ? item.interviewId : null
+        ),
         risk: "medium",
         approvalGated: false,
         externalAction: "none",
