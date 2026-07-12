@@ -1737,6 +1737,71 @@ export async function getUserSuccessFees(userId: number) {
     .orderBy(desc(successFees.createdAt));
 }
 
+/**
+ * Supplies the admin command center with the same in-memory ledger state used
+ * by local review fixtures. Mutating admin actions intentionally remain
+ * database-backed and fail closed when no database is configured.
+ */
+export async function getAdminMemoryFallback() {
+  const db = await getDb();
+  if (db) return null;
+
+  const now = new Date();
+  const usersById = new Map(memoryUsers.map((user) => [user.id, user]));
+  const fees = memorySuccessFees
+    .map((fee) => {
+      const user = usersById.get(fee.userId);
+      return {
+        id: fee.id,
+        userId: fee.userId,
+        employerName: fee.employerName ?? "Unknown employer",
+        jobTitle: fee.jobTitle ?? "Unknown role",
+        monthlySalary: fee.monthlySalary ?? 0,
+        currency: fee.currency ?? "USD",
+        monthlyFeeAmount: fee.monthlyFeeAmount ?? 0,
+        status: fee.status ?? "pending_verification",
+        startDate: fee.startDate ?? fee.createdAt,
+        endDate: fee.endDate ?? null,
+        nextVerificationDue: fee.nextVerificationDue ?? null,
+        verificationGraceExpiry: fee.verificationGraceExpiry ?? null,
+        stripeSubscriptionId: fee.stripeSubscriptionId ?? null,
+        notes: fee.notes ?? null,
+        createdAt: fee.createdAt,
+        userName: user?.name ?? null,
+        userEmail: user?.email ?? null,
+        userAccountStatus: user?.accountStatus ?? null,
+      };
+    })
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  const overdue = fees
+    .filter((fee) =>
+      (fee.status === "active" || fee.status === "suspended") &&
+      fee.nextVerificationDue != null &&
+      fee.nextVerificationDue < now
+    )
+    .map((fee) => ({
+      ...fee,
+      daysOverdue: Math.floor((now.getTime() - fee.nextVerificationDue!.getTime()) / (1000 * 60 * 60 * 24)),
+      graceExpired: fee.verificationGraceExpiry ? fee.verificationGraceExpiry < now : false,
+    }));
+
+  return {
+    stats: {
+      activeFees: fees.filter((fee) => fee.status === "active").length,
+      pendingFees: fees.filter((fee) => fee.status === "pending_verification").length,
+      suspendedFees: fees.filter((fee) => fee.status === "suspended").length,
+      totalRevenueUsd: 0,
+      monthlyRevenueUsd: 0,
+      overdueVerifications: overdue.length,
+      totalUsers: memoryUsers.length,
+    },
+    fees,
+    overdue,
+    pendingVerifications: [],
+    payments: [],
+  };
+}
+
 export async function createAuditEvent(event: InsertAuditEvent) {
   const db = await getDb();
   if (!db) {

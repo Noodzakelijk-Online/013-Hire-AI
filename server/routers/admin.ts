@@ -5,6 +5,7 @@ import {
   createAdminReviewItem,
   createAuditEvent,
   getDb,
+  getAdminMemoryFallback,
   getAdminReviewEvidenceSnapshot,
   listAdminReviewItems,
   resolveAdminReviewItem,
@@ -75,6 +76,8 @@ export const adminRouter = router({
 
   // ─── Overview Stats ─────────────────────────────────────────────────────────
   getStats: adminProcedure.query(async () => {
+    const memoryFallback = await getAdminMemoryFallback();
+    if (memoryFallback) return memoryFallback.stats;
     const db = await getDb();
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
@@ -146,6 +149,12 @@ export const adminRouter = router({
       })
     )
     .query(async ({ input }) => {
+      const memoryFallback = await getAdminMemoryFallback();
+      if (memoryFallback) {
+        return memoryFallback.fees
+          .filter((fee) => input.status === "all" || fee.status === input.status)
+          .slice(input.offset, input.offset + input.limit);
+      }
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
@@ -185,6 +194,8 @@ export const adminRouter = router({
 
   // ─── Overdue Verifications ───────────────────────────────────────────────────
   listOverdueVerifications: adminProcedure.query(async () => {
+    const memoryFallback = await getAdminMemoryFallback();
+    if (memoryFallback) return memoryFallback.overdue;
     const db = await getDb();
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
@@ -606,6 +617,8 @@ export const adminRouter = router({
 
   // ─── List Pending Verifications ──────────────────────────────────────────────
   listPendingVerifications: adminProcedure.query(async () => {
+    const memoryFallback = await getAdminMemoryFallback();
+    if (memoryFallback) return memoryFallback.pendingVerifications;
     const db = await getDb();
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
@@ -643,6 +656,10 @@ export const adminRouter = router({
       })
     )
     .query(async ({ input }) => {
+      const memoryFallback = await getAdminMemoryFallback();
+      if (memoryFallback) {
+        return memoryFallback.payments.slice(input.offset, input.offset + input.limit);
+      }
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
