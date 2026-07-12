@@ -36,6 +36,7 @@ describe("AutonomousScheduler", () => {
       queuedManualRecords: 0,
       queuedFollowUps: 1,
       skippedDuplicateFollowUps: 1,
+      skippedResumeEvidenceActions: 2,
       skippedEvidenceGatedActions: 3,
       failedActions: 0,
     });
@@ -48,11 +49,13 @@ describe("AutonomousScheduler", () => {
       jobsQueued: 3,
       followUpDraftsQueued: 1,
       duplicateFollowUpsSkipped: 1,
+      resumeEvidenceBlockedActions: 2,
       evidenceGatedActions: 3,
       failedActions: 0,
     });
     expect(scheduler.getUserStatus(17)).toMatchObject({
       jobsQueued: 3,
+      resumeEvidenceBlockedActions: 2,
       evidenceGatedActions: 3,
     });
   });
@@ -74,6 +77,7 @@ describe("AutonomousScheduler", () => {
         queuedManualRecords: 0,
         queuedFollowUps: 0,
         skippedDuplicateFollowUps: 0,
+        skippedResumeEvidenceActions: 1,
         skippedEvidenceGatedActions: 2,
         failedActions: 0,
       })
@@ -82,8 +86,10 @@ describe("AutonomousScheduler", () => {
     const scheduler = new AutonomousScheduler();
     await scheduler.runDueUsers();
     expect(scheduler.getStatus().evidenceGatedActions).toBe(2);
+    expect(scheduler.getStatus().resumeEvidenceBlockedActions).toBe(1);
 
     await scheduler.runDueUsers();
     expect(scheduler.getStatus().evidenceGatedActions).toBe(0);
+    expect(scheduler.getStatus().resumeEvidenceBlockedActions).toBe(0);
   });
 });

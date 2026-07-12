@@ -2291,6 +2291,7 @@ export const appRouter = router({
         jobsQueued: userStatus?.jobsQueued || 0,
         followUpDraftsQueued: userStatus?.followUpDraftsQueued || 0,
         duplicateFollowUpsSkipped: userStatus?.duplicateFollowUpsSkipped || 0,
+        resumeEvidenceBlockedActions: userStatus?.resumeEvidenceBlockedActions || 0,
         evidenceGatedActions: userStatus?.evidenceGatedActions || 0,
         failedActions: userStatus?.failedActions || 0,
         errorCount: userStatus?.errorCount || 0,

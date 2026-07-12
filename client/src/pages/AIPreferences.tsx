@@ -614,6 +614,7 @@ export default function AIPreferences() {
                       <span>{schedulerStatus.jobsQueued || 0} job task{schedulerStatus.jobsQueued === 1 ? "" : "s"}</span>
                       <span>{schedulerStatus.followUpDraftsQueued || 0} follow-up draft{schedulerStatus.followUpDraftsQueued === 1 ? "" : "s"}</span>
                       <span>{schedulerStatus.duplicateFollowUpsSkipped || 0} duplicate follow-up{schedulerStatus.duplicateFollowUpsSkipped === 1 ? "" : "s"} skipped</span>
+                      <span>{schedulerStatus.resumeEvidenceBlockedActions || 0} application preparation{schedulerStatus.resumeEvidenceBlockedActions === 1 ? "" : "s"} blocked by resume evidence</span>
                       <span>{schedulerStatus.evidenceGatedActions || 0} external action{schedulerStatus.evidenceGatedActions === 1 ? "" : "s"} gated</span>
                     </div>
                   </div>

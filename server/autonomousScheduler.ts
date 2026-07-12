@@ -19,6 +19,7 @@ interface AutonomousSchedulerStatus {
   jobsQueued: number;
   followUpDraftsQueued: number;
   duplicateFollowUpsSkipped: number;
+  resumeEvidenceBlockedActions: number;
   evidenceGatedActions: number;
   failedActions: number;
   errors: string[];
@@ -29,6 +30,7 @@ interface AutonomousUserRunStatus {
   jobsQueued: number;
   followUpDraftsQueued: number;
   duplicateFollowUpsSkipped: number;
+  resumeEvidenceBlockedActions: number;
   evidenceGatedActions: number;
   failedActions: number;
   errorCount: number;
@@ -49,6 +51,7 @@ export class AutonomousScheduler {
     jobsQueued: 0,
     followUpDraftsQueued: 0,
     duplicateFollowUpsSkipped: 0,
+    resumeEvidenceBlockedActions: 0,
     evidenceGatedActions: 0,
     failedActions: 0,
     errors: [],
@@ -93,6 +96,7 @@ export class AutonomousScheduler {
     this.status.jobsQueued = 0;
     this.status.followUpDraftsQueued = 0;
     this.status.duplicateFollowUpsSkipped = 0;
+    this.status.resumeEvidenceBlockedActions = 0;
     this.status.evidenceGatedActions = 0;
     this.status.failedActions = 0;
     try {
@@ -116,6 +120,7 @@ export class AutonomousScheduler {
             this.status.jobsQueued += jobsQueued;
             this.status.followUpDraftsQueued += result.queuedFollowUps;
             this.status.duplicateFollowUpsSkipped += result.skippedDuplicateFollowUps;
+            this.status.resumeEvidenceBlockedActions += result.skippedResumeEvidenceActions || 0;
             this.status.evidenceGatedActions += result.skippedEvidenceGatedActions;
             this.status.failedActions += result.failedActions;
             this.userRunStatuses.set(profile.userId, {
@@ -123,6 +128,7 @@ export class AutonomousScheduler {
               jobsQueued,
               followUpDraftsQueued: result.queuedFollowUps,
               duplicateFollowUpsSkipped: result.skippedDuplicateFollowUps,
+              resumeEvidenceBlockedActions: result.skippedResumeEvidenceActions || 0,
               evidenceGatedActions: result.skippedEvidenceGatedActions,
               failedActions: result.failedActions,
               errorCount: result.failedActions,
@@ -140,6 +146,7 @@ export class AutonomousScheduler {
             jobsQueued: 0,
             followUpDraftsQueued: 0,
             duplicateFollowUpsSkipped: 0,
+            resumeEvidenceBlockedActions: 0,
             evidenceGatedActions: 0,
             failedActions: 0,
             errorCount: 1,
