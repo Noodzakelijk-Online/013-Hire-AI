@@ -10,6 +10,7 @@ import { trpc } from "@/lib/trpc";
 import { formatAutonomousRunSummary, getAutonomousRunCounts } from "@/lib/autonomousRunSummary";
 import { getApplicationDeepLink } from "@/lib/applicationDeepLinks";
 import { getApprovalEvidenceGateSummary } from "@/lib/applicationEvidenceGates";
+import { getAutonomousPolicyControlAction } from "@/lib/autonomousPolicyControl";
 import { getCommandCenterSummary } from "@/lib/commandCenterSummary";
 import { getSuccessFeeComplianceAction, getSuccessFeeComplianceSummary } from "@/lib/successFeeCompliance";
 import {
@@ -170,8 +171,9 @@ export default function Dashboard() {
   };
 
   const handleRunAutonomousReview = () => {
-    if (operatingLedger?.campaign.status !== "active") {
-      toast.info("Resume the campaign before running autonomous work.");
+    if (!autonomousControl.runsAgent) {
+      toast.info(autonomousControl.detail);
+      setLocation(autonomousControl.route);
       return;
     }
     toast.info("Preparing review-safe work from the current jobs and automation policy...");
@@ -215,6 +217,10 @@ export default function Dashboard() {
   const canReviewAdminItems = operatingLedger?.canReviewAdminItems === true;
   const successFeeCompliance = getSuccessFeeComplianceSummary(successFees, offerAttributionReviews);
   const successFeeComplianceAction = getSuccessFeeComplianceAction(successFeeCompliance);
+  const autonomousControl = getAutonomousPolicyControlAction({
+    plan: autonomousPlan,
+    campaign: operatingLedger?.campaign,
+  });
   const commandCenterSummary = operatingLedger
     ? getCommandCenterSummary(operatingLedger, successFeeCompliance)
     : null;
@@ -418,17 +424,23 @@ export default function Dashboard() {
             </p>
           </div>
           <Button
+            data-testid="dashboard-autonomous-control"
             variant="outline"
             className="border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/10"
             onClick={handleRunAutonomousReview}
-            disabled={runAutonomousAgent.isPending}
+            disabled={runAutonomousAgent.isPending || !autonomousPlan}
+            title={autonomousControl.runsAgent ? undefined : autonomousControl.detail}
           >
-            {runAutonomousAgent.isPending ? (
+            {runAutonomousAgent.isPending && autonomousControl.runsAgent ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
-              <RefreshCw className="mr-2 h-4 w-4" />
+              autonomousControl.runsAgent
+                ? <RefreshCw className="mr-2 h-4 w-4" />
+                : <User className="mr-2 h-4 w-4" />
             )}
-            {runAutonomousAgent.isPending ? "Preparing..." : "Prepare review work"}
+            {runAutonomousAgent.isPending && autonomousControl.runsAgent
+              ? "Preparing..."
+              : autonomousControl.cta}
           </Button>
         </div>
 
