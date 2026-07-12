@@ -249,7 +249,14 @@ export function buildAutonomousPlan(
     job.isActive === 1 && job.expiryDate !== null && !isJobCurrentForAutonomousProcessing(job, now)
   ).length;
   const currentJobs = jobs.filter((job) => isJobCurrentForAutonomousProcessing(job, now));
-  const appliedJobIds = new Set(applications.map((application) => application.jobId));
+  // A pending application is only a preparation record. It can be reconciled
+  // after an interrupted run, while progressed or withdrawn records must never
+  // be queued again as though no application history exists.
+  const appliedJobIds = new Set(
+    applications
+      .filter((application) => (application.status || "pending") !== "pending")
+      .map((application) => application.jobId)
+  );
   const alreadyQueuedToday = applications.filter(hasAppliedToday).length;
   const dailyRemaining = Math.max(0, dailyLimit - alreadyQueuedToday);
   const policyWarnings: string[] = [];

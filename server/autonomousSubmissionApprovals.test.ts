@@ -2,11 +2,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getActiveResume: vi.fn(),
+  getActiveJobs: vi.fn(),
 }));
 
 vi.mock("./resumeStorage", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./resumeStorage")>()),
   getActiveResume: mocks.getActiveResume,
+}));
+
+vi.mock("./db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./db")>()),
+  getActiveJobs: mocks.getActiveJobs,
 }));
 
 import {
@@ -22,6 +28,7 @@ import {
 } from "./db";
 import { getFollowUps } from "./applicationFeatures";
 import { runAutonomousForUser } from "./autonomousService";
+import { sampleJobs } from "./sampleData";
 
 describe("autonomous submission approval gates", () => {
   beforeEach(() => {
@@ -38,6 +45,7 @@ describe("autonomous submission approval gates", () => {
       isActive: true,
       uploadedAt: new Date(),
     }));
+    mocks.getActiveJobs.mockResolvedValue([sampleJobs[0]]);
   });
 
   it("creates submission approvals for queued autonomous application records", async () => {
@@ -91,6 +99,58 @@ describe("autonomous submission approval gates", () => {
       review.entityId === applicationId &&
       review.category === "application_review"
     )).toBe(true);
+  });
+
+  it("keeps preparation evidence idempotent when the same autonomous run is retried", async () => {
+    const userId = 99104;
+    const job = sampleJobs[0];
+
+    await upsertUserProfile({
+      userId,
+      skills: "React, TypeScript, Node.js",
+      experience: "Five years building production web applications.",
+      desiredJobTypes: "full-time",
+      desiredLocations: "remote, worldwide",
+      resumeUrl: "https://example.com/resume.pdf",
+      preferences: JSON.stringify({
+        autonomousEnabled: true,
+        mode: "review_first",
+        minMatchScore: 0,
+        dailyApplicationLimit: 1,
+      }),
+    });
+
+    const existingPreparation = await createApplication({
+      userId,
+      jobId: job.id,
+      status: "pending",
+      notes: "Preparation was interrupted before review artifacts were written.",
+      isAutoApplied: 0,
+    });
+
+    await runAutonomousForUser(userId, { dailyApplicationLimit: 2, minMatchScore: 0 });
+    await runAutonomousForUser(userId, { dailyApplicationLimit: 2, minMatchScore: 0 });
+
+    const applications = await getUserApplications(userId);
+    const applicationId = applications[0].id;
+    const artifacts = await getApplicationLedgerArtifacts(applicationId, userId);
+    const approvals = await listUserApplicationApprovals(userId, "pending");
+    const adminReviews = await listAdminReviewItems("all");
+    const preparationEvents = artifacts.auditEvents.filter((event) =>
+      event.action.startsWith("autonomous_") && event.approvalId === approvals[0].id
+    );
+
+    expect(applications).toHaveLength(1);
+    expect(applicationId).toBe(Number(existingPreparation.insertId));
+    expect(approvals).toHaveLength(1);
+    expect(artifacts.attempts.filter((attempt) => attempt.status === "review_required")).toHaveLength(1);
+    expect(preparationEvents).toHaveLength(1);
+    expect(adminReviews.filter((review) =>
+      review.userId === userId &&
+      review.entityType === "application" &&
+      review.entityId === applicationId &&
+      review.category === "application_review"
+    )).toHaveLength(1);
   });
 
   it("does not draft routine follow-ups while an employer response needs review", async () => {

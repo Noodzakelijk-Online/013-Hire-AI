@@ -124,6 +124,56 @@ describe("autonomous orchestrator", () => {
     );
   });
 
+  it("allows a pending preparation to be reconciled without treating it as submitted", () => {
+    const pendingPreparation: Application = {
+      id: 22,
+      userId: 1,
+      jobId: baseJob.id,
+      status: "pending",
+      appliedDate: null,
+      lastActivity: null,
+      coverLetter: null,
+      customResume: null,
+      notes: "Preparation was interrupted before its ledger artifacts were recorded.",
+      isAutoApplied: 0,
+      createdAt: new Date(Date.now() - 86400000),
+      updatedAt: new Date(),
+    };
+
+    const plan = buildAutonomousPlan([baseJob], profile, [pendingPreparation], {
+      minMatchScore: 70,
+      dailyApplicationLimit: 2,
+    });
+
+    expect(plan.decisions[0].action).toBe("queue_for_review");
+    expect(plan.decisions[0].blockers).not.toContain("Already applied to this job");
+  });
+
+  it("keeps progressed application history out of later autonomous preparation", () => {
+    const submittedApplication: Application = {
+      id: 23,
+      userId: 1,
+      jobId: baseJob.id,
+      status: "applied",
+      appliedDate: new Date(),
+      lastActivity: new Date(),
+      coverLetter: null,
+      customResume: null,
+      notes: "Employer submission confirmed.",
+      isAutoApplied: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const plan = buildAutonomousPlan([baseJob], profile, [submittedApplication], {
+      minMatchScore: 70,
+      dailyApplicationLimit: 2,
+    });
+
+    expect(plan.decisions[0].action).toBe("skip");
+    expect(plan.decisions[0].blockers).toContain("Already applied to this job");
+  });
+
   it("counts autonomous manual tasks toward the daily preparation limit", () => {
     const manualTask: Application = {
       id: 21,

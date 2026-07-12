@@ -17,6 +17,7 @@ import {
   completeAutonomousRunLease,
   getActiveJobs,
   getAutonomousUserEligibility,
+  getApplicationLedgerArtifacts,
   getApplicationCampaign,
   getEmployerResponses,
   getUserApplications,
@@ -96,6 +97,7 @@ async function recordAutonomousApplicationLedgerArtifacts({
   approvalId: number;
 }) {
   const riskLevel = branch === "manual" ? "high" : riskForDecision(decision);
+  const attemptType = branch === "manual" ? "external_handoff" : "prepare";
   const confirmationText = branch === "manual"
     ? "Autonomous run prepared a manual application handoff. No external submission was performed."
     : "Autonomous run prepared application materials for review. No external submission was performed.";
@@ -105,65 +107,78 @@ async function recordAutonomousApplicationLedgerArtifacts({
       ? "autonomous_review_queued"
       : "autonomous_application_prepared";
 
-  await createApplicationMaterial({
-    applicationId,
-    resumeId: resume.id,
-    coverLetter: `Autonomous preparation note for ${decision.title} at ${decision.company}.`,
-    customAnswers: JSON.stringify({
-      source: "autonomousService",
-      action: decision.action,
-      atsType: decision.atsType,
-      automationSupported: decision.automationSupported,
-      automationNotes: decision.automationNotes,
-    }),
-    claimsMade: JSON.stringify({
-      supportedClaimsOnly: true,
-      reasons: decision.reasons,
-      blockers: decision.blockers,
-      note: "No qualifications, certifications, work authorization, salary history, or employment status were fabricated.",
-    }),
-    sourceProfileSnapshot: profileSnapshotForAutonomousRun(profile),
-  });
+  const artifacts = await getApplicationLedgerArtifacts(applicationId, userId);
+  if (!artifacts.material || artifacts.material.resumeId !== resume.id) {
+    await createApplicationMaterial({
+      applicationId,
+      resumeId: resume.id,
+      coverLetter: `Autonomous preparation note for ${decision.title} at ${decision.company}.`,
+      customAnswers: JSON.stringify({
+        source: "autonomousService",
+        action: decision.action,
+        atsType: decision.atsType,
+        automationSupported: decision.automationSupported,
+        automationNotes: decision.automationNotes,
+      }),
+      claimsMade: JSON.stringify({
+        supportedClaimsOnly: true,
+        reasons: decision.reasons,
+        blockers: decision.blockers,
+        note: "No qualifications, certifications, work authorization, salary history, or employment status were fabricated.",
+      }),
+      sourceProfileSnapshot: profileSnapshotForAutonomousRun(profile),
+    });
+  }
 
-  await createApplicationAttempt({
-    applicationId,
-    userId,
-    jobId: decision.jobId,
-    platformId: platformId ?? undefined,
-    attemptType: branch === "manual" ? "external_handoff" : "prepare",
-    status: "review_required",
-    finishedAt: new Date(),
-    confirmationText,
-    confirmationUrl: undefined,
-    retryCount: 0,
-  });
-
-  await createAuditEvent({
-    userId,
-    entityType: "application",
-    entityId: applicationId,
-    action,
-    actor: "system",
-    source: "autonomousService",
-    afterState: JSON.stringify({
+  const hasPreparationAttempt = artifacts.attempts.some((attempt) =>
+    attempt.attemptType === attemptType && attempt.status === "review_required"
+  );
+  if (!hasPreparationAttempt) {
+    await createApplicationAttempt({
+      applicationId,
+      userId,
       jobId: decision.jobId,
-      title: decision.title,
-      company: decision.company,
-      matchScore: decision.matchScore,
-      atsType: decision.atsType,
-      reviewRequired: true,
+      platformId: platformId ?? undefined,
+      attemptType,
+      status: "review_required",
+      finishedAt: new Date(),
+      confirmationText,
+      confirmationUrl: undefined,
+      retryCount: 0,
+    });
+  }
+
+  const hasPreparationAuditEvent = artifacts.auditEvents.some((event) =>
+    event.action === action && event.approvalId === approvalId
+  );
+  if (!hasPreparationAuditEvent) {
+    await createAuditEvent({
+      userId,
+      entityType: "application",
+      entityId: applicationId,
+      action,
+      actor: "system",
+      source: "autonomousService",
+      afterState: JSON.stringify({
+        jobId: decision.jobId,
+        title: decision.title,
+        company: decision.company,
+        matchScore: decision.matchScore,
+        atsType: decision.atsType,
+        reviewRequired: true,
+        approvalId,
+        resume: {
+          id: resume.id,
+          version: resume.version,
+          fileName: resume.fileName,
+          fileKey: resume.fileKey,
+        },
+        externalSubmissionPerformed: false,
+      }),
+      riskLevel,
       approvalId,
-      resume: {
-        id: resume.id,
-        version: resume.version,
-        fileName: resume.fileName,
-        fileKey: resume.fileKey,
-      },
-      externalSubmissionPerformed: false,
-    }),
-    riskLevel,
-    approvalId,
-  });
+    });
+  }
 
   await createAdminReviewItem({
     userId,
