@@ -23,7 +23,8 @@ import {
   updateApplicationStatus,
   upsertInterviewPreparation,
 } from "./db";
-import { savedJobs, applicationNotes, interviewSchedules, followUps, applications, applicationAttempts, employerResponses, applicationNotifications, auditEvents, adminReviewItems, applicationApprovals, jobs, jobAlerts, type FollowUp, type InterviewSchedule } from "../drizzle/schema";
+import { savedJobs, applicationNotes, interviewSchedules, followUps, applications, applicationAttempts, employerResponses, applicationNotifications, auditEvents, adminReviewItems, applicationApprovals, jobs, jobAlerts, jobPlatforms, type FollowUp, type InterviewSchedule } from "../drizzle/schema";
+import { matchesJobAlert } from "../shared/jobAlertMatching";
 import { generateInterviewPreparation as generateAiInterviewPreparation } from "./aiMatching";
 import { invokeLLM } from "./_core/llm";
 import {
@@ -2402,6 +2403,11 @@ export async function processJobAlerts() {
     .from(jobAlerts)
     .where(eq(jobAlerts.isActive, 1));
 
+  const [activeJobs, platforms] = await Promise.all([
+    db.select().from(jobs).where(eq(jobs.isActive, 1)),
+    db.select({ id: jobPlatforms.id, name: jobPlatforms.name }).from(jobPlatforms),
+  ]);
+  const platformNamesById = new Map(platforms.map((platform) => [platform.id, platform.name]));
   let processed = 0;
 
   for (const alert of alerts) {
@@ -2428,11 +2434,16 @@ export async function processJobAlerts() {
     }
 
     if (shouldProcess) {
-      // Find matching jobs
-      let query = db.select().from(jobs).where(eq(jobs.isActive, 1));
-
-      // This is a simplified matching - in production, you'd want more sophisticated filtering
-      const matchingJobs = await query.limit(10);
+      const matchingJobs = activeJobs.filter((job) => matchesJobAlert({
+        ...job,
+        platformName: platformNamesById.get(job.platformId),
+      }, {
+        keywords: alert.keywords,
+        locations: alert.locations,
+        platforms: alert.platforms,
+        minSalary: alert.minSalary,
+        jobTypes: alert.jobTypes,
+      }));
 
       if (matchingJobs.length > 0) {
         // Matching jobs remain available in the command center. External alerts are

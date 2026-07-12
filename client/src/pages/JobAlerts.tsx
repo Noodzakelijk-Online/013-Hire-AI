@@ -3,7 +3,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -15,7 +15,6 @@ import {
   Bell,
   Plus,
   Trash2,
-  Edit,
   Loader2,
   Search,
   MapPin,
@@ -29,12 +28,11 @@ import {
 export default function JobAlerts() {
   const { user, loading: authLoading } = useAuth();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [editingAlert, setEditingAlert] = useState<any>(null);
-  
   // Form state
   const [alertName, setAlertName] = useState("");
   const [keywords, setKeywords] = useState("");
   const [location, setLocation] = useState("");
+  const [platforms, setPlatforms] = useState("");
   const [minSalary, setMinSalary] = useState("");
   const [jobTypes, setJobTypes] = useState<string[]>(["full-time"]);
   const [frequency, setFrequency] = useState("daily");
@@ -45,7 +43,7 @@ export default function JobAlerts() {
   // Mutations
   const createMutation = trpc.alerts.create.useMutation({
     onSuccess: () => {
-      toast.success("Job alert created!");
+      toast.success("Matching rule created");
       setIsCreateOpen(false);
       resetForm();
       refetch();
@@ -79,10 +77,10 @@ export default function JobAlerts() {
     setAlertName("");
     setKeywords("");
     setLocation("");
+    setPlatforms("");
     setMinSalary("");
     setJobTypes(["full-time"]);
     setFrequency("daily");
-    setEditingAlert(null);
   };
 
   const handleCreate = () => {
@@ -95,6 +93,7 @@ export default function JobAlerts() {
       name: alertName,
       keywords,
       locations: location || undefined,
+      platforms: platforms || undefined,
       minSalary: minSalary ? parseInt(minSalary) : undefined,
       jobTypes: jobTypes.join(","),
       frequency: frequency as "instant" | "daily" | "weekly",
@@ -113,7 +112,7 @@ export default function JobAlerts() {
 
   const getFrequencyLabel = (freq: string) => {
     switch (freq) {
-      case "instant": return "Instant";
+      case "instant": return "Hourly";
       case "daily": return "Daily";
       case "weekly": return "Weekly";
       default: return freq;
@@ -140,7 +139,7 @@ export default function JobAlerts() {
               <Bell className="h-6 w-6 text-cyan-400" />
               Job Alerts
             </h1>
-            <p className="text-slate-400">Get notified when jobs matching your criteria are posted</p>
+            <p className="text-slate-400">Track matching jobs in your command center with precise, saved criteria.</p>
           </div>
           <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
             <DialogTrigger asChild>
@@ -153,7 +152,7 @@ export default function JobAlerts() {
               <DialogHeader>
                 <DialogTitle>Create Job Alert</DialogTitle>
                 <DialogDescription className="text-slate-400">
-                  Set up criteria to receive notifications for matching jobs
+                  Define the criteria used to refresh this matching rule.
                 </DialogDescription>
               </DialogHeader>
               
@@ -190,6 +189,18 @@ export default function JobAlerts() {
                     onChange={(e) => setLocation(e.target.value)}
                     className="bg-slate-800 border-slate-700"
                   />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="platforms">Sources (optional)</Label>
+                  <Input
+                    id="platforms"
+                    placeholder="e.g., Remote OK, We Work Remotely"
+                    value={platforms}
+                    onChange={(e) => setPlatforms(e.target.value)}
+                    className="bg-slate-800 border-slate-700"
+                  />
+                  <p className="text-xs text-slate-500">Separate source names or IDs with commas</p>
                 </div>
 
                 <div className="space-y-2">
@@ -231,15 +242,15 @@ export default function JobAlerts() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="frequency">Notification Frequency</Label>
+                  <Label htmlFor="frequency">Matching Cadence</Label>
                   <Select value={frequency} onValueChange={setFrequency}>
                     <SelectTrigger className="bg-slate-800 border-slate-700">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="bg-slate-800 border-slate-700">
-                      <SelectItem value="instant">Instant (as jobs are posted)</SelectItem>
-                      <SelectItem value="daily">Daily digest</SelectItem>
-                      <SelectItem value="weekly">Weekly summary</SelectItem>
+                      <SelectItem value="instant">Hourly</SelectItem>
+                      <SelectItem value="daily">Daily</SelectItem>
+                      <SelectItem value="weekly">Weekly</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -300,10 +311,16 @@ export default function JobAlerts() {
                           <Search className="w-3 h-3" />
                           {alert.keywords}
                         </span>
-                        {alert.location && (
+                        {alert.locations && (
                           <span className="flex items-center gap-1">
                             <MapPin className="w-3 h-3" />
-                            {alert.location}
+                            {alert.locations}
+                          </span>
+                        )}
+                        {alert.platforms && (
+                          <span className="flex items-center gap-1">
+                            <Briefcase className="w-3 h-3" />
+                            {alert.platforms}
                           </span>
                         )}
                         {alert.minSalary && (
@@ -322,7 +339,7 @@ export default function JobAlerts() {
 
                       {alert.lastTriggered && (
                         <p className="text-xs text-slate-500 mt-2">
-                          Last triggered: {new Date(alert.lastTriggered).toLocaleDateString()}
+                          Last matched: {new Date(alert.lastTriggered).toLocaleDateString()}
                         </p>
                       )}
                     </div>
@@ -354,7 +371,7 @@ export default function JobAlerts() {
               </div>
               <h3 className="text-xl font-semibold text-white mb-2">No job alerts yet</h3>
               <p className="text-slate-400 mb-6 max-w-md mx-auto">
-                Create your first job alert to get notified when new jobs matching your criteria are posted.
+                Create a matching rule to keep relevant jobs available in your command center.
               </p>
               <Button
                 className="bg-gradient-to-r from-cyan-500 to-blue-600"
