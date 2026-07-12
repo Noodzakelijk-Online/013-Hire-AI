@@ -9,6 +9,7 @@ export interface JobDecisionActionJobLike {
 export interface JobDecisionActionSummaryLike {
   matchScore: number;
   riskLevel: "low" | "medium" | "high";
+  recommendedDecision?: "review" | "save" | "ignore" | "manual_apply";
   decisionLabel: string;
   nextAction: string;
   blockers: string[];
@@ -20,7 +21,7 @@ export interface JobDecisionActionSummaryLike {
 
 export interface JobDecisionMutationInput {
   jobId: number;
-  decision: "save" | "ignore" | "review";
+  decision: "save" | "ignore" | "review" | "manual_apply";
   decisionReason: string;
   matchScore: number;
   riskLevel: "low" | "medium" | "high";
@@ -100,6 +101,30 @@ export function buildJobDecisionMutationInput(
     ].filter(Boolean).join(" "),
     matchScore: summary.matchScore,
     riskLevel: summary.riskLevel === "low" ? "medium" : summary.riskLevel,
+    reviewRequired: true,
+    reviewReason: reviewContext(summary),
+  };
+}
+
+export function buildJobPreparationDecisionInput(
+  job: JobDecisionActionJobLike,
+  summary: JobDecisionActionSummaryLike,
+  source: string
+): JobDecisionMutationInput {
+  const decision = summary.recommendedDecision === "manual_apply"
+    ? "manual_apply"
+    : "review";
+
+  return {
+    jobId: job.id,
+    decision,
+    decisionReason: [
+      `${summary.decisionLabel}: ${jobLabel(job)}.`,
+      `Queued from ${source}.`,
+      ...summary.blockers,
+    ].filter(Boolean).join(" "),
+    matchScore: summary.matchScore,
+    riskLevel: summary.riskLevel,
     reviewRequired: true,
     reviewReason: reviewContext(summary),
   };

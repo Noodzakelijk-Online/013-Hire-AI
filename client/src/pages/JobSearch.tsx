@@ -4,7 +4,11 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { formatAutonomousRunSummary, getAutonomousRunCounts } from "@/lib/autonomousRunSummary";
 import { getAutonomousPolicyControlAction } from "@/lib/autonomousPolicyControl";
-import { buildJobDecisionMutationInput, type JobDecisionLifecycleAction } from "@/lib/jobDecisionActions";
+import {
+  buildJobDecisionMutationInput,
+  buildJobPreparationDecisionInput,
+  type JobDecisionLifecycleAction,
+} from "@/lib/jobDecisionActions";
 import { getApplicationEvidenceGateSummary } from "@/lib/applicationEvidenceGates";
 import { getSafeExternalUrl, openExternalUrl } from "@/lib/externalUrl";
 import { getJobMatchDecisionSummary } from "@/lib/jobMatchDecisionSummary";
@@ -363,20 +367,7 @@ export default function JobSearch() {
       autonomousDecisionByJobId.get(job.id),
       applicationDecisionByJobId.get(job.id)
     );
-    const reviewReason = [
-      summary.nextAction,
-      summary.blockers.length > 0 ? `Blockers: ${summary.blockers.join("; ")}` : "",
-      summary.missingSkills.length > 0 ? `Missing skills to review: ${summary.missingSkills.join(", ")}` : "",
-    ].filter(Boolean).join(" ");
-    decideMutation.mutate({
-      jobId: job.id,
-      decision: summary.recommendedDecision === "manual_apply" ? "manual_apply" : "review",
-      decisionReason: `${summary.decisionLabel}: ${job.title} at ${job.company}. ${summary.reasons.join(" ")}`.trim(),
-      matchScore: summary.matchScore,
-      riskLevel: summary.riskLevel,
-      reviewRequired: true,
-      reviewReason,
-    });
+    decideMutation.mutate(buildJobPreparationDecisionInput(job, summary, "Job Search"));
   };
 
   const handleSaveJob = async (job: any) => {

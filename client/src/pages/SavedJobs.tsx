@@ -1,7 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
+import { getApplicationEvidenceGateSummary } from "@/lib/applicationEvidenceGates";
+import { buildJobPreparationDecisionInput } from "@/lib/jobDecisionActions";
 import { getSafeExternalUrl, openExternalUrl } from "@/lib/externalUrl";
+import { getJobMatchDecisionSummary } from "@/lib/jobMatchDecisionSummary";
 import AppHeader from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -18,6 +21,7 @@ import {
   Trash2,
   Loader2,
   Send,
+  AlertCircle,
   Briefcase,
 } from "lucide-react";
 
@@ -27,6 +31,19 @@ export default function SavedJobs() {
 
   // Fetch saved jobs
   const { data: savedJobs, isLoading, refetch } = trpc.jobs.getSavedJobs.useQuery();
+  const { data: profileData } = trpc.profile.get.useQuery(undefined, {
+    enabled: Boolean(user),
+  });
+  const { data: autonomousPlan } = trpc.automation.plan.useQuery(undefined, {
+    enabled: Boolean(user),
+  });
+  const preparationEvidenceGate = useMemo(() => {
+    const summary = getApplicationEvidenceGateSummary(
+      { status: "pending" },
+      autonomousPlan?.evidenceGates || []
+    );
+    return summary.gates[0] || null;
+  }, [autonomousPlan?.evidenceGates]);
 
   // Mutations
   const unsaveMutation = trpc.jobs.unsaveJob.useMutation({
@@ -39,13 +56,18 @@ export default function SavedJobs() {
     },
   });
 
-  const applyMutation = trpc.applications.create.useMutation({
-    onSuccess: () => {
-      toast.success("Application queued for review");
-      refetch();
+  const decideMutation = trpc.applications.decide.useMutation({
+    onSuccess: async (result) => {
+      if (result.preparationBlocked) {
+        toast.info("Resolve profile evidence before preparing an application.");
+        setLocation(preparationEvidenceGate?.route || "/profile");
+        return;
+      }
+      toast.success(result.existing ? "Review decision updated" : "Application queued for review");
+      await refetch();
     },
-    onError: () => {
-      toast.error("Failed to queue application");
+    onError: (error) => {
+      toast.error(error.message || "Failed to record the application decision");
     },
   });
 
@@ -53,8 +75,18 @@ export default function SavedJobs() {
     unsaveMutation.mutate({ jobId });
   };
 
-  const handleApply = (jobId: number) => {
-    applyMutation.mutate({ jobId });
+  const handleApply = (job: any) => {
+    if (!user) {
+      toast.error("Please log in to queue an application review");
+      return;
+    }
+    if (preparationEvidenceGate) {
+      toast.info(preparationEvidenceGate.detail || "Resolve profile evidence before preparing an application.");
+      setLocation(preparationEvidenceGate.route || "/profile");
+      return;
+    }
+    const summary = getJobMatchDecisionSummary(job, profileData);
+    decideMutation.mutate(buildJobPreparationDecisionInput(job, summary, "Saved Jobs"));
   };
 
   const formatSalary = (min?: number, max?: number) => {
@@ -188,12 +220,22 @@ export default function SavedJobs() {
 
                       <div className="flex flex-col gap-2">
                         <Button
-                          className="bg-gradient-to-r from-cyan-500 to-blue-600"
-                          onClick={() => handleApply(job.id)}
-                          disabled={applyMutation.isPending}
+                          data-testid={`saved-job-prepare-or-resolve-evidence-${job.id}`}
+                          title={preparationEvidenceGate?.detail || "Queue a controlled application review"}
+                          className={preparationEvidenceGate
+                            ? "border border-amber-500/50 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20"
+                            : "bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700"}
+                          onClick={() => handleApply(job)}
+                          disabled={decideMutation.isPending}
                         >
-                          <Send className="w-4 h-4 mr-2" />
-                          Apply
+                          {decideMutation.isPending ? (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          ) : preparationEvidenceGate ? (
+                            <AlertCircle className="w-4 h-4 mr-2" />
+                          ) : (
+                            <Send className="w-4 h-4 mr-2" />
+                          )}
+                          {preparationEvidenceGate ? "Resolve Evidence" : "Queue Review"}
                         </Button>
                         {getSafeExternalUrl(job.applicationUrl) && (
                           <Button
@@ -209,7 +251,7 @@ export default function SavedJobs() {
                           variant="ghost"
                           className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
                           onClick={() => handleUnsave(job.id)}
-                          disabled={unsaveMutation.isPending}
+                          disabled={unsaveMutation.isPending || decideMutation.isPending}
                         >
                           <Trash2 className="w-4 h-4 mr-2" />
                           Remove

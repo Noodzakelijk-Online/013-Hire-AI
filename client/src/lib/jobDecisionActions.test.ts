@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildJobDecisionMutationInput } from "./jobDecisionActions";
+import { buildJobDecisionMutationInput, buildJobPreparationDecisionInput } from "./jobDecisionActions";
 
 const job = {
   id: 42,
@@ -44,5 +44,19 @@ describe("job decision action payloads", () => {
     expect(input.reviewRequired).toBe(false);
     expect(input.reviewReason).toBeUndefined();
     expect(input.decisionReason).toContain("Previous reason");
+  });
+
+  it("uses the controlled review payload when a saved job is prepared", () => {
+    const input = buildJobPreparationDecisionInput(job, summary, "Saved Jobs");
+
+    expect(input).toMatchObject({
+      jobId: 42,
+      decision: "review",
+      matchScore: 88,
+      riskLevel: "low",
+      reviewRequired: true,
+    });
+    expect(input.decisionReason).toContain("Queued from Saved Jobs");
+    expect(input.reviewReason).toContain("Missing skills to verify: GraphQL");
   });
 });
