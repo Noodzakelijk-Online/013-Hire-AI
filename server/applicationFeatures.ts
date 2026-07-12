@@ -16,6 +16,7 @@ import {
   getEmployerResponses,
   getInterviewPreparationForJob,
   getDb,
+  getCanonicalJobId,
   getApplicationLedgerArtifacts,
   getJobById,
   getUserApplications,
@@ -88,6 +89,9 @@ function nextMemorySavedJobId() {
 }
 
 export async function saveJob(input: SaveJobInput) {
+  const canonicalJobId = await getCanonicalJobId(input.jobId);
+  if (canonicalJobId === null) throw new Error("Job not found.");
+  input = { ...input, jobId: canonicalJobId };
   const db = await getDb();
   if (!db) {
     const existing = memorySavedJobs.find((item) =>
@@ -148,6 +152,9 @@ export async function saveJob(input: SaveJobInput) {
 }
 
 export async function unsaveJob(userId: number, jobId: number) {
+  const canonicalJobId = await getCanonicalJobId(jobId);
+  if (canonicalJobId === null) return { success: true };
+  jobId = canonicalJobId;
   const db = await getDb();
   if (!db) {
     const index = memorySavedJobs.findIndex((item) =>
@@ -231,6 +238,9 @@ export async function updateSavedJobNotes(
   tags?: string,
   priority?: "low" | "medium" | "high"
 ) {
+  const canonicalJobId = await getCanonicalJobId(jobId);
+  if (canonicalJobId === null) throw new Error("Job not found.");
+  jobId = canonicalJobId;
   const db = await getDb();
   if (!db) {
     const existing = memorySavedJobs.find((item) =>

@@ -680,8 +680,15 @@ export const appRouter = router({
           createAuditEvent,
           createAdminReviewItem,
           createApplicationApproval,
+          getApplicationLedgerArtifacts,
           getJobById,
+          getCanonicalJobId,
         } = await import("./db");
+        const canonicalJobId = await getCanonicalJobId(input.jobId);
+        if (canonicalJobId === null) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Job not found" });
+        }
+        input = { ...input, jobId: canonicalJobId };
         const job = await getJobById(input.jobId);
         if (!job) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Job not found" });
@@ -714,6 +721,16 @@ export const appRouter = router({
           status: "pending",
         });
         const applicationId = Number(application.insertId);
+        const existingArtifacts = application.existing === true
+          ? await getApplicationLedgerArtifacts(applicationId, ctx.user.id).catch(() => null)
+          : null;
+        const hasPreparedApplication = existingArtifacts?.attempts.some((attempt) =>
+          attempt.attemptType === "prepare" &&
+          ["prepared", "review_required"].includes(attempt.status || "prepared")
+        ) === true;
+        if (application.existing === true && hasPreparedApplication) {
+          return { success: true, applicationRecordId: applicationId, existing: true };
+        }
         await createApplicationMaterial({
           applicationId,
           resumeId: activeResume.id,
@@ -798,11 +815,17 @@ export const appRouter = router({
           createApplicationApproval,
           getApplicationLedgerArtifacts,
           getJobById,
+          getCanonicalJobId,
           getUserApplications,
           listUserApplicationApprovals,
           resolveApplicationApproval,
           updateApplicationStatus,
         } = await import("./db");
+        const canonicalJobId = await getCanonicalJobId(input.jobId);
+        if (canonicalJobId === null) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Job not found" });
+        }
+        input = { ...input, jobId: canonicalJobId };
         const job = await getJobById(input.jobId);
         if (!job) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Job not found" });
@@ -1759,7 +1782,7 @@ export const appRouter = router({
     calculateMatch: protectedProcedure
       .input(z.object({ jobId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        const { getUserProfile, getJobById } = await import("./db");
+        const { getUserProfile, getJobById, getCanonicalJobId } = await import("./db");
         const { calculateJobMatch } = await import("./aiMatching");
         const { createJobMatch } = await import("./db");
 
@@ -1768,6 +1791,9 @@ export const appRouter = router({
           throw new Error("User profile not found. Please complete your profile first.");
         }
 
+        const canonicalJobId = await getCanonicalJobId(input.jobId);
+        if (canonicalJobId === null) throw new Error("Job not found");
+        input = { ...input, jobId: canonicalJobId };
         const job = await getJobById(input.jobId);
         if (!job) {
           throw new Error("Job not found");
@@ -2597,6 +2623,7 @@ export const appRouter = router({
           createAuditEvent,
           createAdminReviewItem,
           createApplicationApproval,
+          getCanonicalJobId,
         } = await import("./db");
         const {
           applyToJob,
@@ -2608,6 +2635,9 @@ export const appRouter = router({
         );
 
         // Get job details
+        const canonicalJobId = await getCanonicalJobId(input.jobId);
+        if (canonicalJobId === null) throw new Error("Job not found");
+        input = { ...input, jobId: canonicalJobId };
         const job = await getJobById(input.jobId);
         if (!job) {
           throw new Error("Job not found");

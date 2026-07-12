@@ -46,4 +46,28 @@ describe("saved jobs memory fallback", () => {
     await unsaveJob(userId, jobId);
     expect(await getSavedJobs(userId)).toEqual([]);
   });
+
+  it("stores duplicate-source saves against the canonical job and removes them from either source", async () => {
+    const userId = 990_002;
+    await unsaveJob(userId, 1);
+
+    const duplicateSave = await saveJob({
+      userId,
+      jobId: 5,
+      notes: "Saved from a reposted source.",
+    });
+    const canonicalSave = await saveJob({
+      userId,
+      jobId: 1,
+      notes: "Updated from the canonical listing.",
+    });
+
+    expect(canonicalSave).toEqual({ id: duplicateSave.id, updated: true });
+    expect(await getSavedJobs(userId)).toMatchObject([
+      { jobId: 1, notes: "Updated from the canonical listing." },
+    ]);
+
+    await unsaveJob(userId, 5);
+    expect(await getSavedJobs(userId)).toEqual([]);
+  });
 });

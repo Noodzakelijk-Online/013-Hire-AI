@@ -800,6 +800,29 @@ export async function completeAutonomousRunLease(
   return Number(result[0].affectedRows) > 0;
 }
 
+/** Resolve a reposted listing to the canonical job used by every user ledger. */
+export async function getCanonicalJobId(jobId: number): Promise<number | null> {
+  const db = await getDb();
+  if (!db) {
+    if (!sampleJobs.some((job) => job.id === jobId)) return null;
+    return sampleJobDuplicateLinks.find((link) => link.duplicateJobId === jobId)?.primaryJobId ?? jobId;
+  }
+
+  const job = await db
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(eq(jobs.id, jobId))
+    .limit(1);
+  if (!job[0]) return null;
+
+  const relation = await db
+    .select({ primaryJobId: jobDuplicates.primaryJobId })
+    .from(jobDuplicates)
+    .where(eq(jobDuplicates.duplicateJobId, jobId))
+    .limit(1);
+  return relation[0]?.primaryJobId ?? jobId;
+}
+
 export async function getAutonomousRunState(userId: number): Promise<AutonomousRunStateSnapshot | null> {
   const db = await getDb();
   if (!db) {
@@ -1004,6 +1027,11 @@ export async function disconnectUserConnectorAccount(userId: number, provider: I
 
 // Applications
 export async function createApplication(application: InsertApplication) {
+  const canonicalJobId = await getCanonicalJobId(application.jobId);
+  // Router entry points validate new user-facing job IDs. The storage helper
+  // also serves historical-record reconciliation, where an old job row may no
+  // longer be present in the in-memory fixture set.
+  application = { ...application, jobId: canonicalJobId ?? application.jobId };
   const db = await getDb();
   if (!db) {
     const existing = memoryApplications.find((item) =>
@@ -1184,6 +1212,9 @@ export async function updateApplicationStatus(
 }
 
 export async function createApplicationDecision(decision: InsertApplicationDecision) {
+  const canonicalJobId = await getCanonicalJobId(decision.jobId);
+  if (canonicalJobId === null) throw new Error("Job not found.");
+  decision = { ...decision, jobId: canonicalJobId };
   const db = await getDb();
   if (!db) {
     const existing = memoryApplicationDecisions.find((item) =>

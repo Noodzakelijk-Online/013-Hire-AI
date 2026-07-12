@@ -227,6 +227,54 @@ describe("application decision ledger", () => {
     )).toHaveLength(1);
   });
 
+  it("uses one canonical application decision and preparation record across duplicate source listings", async () => {
+    const userId = 94006;
+    await makePreparationReady(userId);
+    const caller = appRouter.createCaller(createContext(userId));
+
+    const duplicateSource = await caller.applications.decide({
+      jobId: 5,
+      decision: "review",
+      decisionReason: "Queue the role from a reposted source.",
+      reviewRequired: true,
+    });
+    const canonicalSource = await caller.applications.decide({
+      jobId: 1,
+      decision: "review",
+      decisionReason: "Update the same role from the canonical source.",
+      reviewRequired: true,
+    });
+
+    const applications = await getUserApplications(userId);
+    const decisions = await getUserApplicationDecisions(userId);
+
+    expect(duplicateSource.applicationRecordId).toBe(canonicalSource.applicationRecordId);
+    expect(applications).toHaveLength(1);
+    expect(applications[0].jobId).toBe(1);
+    expect(decisions).toMatchObject([{ jobId: 1, decision: "review" }]);
+  });
+
+  it("keeps direct preparation idempotent across duplicate source listings", async () => {
+    const userId = 94007;
+    await makePreparationReady(userId);
+    const caller = appRouter.createCaller(createContext(userId));
+
+    const duplicateSource = await caller.applications.create({ jobId: 5 });
+    const canonicalSource = await caller.applications.create({ jobId: 1 });
+    const artifacts = await getApplicationLedgerArtifacts(duplicateSource.applicationRecordId, userId);
+
+    expect(canonicalSource).toMatchObject({
+      success: true,
+      applicationRecordId: duplicateSource.applicationRecordId,
+      existing: true,
+    });
+    expect((await getUserApplications(userId))).toMatchObject([{ jobId: 1 }]);
+    expect(artifacts.attempts.filter((attempt) => attempt.attemptType === "prepare")).toHaveLength(1);
+    expect((await listUserApplicationApprovals(userId, "all")).filter((approval) =>
+      approval.applicationId === duplicateSource.applicationRecordId && approval.approvalType === "application_submission"
+    )).toHaveLength(1);
+  });
+
   it("closes stale prepared application work when a review item is ignored", async () => {
     const userId = 94003;
     await makePreparationReady(userId);
