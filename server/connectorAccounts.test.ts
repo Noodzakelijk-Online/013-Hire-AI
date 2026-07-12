@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TrpcContext } from "./_core/context";
-import { upsertUserProfile } from "./db";
+import { createApplication, getAuditEventsForUser, getEmployerResponses, upsertUserConnectorAccount, upsertUserProfile } from "./db";
 import { appRouter } from "./routers";
 
 function createContext(userId: number): TrpcContext {
@@ -28,6 +28,41 @@ function createContext(userId: number): TrpcContext {
 }
 
 describe("connector account tRPC procedures", () => {
+  it("ingests a connected inbox response once and records connector provenance", async () => {
+    const userId = 99652;
+    const application = await createApplication({
+      userId,
+      jobId: 2,
+      status: "applied",
+      notes: "Submitted application awaiting an email response.",
+    });
+    const applicationId = Number(application.insertId);
+    await upsertUserConnectorAccount({
+      userId,
+      provider: "gmail",
+      status: "connected",
+      consentScopes: JSON.stringify(["email.metadata.read", "email.messages.read_recruiting"]),
+      externalAccountLabel: "candidate@example.com",
+      lastVerifiedAt: new Date(),
+    });
+
+    const caller = appRouter.createCaller(createContext(userId));
+    const input = {
+      applicationId,
+      provider: "gmail" as const,
+      messageId: "gmail-message-99652",
+      responseType: "interview_invite" as const,
+      summary: "Recruiter invited the candidate to a first interview next week.",
+    };
+    const first = await caller.applications.ingestInboxResponse(input);
+    const second = await caller.applications.ingestInboxResponse(input);
+
+    expect(first.existing).toBe(false);
+    expect(second.existing).toBe(true);
+    expect((await getEmployerResponses(applicationId, userId))).toHaveLength(1);
+    expect((await getAuditEventsForUser(userId, 20)).some((event) => event.action === "inbox_response_ingested")).toBe(true);
+  });
+
   it("records connector intent, feeds evidence readiness, and audits without tokens", async () => {
     const userId = 99651;
     await upsertUserProfile({

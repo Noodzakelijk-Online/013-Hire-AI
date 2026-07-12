@@ -1375,6 +1375,70 @@ export const appRouter = router({
           });
         }
       }),
+    ingestInboxResponse: protectedProcedure
+      .input(z.object({
+        applicationId: z.number(),
+        provider: z.enum(["gmail", "outlook"]),
+        messageId: z.string().trim().min(3).max(280).regex(/^\S+$/, "Message ID cannot contain whitespace."),
+        responseType: z.enum(["viewed", "rejection", "interview_invite", "offer", "employer_question", "other"]),
+        summary: z.string().trim().min(8).max(5000),
+        receivedAt: z.string().datetime().transform((value) => new Date(value)).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { listUserConnectorAccounts, createAuditEvent } = await import("./db");
+        const account = (await listUserConnectorAccounts(ctx.user.id))
+          .find((item) => item.provider === input.provider);
+        const requiredScope = input.provider === "gmail"
+          ? "email.messages.read_recruiting"
+          : "mail.messages.read_recruiting";
+        let scopes: string[] = [];
+        try {
+          const parsed = account?.consentScopes ? JSON.parse(account.consentScopes) : [];
+          scopes = Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+        } catch {
+          scopes = [];
+        }
+        if (account?.status !== "connected" || !scopes.includes(requiredScope)) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `${input.provider === "gmail" ? "Gmail" : "Outlook"} must be connected with recruiting-message read consent before inbox responses can be ingested.`,
+          });
+        }
+
+        try {
+          const result = await recordEmployerResponse({
+            applicationId: input.applicationId,
+            responseType: input.responseType,
+            source: "email",
+            sourceReference: `${input.provider}:${input.messageId}`,
+            summary: input.summary,
+            receivedAt: input.receivedAt,
+          }, ctx.user.id);
+          await createAuditEvent({
+            userId: ctx.user.id,
+            entityType: "application",
+            entityId: input.applicationId,
+            action: "inbox_response_ingested",
+            actor: "system",
+            source: "applications.ingestInboxResponse",
+            afterState: JSON.stringify({
+              provider: input.provider,
+              messageId: input.messageId,
+              responseId: result.responseId,
+              existing: result.existing,
+              responseType: input.responseType,
+            }),
+            riskLevel: input.responseType === "offer" ? "high" : input.responseType === "interview_invite" ? "medium" : "low",
+          });
+          return { ...result, provider: input.provider };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unable to ingest inbox response.";
+          throw new TRPCError({
+            code: message === "Application not found." ? "NOT_FOUND" : "CONFLICT",
+            message,
+          });
+        }
+      }),
 
     // Application Notes
     addNote: protectedProcedure
