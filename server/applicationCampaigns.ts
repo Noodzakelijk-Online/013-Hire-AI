@@ -176,28 +176,36 @@ async function getFollowUpSuppressionState(
   return state;
 }
 
-function hasScheduledInterview(
+function getInterviewSchedulingRequirement(
   schedules: Awaited<ReturnType<typeof getInterviewSchedules>>
-): boolean {
-  return schedules.some((schedule) =>
-    ["scheduled", "rescheduled", "completed", "cancelled"].includes(schedule.status || "scheduled")
-  );
+): "missing_schedule" | "cancelled_schedule" | null {
+  if (schedules.some((schedule) => ["scheduled", "rescheduled"].includes(schedule.status || "scheduled"))) {
+    return null;
+  }
+  if (schedules.some((schedule) => schedule.status === "cancelled")) {
+    return "cancelled_schedule";
+  }
+  if (schedules.some((schedule) => schedule.status === "completed")) {
+    return null;
+  }
+  return "missing_schedule";
 }
 
 async function getInterviewSchedulingQueue(applications: UserApplicationRecord[], userId: number) {
   const interviewApplications = applications.filter((application) => application.status === "interview");
   const schedulingState = await Promise.all(interviewApplications.map(async (application) => ({
     application,
-    hasSchedule: hasScheduledInterview(await getInterviewSchedules(application.id, userId)),
+    schedulingRequirement: getInterviewSchedulingRequirement(await getInterviewSchedules(application.id, userId)),
   })));
 
   return schedulingState
-    .filter((item) => !item.hasSchedule)
-    .map(({ application }) => ({
+    .filter((item) => item.schedulingRequirement !== null)
+    .map(({ application, schedulingRequirement }) => ({
       applicationId: application.id,
       jobId: application.jobId,
       status: application.status,
       lastActivity: application.lastActivity,
+      schedulingRequirement,
       job: application.job ? {
         id: application.job.id,
         title: application.job.title,
@@ -560,7 +568,7 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
       ? `Review ${reviewDecisions.length} saved application decision${reviewDecisions.length === 1 ? "" : "s"}.`
       : "",
     interviewSchedulingQueue.length > 0
-      ? `Schedule ${interviewSchedulingQueue.length} interview invite${interviewSchedulingQueue.length === 1 ? "" : "s"} before follow-up automation continues.`
+      ? `Review ${interviewSchedulingQueue.length} interview scheduling item${interviewSchedulingQueue.length === 1 ? "" : "s"} before follow-up automation continues.`
       : "",
     interviewNotificationQueue.length > 0
       ? `Review ${interviewNotificationQueue.length} verified interview invite${interviewNotificationQueue.length === 1 ? "" : "s"}.`

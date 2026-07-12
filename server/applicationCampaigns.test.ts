@@ -9,7 +9,7 @@ vi.mock("./resumeStorage", async (importOriginal) => ({
   getActiveResume: mocks.getActiveResume,
 }));
 import { getUserOperatingLedger } from "./applicationCampaigns";
-import { createFollowUp, markFollowUpSent, recordEmployerResponse, scheduleInterview } from "./applicationFeatures";
+import { createFollowUp, markFollowUpSent, recordEmployerResponse, scheduleInterview, updateInterviewStatus } from "./applicationFeatures";
 import {
   createAdminReviewItem,
   createApplication,
@@ -444,7 +444,7 @@ describe("application campaign operating ledger", () => {
     expect(ledger.queues.interviewScheduling).toHaveLength(1);
     expect(ledger.queues.followUpsDue).toHaveLength(0);
     expect(ledger.queues.interviewScheduling[0].applicationId).toBe(Number(application.insertId));
-    expect(ledger.nextActions.some((action) => action.includes("Schedule 1 interview invite"))).toBe(true);
+    expect(ledger.nextActions.some((action) => action.includes("Review 1 interview scheduling item"))).toBe(true);
 
     await scheduleInterview({
       applicationId: Number(application.insertId),
@@ -458,6 +458,33 @@ describe("application campaign operating ledger", () => {
 
     expect(ledgerAfterScheduling.metrics.interviewSchedulingNeeded).toBe(0);
     expect(ledgerAfterScheduling.queues.interviewScheduling).toHaveLength(0);
+  });
+
+  it("returns cancelled interview schedules to the operator review queue", async () => {
+    const userId = 99011;
+    const application = await createApplication({
+      userId,
+      jobId: 2,
+      status: "interview",
+      notes: "A scheduled interview was later cancelled.",
+    });
+    const applicationId = Number(application.insertId);
+    const interview = await scheduleInterview({
+      applicationId,
+      interviewType: "video",
+      scheduledAt: new Date(Date.now() + 3 * 86400000),
+    }, userId);
+    await updateInterviewStatus(interview.id, "cancelled", userId);
+
+    const ledger = await getUserOperatingLedger(userId);
+
+    expect(ledger.metrics.interviewSchedulingNeeded).toBe(1);
+    expect(ledger.queues.interviewScheduling).toHaveLength(1);
+    expect(ledger.queues.interviewScheduling[0]).toMatchObject({
+      applicationId,
+      schedulingRequirement: "cancelled_schedule",
+    });
+    expect(ledger.nextActions).toContain("Review 1 interview scheduling item before follow-up automation continues.");
   });
 
   it("suppresses routine follow-up queue items once an active draft approval exists", async () => {
