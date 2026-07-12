@@ -113,6 +113,41 @@
       "when": 1782266400000,
       "tag": "0015_employment_ended_review",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "5",
+      "when": 1782352800000,
+      "tag": "0016_employer_response_source_reference",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "5",
+      "when": 1782439200000,
+      "tag": "0017_application_interview_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "5",
+      "when": 1782525600000,
+      "tag": "0018_job_duplicate_source_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "5",
+      "when": 1782612000000,
+      "tag": "0019_security_constraints",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "5",
+      "when": 1782698400000,
+      "tag": "0020_autonomous_run_summary",
+      "breakpoints": true
     }
   ]
 }
