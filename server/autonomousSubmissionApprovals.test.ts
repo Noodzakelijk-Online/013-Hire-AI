@@ -261,6 +261,58 @@ describe("autonomous submission approval gates", () => {
     )).toBe(true);
   });
 
+  it("does not draft routine follow-ups while a completed interview needs an outcome", async () => {
+    const userId = 99108;
+    const staleDate = new Date(Date.now() - 8 * 86400000);
+
+    await upsertUserProfile({
+      userId,
+      skills: "React, TypeScript",
+      experience: "Five years building production web applications.",
+      desiredJobTypes: "full-time",
+      desiredLocations: "remote",
+      preferences: JSON.stringify({
+        autonomousEnabled: true,
+        minMatchScore: 100,
+        dailyApplicationLimit: 1,
+        createFollowUps: true,
+      }),
+    });
+
+    const application = await createApplication({
+      userId,
+      jobId: 2,
+      status: "interview",
+      appliedDate: staleDate,
+      lastActivity: staleDate,
+      notes: "The interview completed but its result has not been recorded.",
+    });
+    const applicationId = Number(application.insertId);
+    const interview = await scheduleInterview({
+      applicationId,
+      interviewType: "video",
+      scheduledAt: new Date(Date.now() + 3 * 86400000),
+    }, userId);
+    await updateInterviewStatus(interview.id, "completed", userId);
+    await touchApplicationActivity(applicationId, userId, staleDate);
+
+    const result = await runAutonomousForUser(userId, {
+      createFollowUps: true,
+      minMatchScore: 100,
+      dailyApplicationLimit: 1,
+    });
+    const followUps = await getFollowUps(applicationId, userId);
+    const auditEvents = await getAuditEventsForEntity(userId, "application", applicationId);
+
+    expect(result.queuedFollowUps).toBe(0);
+    expect(result.skippedSafetyBlockedFollowUps).toBe(1);
+    expect(followUps).toHaveLength(0);
+    expect(auditEvents.some((event) =>
+      event.action === "autonomous_follow_up_safety_blocked" &&
+      event.afterState?.includes("completed interview needs an outcome")
+    )).toBe(true);
+  });
+
   it("does not draft routine follow-ups while a later interview round needs scheduling", async () => {
     const userId = 99107;
     const staleDate = new Date(Date.now() - 8 * 86400000);
