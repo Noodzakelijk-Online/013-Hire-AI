@@ -647,6 +647,8 @@ function existingEmployerResponseResult(response: {
     responseType: response.responseType,
     responseId: response.id,
     cancelledFollowUpApprovalIds: [] as number[],
+    cancelledOfferAttributionApprovalIds: [] as number[],
+    dismissedOfferAttributionReviewIds: [] as number[],
   };
 }
 
@@ -656,6 +658,17 @@ function shouldCancelUnsentFollowUpApprovals(responseType: EmployerResponseInput
 
 function staleFollowUpCancellationNote(responseType: EmployerResponseInput["responseType"], responseId: number) {
   return `Employer response ${responseId} (${responseType}) made the unsent follow-up draft stale.`;
+}
+
+function shouldRetireOfferAttribution(
+  currentStatus: ApplicationStatus,
+  responseType: EmployerResponseInput["responseType"]
+) {
+  return currentStatus === "offer" && responseType === "rejection";
+}
+
+function staleOfferAttributionCancellationNote(responseId: number) {
+  return `Employer response ${responseId} withdrew or rejected the offer, so offer attribution is no longer actionable.`;
 }
 
 export async function recordEmployerResponse(input: RecordEmployerResponseInput, userId: number) {
@@ -776,6 +789,54 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
       }
     }
 
+    const cancelledOfferAttributionApprovalIds: number[] = [];
+    const dismissedOfferAttributionReviewIds: number[] = [];
+    if (shouldRetireOfferAttribution(currentStatus, response.responseType)) {
+      const staleApprovals = (await listUserApplicationApprovals(userId, "all")).filter((approval) =>
+        approval.applicationId === input.applicationId &&
+        approval.entityType === "application" &&
+        approval.entityId === input.applicationId &&
+        approval.approvalType === "offer_attribution" &&
+        ["pending", "approved"].includes(approval.status)
+      );
+      for (const approval of staleApprovals) {
+        const cancellationNote = staleOfferAttributionCancellationNote(responseId);
+        if (approval.status === "pending") {
+          await resolveApplicationApproval(approval.id, userId, "cancelled", cancellationNote, "user");
+        } else {
+          approval.status = "cancelled";
+          approval.decidedBy = "user";
+          approval.decisionNote = cancellationNote;
+          approval.decidedAt = response.receivedAt;
+          approval.updatedAt = response.receivedAt;
+        }
+        cancelledOfferAttributionApprovalIds.push(approval.id);
+      }
+      const reviewResult = await dismissOfferAttributionAdminReviews(
+        userId,
+        input.applicationId,
+        "Dismissed because an employer response withdrew or rejected the offer."
+      );
+      dismissedOfferAttributionReviewIds.push(...reviewResult.dismissedReviewIds);
+      if (cancelledOfferAttributionApprovalIds.length > 0 || dismissedOfferAttributionReviewIds.length > 0) {
+        await createAuditEvent({
+          userId,
+          entityType: "application",
+          entityId: input.applicationId,
+          action: "stale_offer_attribution_retired",
+          actor: "system",
+          source: "applications.recordResponse",
+          afterState: JSON.stringify({
+            responseId,
+            responseType: response.responseType,
+            cancelledApprovalIds: cancelledOfferAttributionApprovalIds,
+            dismissedReviewIds: dismissedOfferAttributionReviewIds,
+          }),
+          riskLevel: "high",
+        });
+      }
+    }
+
     await createAuditEvent({
       userId,
       entityType: "application",
@@ -833,6 +894,8 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
       responseType: response.responseType,
       responseId,
       cancelledFollowUpApprovalIds,
+      cancelledOfferAttributionApprovalIds,
+      dismissedOfferAttributionReviewIds,
     };
   }
 
@@ -890,6 +953,8 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
     });
     const responseId = Number(responseWrite[0].insertId);
     const cancelledFollowUpApprovalIds: number[] = [];
+    const cancelledOfferAttributionApprovalIds: number[] = [];
+    const dismissedOfferAttributionReviewIds: number[] = [];
 
     if (response.responseType === "interview_invite") {
       const notification = await tx.insert(applicationNotifications).values({
@@ -987,6 +1052,70 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
       }
     }
 
+    if (shouldRetireOfferAttribution(application[0].status, response.responseType)) {
+      const staleApprovals = await tx
+        .select({ id: applicationApprovals.id, status: applicationApprovals.status })
+        .from(applicationApprovals)
+        .where(and(
+          eq(applicationApprovals.userId, userId),
+          eq(applicationApprovals.applicationId, input.applicationId),
+          eq(applicationApprovals.entityType, "application"),
+          eq(applicationApprovals.entityId, input.applicationId),
+          eq(applicationApprovals.approvalType, "offer_attribution"),
+          inArray(applicationApprovals.status, ["pending", "approved"])
+        ));
+      if (staleApprovals.length > 0) {
+        await tx
+          .update(applicationApprovals)
+          .set({
+            status: "cancelled",
+            decidedBy: "user",
+            decisionNote: staleOfferAttributionCancellationNote(responseId),
+            decidedAt: response.receivedAt,
+          })
+          .where(inArray(applicationApprovals.id, staleApprovals.map((approval) => approval.id)));
+        cancelledOfferAttributionApprovalIds.push(...staleApprovals.map((approval) => approval.id));
+      }
+      const staleReviews = await tx
+        .select({ id: adminReviewItems.id })
+        .from(adminReviewItems)
+        .where(and(
+          eq(adminReviewItems.userId, userId),
+          eq(adminReviewItems.entityType, "application"),
+          eq(adminReviewItems.entityId, input.applicationId),
+          eq(adminReviewItems.category, "offer_attribution"),
+          inArray(adminReviewItems.status, ["open", "in_progress"])
+        ));
+      if (staleReviews.length > 0) {
+        await tx
+          .update(adminReviewItems)
+          .set({
+            status: "dismissed",
+            resolution: "Dismissed because an employer response withdrew or rejected the offer.",
+            resolvedAt: response.receivedAt,
+          })
+          .where(inArray(adminReviewItems.id, staleReviews.map((review) => review.id)));
+        dismissedOfferAttributionReviewIds.push(...staleReviews.map((review) => review.id));
+      }
+      if (cancelledOfferAttributionApprovalIds.length > 0 || dismissedOfferAttributionReviewIds.length > 0) {
+        await tx.insert(auditEvents).values({
+          userId,
+          entityType: "application",
+          entityId: input.applicationId,
+          action: "stale_offer_attribution_retired",
+          actor: "system",
+          source: "applications.recordResponse",
+          afterState: JSON.stringify({
+            responseId,
+            responseType: response.responseType,
+            cancelledApprovalIds: cancelledOfferAttributionApprovalIds,
+            dismissedReviewIds: dismissedOfferAttributionReviewIds,
+          }),
+          riskLevel: "high",
+        });
+      }
+    }
+
     await tx.insert(auditEvents).values({
       userId,
       entityType: "application",
@@ -1066,6 +1195,8 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
       responseType: response.responseType,
       responseId,
       cancelledFollowUpApprovalIds,
+      cancelledOfferAttributionApprovalIds,
+      dismissedOfferAttributionReviewIds,
     };
   });
 }

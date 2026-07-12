@@ -142,6 +142,62 @@ describe("response and interview memory fallback", () => {
     expect(ledger.metrics.employerResponses).toBe(1);
   });
 
+  it("retires offer attribution work when an employer withdraws an offer", async () => {
+    const userId = 98206;
+    const application = await createApplication({
+      userId,
+      jobId: 2,
+      status: "applied",
+      notes: "Submitted application that later received and lost an offer.",
+    });
+    const applicationId = Number(application.insertId);
+
+    await recordEmployerResponse({
+      applicationId,
+      responseType: "offer",
+      source: "email",
+      summary: "Employer sent a written offer for the role.",
+      receivedAt: new Date(),
+    }, userId);
+
+    const offerApproval = (await listUserApplicationApprovals(userId, "pending")).find((approval) =>
+      approval.applicationId === applicationId && approval.approvalType === "offer_attribution"
+    );
+    const offerReview = (await listAdminReviewItems("open")).find((review) =>
+      review.userId === userId &&
+      review.entityType === "application" &&
+      review.entityId === applicationId &&
+      review.category === "offer_attribution"
+    );
+    expect(offerApproval).toBeTruthy();
+    expect(offerReview).toBeTruthy();
+
+    const retraction = await recordEmployerResponse({
+      applicationId,
+      responseType: "rejection",
+      source: "email",
+      summary: "Employer withdrew the written offer after internal changes.",
+      receivedAt: new Date(),
+    }, userId);
+
+    expect(retraction.status).toBe("rejected");
+    expect(retraction.cancelledOfferAttributionApprovalIds).toContain(offerApproval!.id);
+    expect(retraction.dismissedOfferAttributionReviewIds).toContain(offerReview!.id);
+    expect((await getUserApplications(userId)).find((item) => item.id === applicationId)?.status).toBe("rejected");
+    expect((await listUserApplicationApprovals(userId, "all")).find((approval) => approval.id === offerApproval!.id)?.status).toBe("cancelled");
+    expect((await listAdminReviewItems("all")).find((review) => review.id === offerReview!.id)?.status).toBe("dismissed");
+
+    const artifacts = await getApplicationLedgerArtifacts(applicationId, userId);
+    expect(artifacts.auditEvents.some((event) =>
+      event.action === "stale_offer_attribution_retired" &&
+      event.afterState?.includes(String(offerApproval!.id)) &&
+      event.afterState?.includes(String(offerReview!.id))
+    )).toBe(true);
+    expect((await getUserOfferAttributionReviews(userId)).some((review) =>
+      review.approval?.id === offerApproval!.id
+    )).toBe(false);
+  });
+
   it("keeps pending follow-up approval when only a view signal is recorded", async () => {
     const userId = 98205;
     const application = await createApplication({
