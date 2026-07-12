@@ -2316,6 +2316,15 @@ export async function withdrawApplication(
       approval.applicationId === applicationId &&
       isWithdrawalCancellableApproval(approval, unsentFollowUpIds, cancelOfferAttribution)
     );
+    const cancelledInterviews = memoryInterviewSchedules.filter((interview) =>
+      interview.applicationId === applicationId &&
+      ["scheduled", "rescheduled"].includes(interview.status || "scheduled")
+    );
+    const cancelledInterviewIds = cancelledInterviews.map((interview) => interview.id);
+    for (const interview of cancelledInterviews) {
+      interview.status = "cancelled";
+      interview.updatedAt = cancelledAt;
+    }
 
     await updateApplicationStatus(applicationId, "withdrawn", userId);
     for (const approval of cancellableApprovals) {
@@ -2382,6 +2391,22 @@ export async function withdrawApplication(
         riskLevel: "medium",
       });
     }
+    if (cancelledInterviewIds.length > 0) {
+      await createAuditEvent({
+        userId,
+        entityType: "application",
+        entityId: applicationId,
+        action: "interviews_cancelled_after_application_withdrawal",
+        actor: "user",
+        source: "applications.withdraw",
+        afterState: JSON.stringify({
+          status: "withdrawn",
+          cancelledInterviewIds,
+          externalCancellationSent: false,
+        }),
+        riskLevel: "medium",
+      });
+    }
 
     return {
       success: true,
@@ -2389,6 +2414,7 @@ export async function withdrawApplication(
       cancelledSubmissionApprovalIds,
       cancelledOfferAttributionApprovalIds,
       dismissedOfferAttributionReviewIds,
+      cancelledInterviewIds,
     };
   }
 
@@ -2424,6 +2450,23 @@ export async function withdrawApplication(
     const cancellableApprovals = activeApprovals.filter((approval) =>
       isWithdrawalCancellableApproval(approval, unsentFollowUpIds, cancelOfferAttribution)
     );
+    const scheduledInterviews = await tx
+      .select({ id: interviewSchedules.id })
+      .from(interviewSchedules)
+      .where(and(
+        eq(interviewSchedules.applicationId, applicationId),
+        inArray(interviewSchedules.status, ["scheduled", "rescheduled"])
+      ));
+    const cancelledInterviewIds = scheduledInterviews.map((interview) => interview.id);
+    if (cancelledInterviewIds.length > 0) {
+      await tx
+        .update(interviewSchedules)
+        .set({ status: "cancelled" })
+        .where(and(
+          inArray(interviewSchedules.id, cancelledInterviewIds),
+          inArray(interviewSchedules.status, ["scheduled", "rescheduled"])
+        ));
+    }
 
     if (application[0].status !== "withdrawn") {
       const statusUpdate = await tx
@@ -2522,6 +2565,22 @@ export async function withdrawApplication(
         riskLevel: "medium",
       });
     }
+    if (cancelledInterviewIds.length > 0) {
+      await tx.insert(auditEvents).values({
+        userId,
+        entityType: "application",
+        entityId: applicationId,
+        action: "interviews_cancelled_after_application_withdrawal",
+        actor: "user",
+        source: "applications.withdraw",
+        afterState: JSON.stringify({
+          status: "withdrawn",
+          cancelledInterviewIds,
+          externalCancellationSent: false,
+        }),
+        riskLevel: "medium",
+      });
+    }
 
     return {
       success: true,
@@ -2529,6 +2588,7 @@ export async function withdrawApplication(
       cancelledSubmissionApprovalIds,
       cancelledOfferAttributionApprovalIds,
       dismissedOfferAttributionReviewIds,
+      cancelledInterviewIds,
     };
   });
 }

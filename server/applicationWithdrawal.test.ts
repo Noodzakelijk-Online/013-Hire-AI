@@ -2,7 +2,7 @@ import type { TrpcContext } from "./_core/context";
 import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
 import { createAdminReviewItem, createApplication, createApplicationApproval, getApplicationLedgerArtifacts, getUserApplications, listAdminReviewItems, listUserApplicationApprovals, resolveApplicationApproval } from "./db";
-import { createFollowUp, markFollowUpSent } from "./applicationFeatures";
+import { createFollowUp, getInterviewSchedules, getUpcomingInterviews, markFollowUpSent, scheduleInterview } from "./applicationFeatures";
 
 function createContext(userId: number): TrpcContext {
   return {
@@ -151,6 +151,38 @@ describe("application withdrawal", () => {
     expect(artifacts.auditEvents.some((event) =>
       event.action === "application_external_actions_cancelled" &&
       event.afterState?.includes(String(attributionApproval.insertId))
+    )).toBe(true);
+  });
+
+  it("retires scheduled interviews when a user withdraws an interview-stage application", async () => {
+    const userId = 98303;
+    const application = await createApplication({
+      userId,
+      jobId: 2,
+      status: "interview",
+      notes: "Candidate needs to withdraw before the scheduled interview.",
+    });
+    const applicationId = Number(application.insertId);
+    const interview = await scheduleInterview({
+      applicationId,
+      interviewType: "video",
+      scheduledAt: new Date(Date.now() + 3 * 86400000),
+    }, userId);
+
+    expect((await getUpcomingInterviews(userId)).some((item) => item.interview.id === interview.id)).toBe(true);
+
+    const caller = appRouter.createCaller(createContext(userId));
+    await caller.applications.updateStatus({ applicationId, status: "withdrawn" });
+
+    expect((await getUserApplications(userId)).find((item) => item.id === applicationId)?.status).toBe("withdrawn");
+    expect((await getInterviewSchedules(applicationId, userId)).find((item) => item.id === interview.id)?.status).toBe("cancelled");
+    expect((await getUpcomingInterviews(userId)).some((item) => item.interview.id === interview.id)).toBe(false);
+
+    const artifacts = await getApplicationLedgerArtifacts(applicationId, userId);
+    expect(artifacts.auditEvents.some((event) =>
+      event.action === "interviews_cancelled_after_application_withdrawal" &&
+      event.afterState?.includes(String(interview.id)) &&
+      event.afterState?.includes("externalCancellationSent\":false")
     )).toBe(true);
   });
 });
