@@ -64,6 +64,7 @@ export async function getAutonomousEvidenceContext(
     profile,
     applications,
     providers: profileEvidence.providers,
+    hasActiveResumeArtifact: Boolean(activeResume),
   });
 
   return {

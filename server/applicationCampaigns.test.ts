@@ -199,6 +199,18 @@ describe("application campaign operating ledger", () => {
 
   it("surfaces requested connector OAuth completion without claiming external access", async () => {
     const userId = 99009;
+    mocks.getActiveResume.mockResolvedValueOnce({
+      id: 99009,
+      userId,
+      fileName: "resume.pdf",
+      fileUrl: "https://storage.example.local/resumes/99009/resume.pdf",
+      fileKey: "resumes/99009/resume.pdf",
+      fileSize: 1024,
+      mimeType: "application/pdf",
+      version: 1,
+      isActive: true,
+      uploadedAt: new Date(),
+    });
     await upsertUserProfile({
       userId,
       skills: "TypeScript, React, Node.js",
@@ -236,6 +248,33 @@ describe("application campaign operating ledger", () => {
       consentScopes: ["profile.basic.read"],
     });
     expect(JSON.stringify(ledger)).not.toContain("accessToken");
+  });
+
+  it("keeps cloud resume discovery visible until an active resume artifact exists", async () => {
+    const userId = 99011;
+    await upsertUserProfile({
+      userId,
+      skills: "TypeScript, React, Node.js",
+      experience: "Five years building production web applications.",
+      desiredJobTypes: "Frontend Engineer",
+      desiredLocations: "Remote",
+      resumeUrl: "https://stale.example.com/resume.pdf",
+      resumeFileKey: "resumes/99011/stale-resume.pdf",
+    });
+
+    const ledger = await getUserOperatingLedger(userId);
+
+    expect(ledger.profileEvidence.providers.find((provider) => provider.id === "resume")?.status).toBe("missing");
+    expect(ledger.queues.connectorReadiness).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "cloud-resume-discovery",
+          providerIds: ["google_drive", "dropbox"],
+          status: "not_connected",
+        }),
+      ])
+    );
+    expect(ledger.queues.evidenceGates.map((gate) => gate.id)).toContain("connector-cloud-resume-discovery");
   });
 
   it("keeps inbox response monitoring blocked until a requested connector is actually connected", async () => {

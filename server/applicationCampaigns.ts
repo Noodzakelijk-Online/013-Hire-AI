@@ -373,6 +373,7 @@ export function getConnectorReadinessQueue(input: {
   profile: UserProfile | null | undefined;
   applications: UserApplicationRecord[];
   providers: ProfileEvidenceProvider[];
+  hasActiveResumeArtifact: boolean;
 }) {
   const providerById = new Map(input.providers.map((provider) => [provider.id, provider]));
   const items = input.providers
@@ -406,7 +407,7 @@ export function getConnectorReadinessQueue(input: {
     }));
   }
 
-  const hasResumeEvidence = Boolean(input.profile?.resumeUrl || input.profile?.resumeFileKey);
+  const hasResumeEvidence = input.hasActiveResumeArtifact;
   const hasConnectedCloud = ["google_drive", "dropbox"].some((providerId) => {
     const provider = providerById.get(providerId as ProfileEvidenceProvider["id"]);
     return providerIsConnected(provider);
@@ -535,6 +536,7 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
     profile,
     applications,
     providers: profileEvidence.providers,
+    hasActiveResumeArtifact: Boolean(activeResume),
   });
   const evidenceGates = buildAutonomousEvidenceGates({
     profileEvidence,
