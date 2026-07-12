@@ -1414,22 +1414,24 @@ export const appRouter = router({
             summary: input.summary,
             receivedAt: input.receivedAt,
           }, ctx.user.id);
-          await createAuditEvent({
-            userId: ctx.user.id,
-            entityType: "application",
-            entityId: input.applicationId,
-            action: "inbox_response_ingested",
-            actor: "system",
-            source: "applications.ingestInboxResponse",
-            afterState: JSON.stringify({
-              provider: input.provider,
-              messageId: input.messageId,
-              responseId: result.responseId,
-              existing: result.existing,
-              responseType: input.responseType,
-            }),
-            riskLevel: input.responseType === "offer" ? "high" : input.responseType === "interview_invite" ? "medium" : "low",
-          });
+          if (!result.existing) {
+            await createAuditEvent({
+              userId: ctx.user.id,
+              entityType: "application",
+              entityId: input.applicationId,
+              action: "inbox_response_ingested",
+              actor: "system",
+              source: "applications.ingestInboxResponse",
+              afterState: JSON.stringify({
+                provider: input.provider,
+                messageId: input.messageId,
+                responseId: result.responseId,
+                existing: false,
+                responseType: input.responseType,
+              }),
+              riskLevel: input.responseType === "offer" ? "high" : input.responseType === "interview_invite" ? "medium" : "low",
+            });
+          }
           return { ...result, provider: input.provider };
         } catch (error) {
           const message = error instanceof Error ? error.message : "Unable to ingest inbox response.";

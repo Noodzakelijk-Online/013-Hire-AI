@@ -60,7 +60,7 @@ describe("connector account tRPC procedures", () => {
     expect(first.existing).toBe(false);
     expect(second.existing).toBe(true);
     expect((await getEmployerResponses(applicationId, userId))).toHaveLength(1);
-    expect((await getAuditEventsForUser(userId, 20)).some((event) => event.action === "inbox_response_ingested")).toBe(true);
+    expect((await getAuditEventsForUser(userId, 20)).filter((event) => event.action === "inbox_response_ingested")).toHaveLength(1);
   });
 
   it("records connector intent, feeds evidence readiness, and audits without tokens", async () => {
