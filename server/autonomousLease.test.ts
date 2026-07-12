@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   acquireAutonomousRunLease,
   completeAutonomousRunLease,
+  getAutonomousRunState,
 } from "./db";
 
 describe("autonomous run leases", () => {
@@ -48,5 +49,34 @@ describe("autonomous run leases", () => {
     ).toBe(true);
     expect(await acquireAutonomousRunLease(userId, "reenabled", 60_000)).toBe(true);
     await completeAutonomousRunLease(userId, "reenabled");
+  });
+
+  it("persists a sanitized completed-run summary after its lease is released", async () => {
+    const userId = 91005;
+    expect(await acquireAutonomousRunLease(userId, "summary", 0)).toBe(true);
+
+    await completeAutonomousRunLease(userId, "summary", undefined, {
+      queuedApplicationRecords: 1,
+      queuedReviewRecords: 2,
+      queuedManualRecords: 0,
+      queuedFollowUps: 1,
+      skippedDuplicateFollowUps: 1,
+      skippedSafetyBlockedFollowUps: 0,
+      skippedResumeEvidenceActions: 3,
+      skippedEvidenceGatedActions: 2,
+      failedActions: 0,
+    });
+
+    expect(await getAutonomousRunState(userId)).toMatchObject({
+      lastStatus: "completed",
+      lastError: null,
+      lastCompletedAt: expect.any(Date),
+      lastRunSummary: {
+        queuedApplicationRecords: 1,
+        queuedReviewRecords: 2,
+        queuedFollowUps: 1,
+        skippedResumeEvidenceActions: 3,
+      },
+    });
   });
 });

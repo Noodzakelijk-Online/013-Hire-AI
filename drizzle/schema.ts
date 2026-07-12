@@ -459,6 +459,7 @@ export const autonomousRunStates = mysqlTable("autonomous_run_states", {
   lastCompletedAt: timestamp("last_completed_at"),
   lastStatus: mysqlEnum("last_status", ["running", "completed", "failed"]),
   lastError: text("last_error"),
+  lastRunSummary: text("last_run_summary"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
 }, (table) => [

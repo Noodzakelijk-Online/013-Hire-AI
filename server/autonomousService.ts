@@ -56,6 +56,20 @@ export interface AutonomousRunResult extends AutonomousPlan {
 
 const activeRuns = new AutonomousRunRegistry<AutonomousRunResult | null>();
 
+function persistableRunSummary(result: AutonomousRunResult) {
+  return {
+    queuedApplicationRecords: result.queuedApplicationRecords,
+    queuedReviewRecords: result.queuedReviewRecords,
+    queuedManualRecords: result.queuedManualRecords,
+    queuedFollowUps: result.queuedFollowUps,
+    skippedDuplicateFollowUps: result.skippedDuplicateFollowUps,
+    skippedSafetyBlockedFollowUps: result.skippedSafetyBlockedFollowUps,
+    skippedResumeEvidenceActions: result.skippedResumeEvidenceActions,
+    skippedEvidenceGatedActions: result.skippedEvidenceGatedActions,
+    failedActions: result.failedActions,
+  };
+}
+
 function wasNewApplication(result: unknown): boolean {
   return !(result && typeof result === "object" && "existing" in result && result.existing === true);
 }
@@ -709,7 +723,12 @@ async function runWithLease(
     }
 
     try {
-      const completed = await completeAutonomousRunLease(userId, leaseToken);
+      const completed = await completeAutonomousRunLease(
+        userId,
+        leaseToken,
+        undefined,
+        persistableRunSummary(result)
+      );
       if (!completed) {
         throw new Error("The autonomous run lost its execution lease before completion.");
       }

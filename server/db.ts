@@ -115,7 +115,59 @@ const memoryAutonomousRuns = new Map<number, {
   leaseToken: string | null;
   leaseExpiresAt: number;
   lastCompletedAt: number;
+  lastStartedAt: number | null;
+  lastStatus: "running" | "completed" | "failed" | null;
+  lastError: string | null;
+  lastRunSummary: string | null;
 }>();
+
+export interface AutonomousRunSummaryRecord {
+  queuedApplicationRecords: number;
+  queuedReviewRecords: number;
+  queuedManualRecords: number;
+  queuedFollowUps: number;
+  skippedDuplicateFollowUps: number;
+  skippedSafetyBlockedFollowUps: number;
+  skippedResumeEvidenceActions: number;
+  skippedEvidenceGatedActions: number;
+  failedActions: number;
+}
+
+export interface AutonomousRunStateSnapshot {
+  lastStartedAt: Date | null;
+  lastCompletedAt: Date | null;
+  lastStatus: "running" | "completed" | "failed" | null;
+  lastError: string | null;
+  lastRunSummary: AutonomousRunSummaryRecord | null;
+}
+
+function parseAutonomousRunSummary(value: string | null | undefined): AutonomousRunSummaryRecord | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    const keys: Array<keyof AutonomousRunSummaryRecord> = [
+      "queuedApplicationRecords",
+      "queuedReviewRecords",
+      "queuedManualRecords",
+      "queuedFollowUps",
+      "skippedDuplicateFollowUps",
+      "skippedSafetyBlockedFollowUps",
+      "skippedResumeEvidenceActions",
+      "skippedEvidenceGatedActions",
+      "failedActions",
+    ];
+    if (!keys.every((key) => typeof parsed[key] === "number" && Number.isFinite(parsed[key]))) {
+      return null;
+    }
+    const summary = {} as AutonomousRunSummaryRecord;
+    for (const key of keys) {
+      summary[key] = Math.max(0, Math.round(parsed[key] as number));
+    }
+    return summary;
+  } catch {
+    return null;
+  }
+}
 
 // Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
@@ -600,6 +652,10 @@ export async function acquireAutonomousRunLease(
       leaseToken,
       leaseExpiresAt: leaseExpiresAt.getTime(),
       lastCompletedAt: state?.lastCompletedAt || 0,
+      lastStartedAt: now.getTime(),
+      lastStatus: "running",
+      lastError: null,
+      lastRunSummary: state?.lastRunSummary || null,
     });
     return true;
   }
@@ -639,7 +695,8 @@ export async function acquireAutonomousRunLease(
 export async function completeAutonomousRunLease(
   userId: number,
   leaseToken: string,
-  error?: string
+  error?: string,
+  lastRunSummary?: AutonomousRunSummaryRecord
 ) {
   const db = await getDb();
   if (!db) {
@@ -649,6 +706,10 @@ export async function completeAutonomousRunLease(
       leaseToken: null,
       leaseExpiresAt: 0,
       lastCompletedAt: error ? state.lastCompletedAt : Date.now(),
+      lastStartedAt: state.lastStartedAt,
+      lastStatus: error ? "failed" : "completed",
+      lastError: error?.slice(0, 2000) || null,
+      lastRunSummary: lastRunSummary ? JSON.stringify(lastRunSummary) : state.lastRunSummary,
     });
     return true;
   }
@@ -661,12 +722,51 @@ export async function completeAutonomousRunLease(
       lastCompletedAt: error ? sql`${autonomousRunStates.lastCompletedAt}` : new Date(),
       lastStatus: error ? "failed" : "completed",
       lastError: error?.slice(0, 2000) || null,
+      lastRunSummary: lastRunSummary
+        ? JSON.stringify(lastRunSummary)
+        : sql`${autonomousRunStates.lastRunSummary}`,
     })
     .where(and(
       eq(autonomousRunStates.userId, userId),
       eq(autonomousRunStates.leaseToken, leaseToken)
     ));
   return Number(result[0].affectedRows) > 0;
+}
+
+export async function getAutonomousRunState(userId: number): Promise<AutonomousRunStateSnapshot | null> {
+  const db = await getDb();
+  if (!db) {
+    const state = memoryAutonomousRuns.get(userId);
+    if (!state) return null;
+    return {
+      lastStartedAt: state.lastStartedAt ? new Date(state.lastStartedAt) : null,
+      lastCompletedAt: state.lastCompletedAt ? new Date(state.lastCompletedAt) : null,
+      lastStatus: state.lastStatus,
+      lastError: state.lastError,
+      lastRunSummary: parseAutonomousRunSummary(state.lastRunSummary),
+    };
+  }
+
+  const result = await db
+    .select({
+      lastStartedAt: autonomousRunStates.lastStartedAt,
+      lastCompletedAt: autonomousRunStates.lastCompletedAt,
+      lastStatus: autonomousRunStates.lastStatus,
+      lastError: autonomousRunStates.lastError,
+      lastRunSummary: autonomousRunStates.lastRunSummary,
+    })
+    .from(autonomousRunStates)
+    .where(eq(autonomousRunStates.userId, userId))
+    .limit(1);
+  const state = result[0];
+  if (!state) return null;
+  return {
+    lastStartedAt: state.lastStartedAt,
+    lastCompletedAt: state.lastCompletedAt,
+    lastStatus: state.lastStatus,
+    lastError: state.lastError,
+    lastRunSummary: parseAutonomousRunSummary(state.lastRunSummary),
+  };
 }
 
 export async function renewAutonomousRunLease(userId: number, leaseToken: string) {

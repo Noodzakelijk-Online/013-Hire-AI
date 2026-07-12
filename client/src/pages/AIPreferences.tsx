@@ -604,13 +604,13 @@ export default function AIPreferences() {
                 {schedulerStatus?.lastCycleAt ? (
                   <div className="rounded-md border border-slate-800 bg-slate-950/50 p-3 text-xs text-slate-400">
                     <div className="mb-2 flex items-center justify-between">
-                      <span>Last cycle</span>
+                      <span>Last autonomous run</span>
                       <span className="text-slate-300">
                         {new Date(schedulerStatus.lastCycleAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                       </span>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
-                      <span>{schedulerStatus.usersRun ? "Scheduled run completed" : "No scheduled run"}</span>
+                      <span>{schedulerStatus.lastStatus === "failed" ? "Run failed" : schedulerStatus.lastStatus === "running" ? "Run in progress" : "Run completed"}</span>
                       <span>{schedulerStatus.jobsQueued || 0} job task{schedulerStatus.jobsQueued === 1 ? "" : "s"}</span>
                       <span>{schedulerStatus.followUpDraftsQueued || 0} follow-up draft{schedulerStatus.followUpDraftsQueued === 1 ? "" : "s"}</span>
                       <span>{schedulerStatus.duplicateFollowUpsSkipped || 0} duplicate follow-up{schedulerStatus.duplicateFollowUpsSkipped === 1 ? "" : "s"} skipped</span>
@@ -619,9 +619,9 @@ export default function AIPreferences() {
                     </div>
                   </div>
                 ) : null}
-                {schedulerStatus?.errorCount ? (
+                {schedulerStatus?.lastError || schedulerStatus?.errorCount ? (
                   <p className="text-xs text-red-300">
-                    Latest scheduler cycle reported {schedulerStatus.errorCount} error{schedulerStatus.errorCount === 1 ? "" : "s"}.
+                    {schedulerStatus.lastError || `Latest scheduler cycle reported ${schedulerStatus.errorCount} error${schedulerStatus.errorCount === 1 ? "" : "s"}.`}
                   </p>
                 ) : null}
               </CardContent>

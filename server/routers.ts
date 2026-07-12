@@ -2274,27 +2274,38 @@ export const appRouter = router({
       }),
     schedulerStatus: protectedProcedure.query(async ({ ctx }) => {
       const { getAutonomousScheduler } = await import("./autonomousScheduler");
-      const { getUserProfile } = await import("./db");
+      const { getAutonomousRunState, getUserProfile } = await import("./db");
       const { parseAutonomousPreferences } = await import("./autonomousOrchestrator");
       const scheduler = getAutonomousScheduler();
       const status = scheduler.getStatus();
       const userStatus = scheduler.getUserStatus(ctx.user.id);
+      const persistedRunState = await getAutonomousRunState(ctx.user.id);
+      const persistedSummary = persistedRunState?.lastStatus === "completed"
+        ? persistedRunState.lastRunSummary
+        : null;
+      const persistedRunAt = persistedRunState?.lastStatus === "completed"
+        ? persistedRunState.lastCompletedAt || persistedRunState.lastStartedAt
+        : persistedRunState?.lastStartedAt || null;
       const profile = await getUserProfile(ctx.user.id);
       const preferences = parseAutonomousPreferences(profile?.preferences);
       return {
         isStarted: status.isStarted,
         isRunning: status.isRunning,
         userEnabled: preferences.autonomousEnabled === true,
-        lastCycleAt: userStatus?.lastRunAt || null,
+        lastCycleAt: persistedRunAt || userStatus?.lastRunAt || null,
+        lastStatus: persistedRunState?.lastStatus || null,
+        lastError: persistedRunState?.lastError || null,
         nextCycleAt: status.nextCycleAt,
-        usersRun: userStatus ? 1 : 0,
-        jobsQueued: userStatus?.jobsQueued || 0,
-        followUpDraftsQueued: userStatus?.followUpDraftsQueued || 0,
-        duplicateFollowUpsSkipped: userStatus?.duplicateFollowUpsSkipped || 0,
-        resumeEvidenceBlockedActions: userStatus?.resumeEvidenceBlockedActions || 0,
-        evidenceGatedActions: userStatus?.evidenceGatedActions || 0,
-        failedActions: userStatus?.failedActions || 0,
-        errorCount: userStatus?.errorCount || 0,
+        usersRun: persistedRunState?.lastStatus === "completed" || (!persistedRunState && userStatus) ? 1 : 0,
+        jobsQueued: (persistedSummary
+          ? persistedSummary.queuedApplicationRecords + persistedSummary.queuedReviewRecords + persistedSummary.queuedManualRecords
+          : undefined) ?? userStatus?.jobsQueued ?? 0,
+        followUpDraftsQueued: persistedSummary?.queuedFollowUps ?? userStatus?.followUpDraftsQueued ?? 0,
+        duplicateFollowUpsSkipped: persistedSummary?.skippedDuplicateFollowUps ?? userStatus?.duplicateFollowUpsSkipped ?? 0,
+        resumeEvidenceBlockedActions: persistedSummary?.skippedResumeEvidenceActions ?? userStatus?.resumeEvidenceBlockedActions ?? 0,
+        evidenceGatedActions: persistedSummary?.skippedEvidenceGatedActions ?? userStatus?.evidenceGatedActions ?? 0,
+        failedActions: persistedSummary?.failedActions ?? userStatus?.failedActions ?? 0,
+        errorCount: persistedRunState?.lastStatus === "failed" ? 1 : userStatus?.errorCount || 0,
       };
     }),
     applyToJob: protectedProcedure
