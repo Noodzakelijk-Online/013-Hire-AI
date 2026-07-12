@@ -38,6 +38,8 @@ export interface ProfileEvidenceProvider {
   category: "document" | "professional_profile" | "inbox" | "cloud_storage";
   status: ProfileEvidenceProviderStatus;
   connectionStatus?: ProfileConnectorAccountStatus;
+  /** A connector exists but lacks the minimum consent needed for this evidence use. */
+  authorizationIncomplete?: boolean;
   accountLabel?: string | null;
   consentScopes?: string[];
   detail: string;
@@ -123,21 +125,34 @@ function connectorForProvider(
 function externalProviderState(
   accounts: ProfileEvidenceControlInput["connectorAccounts"],
   providerId: ProfileEvidenceProviderId,
+  requiredScope: string,
   connectedDetail: string,
   requestedDetail: string,
   defaultDetail: string,
-  needsReauthDetail: string
+  needsReauthDetail: string,
+  missingScopeDetail: string
 ) {
   const connector = connectorForProvider(accounts, providerId);
   const scopes = parseScopes(connector?.consentScopes);
 
-  if (connector?.status === "connected") {
+  if (connector?.status === "connected" && scopes.includes(requiredScope)) {
     return {
       status: "connected" as const,
       connectionStatus: connector.status,
       accountLabel: connector.externalAccountLabel || null,
       consentScopes: scopes,
       detail: connectedDetail,
+    };
+  }
+
+  if (connector?.status === "connected") {
+    return {
+      status: "consent_required" as const,
+      connectionStatus: connector.status,
+      authorizationIncomplete: true,
+      accountLabel: connector.externalAccountLabel || null,
+      consentScopes: scopes,
+      detail: missingScopeDetail,
     };
   }
 
@@ -173,22 +188,35 @@ function externalProviderState(
 function professionalProviderState(
   accounts: ProfileEvidenceControlInput["connectorAccounts"],
   providerId: ProfileEvidenceProviderId,
+  requiredScope: string,
   hasSavedUrl: boolean,
   connectedDetail: string,
   requestedDetail: string,
   missingDetail: string,
-  needsReauthDetail: string
+  needsReauthDetail: string,
+  missingScopeDetail: string
 ) {
   const connector = connectorForProvider(accounts, providerId);
   const scopes = parseScopes(connector?.consentScopes);
 
-  if (hasSavedUrl || connector?.status === "connected") {
+  if (hasSavedUrl || (connector?.status === "connected" && scopes.includes(requiredScope))) {
     return {
       status: "connected" as const,
       connectionStatus: connector?.status ?? (hasSavedUrl ? "connected" as const : undefined),
       accountLabel: connector?.externalAccountLabel || null,
       consentScopes: scopes,
       detail: connectedDetail,
+    };
+  }
+
+  if (connector?.status === "connected") {
+    return {
+      status: "consent_required" as const,
+      connectionStatus: connector.status,
+      authorizationIncomplete: true,
+      accountLabel: connector.externalAccountLabel || null,
+      consentScopes: scopes,
+      detail: missingScopeDetail,
     };
   }
 
@@ -234,61 +262,75 @@ export function getProfileEvidenceControlSummary(
   const linkedIn = professionalProviderState(
     input.connectorAccounts,
     "linkedin",
+    "profile.basic.read",
     hasText(profile?.linkedinUrl),
     "LinkedIn evidence is available for professional profile checks.",
     "LinkedIn connection request is recorded; OAuth authorization or a saved profile URL is still required before Hire.AI can import profile evidence.",
     "Add LinkedIn to strengthen claims and recruiter-facing context.",
-    "LinkedIn authorization needs renewal before Hire.AI can import professional profile evidence."
+    "LinkedIn authorization needs renewal before Hire.AI can import professional profile evidence.",
+    "LinkedIn is connected, but profile-read consent is incomplete before Hire.AI can import professional profile evidence."
   );
   const github = professionalProviderState(
     input.connectorAccounts,
     "github",
+    "profile.basic.read",
     hasText(profile?.githubUrl),
     "GitHub evidence is available for project and skills validation.",
     "GitHub connection request is recorded; OAuth authorization or a saved profile URL is still required before Hire.AI can import project evidence.",
     "Add GitHub when technical project evidence matters for target roles.",
-    "GitHub authorization needs renewal before Hire.AI can import project evidence."
+    "GitHub authorization needs renewal before Hire.AI can import project evidence.",
+    "GitHub is connected, but profile-read consent is incomplete before Hire.AI can import project evidence."
   );
   const portfolio = professionalProviderState(
     input.connectorAccounts,
     "portfolio",
+    "profile.url.verify",
     hasText(profile?.portfolioUrl),
     "Portfolio evidence is available for work samples.",
     "Portfolio verification request is recorded; a saved URL or explicit verification is still required before Hire.AI can use work-sample evidence.",
     "Add a portfolio when work samples can support applications.",
-    "Portfolio verification needs renewal before Hire.AI can use work-sample evidence."
+    "Portfolio verification needs renewal before Hire.AI can use work-sample evidence.",
+    "Portfolio is connected, but URL-verification consent is incomplete before Hire.AI can use work-sample evidence."
   );
   const gmail = externalProviderState(
     input.connectorAccounts,
     "gmail",
+    "email.messages.read_recruiting",
     "Gmail is authorized for employer reply monitoring.",
     "Gmail connection request is recorded; OAuth authorization is still required before Hire.AI can read replies.",
     "Needs explicit account connection before Hire.AI can detect employer replies.",
-    "Gmail authorization needs renewal before Hire.AI can monitor replies."
+    "Gmail authorization needs renewal before Hire.AI can monitor replies.",
+    "Gmail is connected, but recruiting-message read consent is incomplete before Hire.AI can monitor replies."
   );
   const googleDrive = externalProviderState(
     input.connectorAccounts,
     "google_drive",
+    "files.content.read_resume_candidates",
     "Google Drive is authorized for resume document discovery.",
     "Google Drive connection request is recorded; OAuth authorization is still required before document discovery.",
     "Needs explicit account connection before Hire.AI can discover resume documents.",
-    "Google Drive authorization needs renewal before document discovery can continue."
+    "Google Drive authorization needs renewal before document discovery can continue.",
+    "Google Drive is connected, but resume-document read consent is incomplete before Hire.AI can discover documents."
   );
   const dropbox = externalProviderState(
     input.connectorAccounts,
     "dropbox",
+    "files.content.read_resume_candidates",
     "Dropbox is authorized for resume document discovery.",
     "Dropbox connection request is recorded; OAuth authorization is still required before document discovery.",
     "Needs explicit account connection before Hire.AI can discover stored resumes.",
-    "Dropbox authorization needs renewal before document discovery can continue."
+    "Dropbox authorization needs renewal before document discovery can continue.",
+    "Dropbox is connected, but resume-document read consent is incomplete before Hire.AI can discover documents."
   );
   const outlook = externalProviderState(
     input.connectorAccounts,
     "outlook",
+    "mail.messages.read_recruiting",
     "Outlook is authorized for employer reply monitoring.",
     "Outlook connection request is recorded; OAuth authorization is still required before Hire.AI can read replies.",
     "Needs explicit account connection before Hire.AI can detect employer replies.",
-    "Outlook authorization needs renewal before Hire.AI can monitor replies."
+    "Outlook authorization needs renewal before Hire.AI can monitor replies.",
+    "Outlook is connected, but recruiting-message read consent is incomplete before Hire.AI can monitor replies."
   );
 
   const providers: ProfileEvidenceProvider[] = [

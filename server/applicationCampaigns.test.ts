@@ -21,6 +21,7 @@ import {
   getApplicationCampaign,
   listUserApplicationApprovals,
   requestUserConnectorConnection,
+  upsertUserConnectorAccount,
   resolveApplicationApproval,
   upsertInterviewPreparation,
   upsertUserProfile,
@@ -315,6 +316,68 @@ describe("application campaign operating ledger", () => {
         }),
       ])
     );
+    expect(ledger.queues.evidenceGates.map((gate) => gate.id)).toEqual(
+      expect.arrayContaining(["connector-gmail", "connector-inbox-response-monitoring"])
+    );
+  });
+
+  it("keeps inbox response monitoring gated when a connected connector lacks recruiting-message consent", async () => {
+    const userId = 99012;
+    mocks.getActiveResume.mockResolvedValueOnce({
+      id: userId,
+      userId,
+      fileName: "resume.pdf",
+      fileUrl: "https://storage.example.local/resumes/99012/resume.pdf",
+      fileKey: "resumes/99012/resume.pdf",
+      fileSize: 1024,
+      mimeType: "application/pdf",
+      version: 1,
+      isActive: true,
+      uploadedAt: new Date(),
+    });
+    await upsertUserProfile({
+      userId,
+      skills: "TypeScript, React, Node.js",
+      experience: "Five years building production web applications.",
+      desiredJobTypes: "Frontend Engineer",
+      desiredLocations: "Remote",
+      resumeUrl: "https://example.com/resume.pdf",
+      resumeFileKey: "resumes/99012/resume.pdf",
+    });
+    await createApplication({
+      userId,
+      jobId: 2,
+      status: "applied",
+      notes: "Submitted application awaiting an employer response.",
+    });
+    await upsertUserConnectorAccount({
+      userId,
+      provider: "gmail",
+      status: "connected",
+      consentScopes: JSON.stringify(["email.metadata.read"]),
+      externalAccountLabel: "candidate@example.com",
+      lastVerifiedAt: new Date(),
+    });
+
+    const ledger = await getUserOperatingLedger(userId);
+
+    expect(ledger.profileEvidence.providers.find((provider) => provider.id === "gmail")).toMatchObject({
+      status: "consent_required",
+      connectionStatus: "connected",
+      authorizationIncomplete: true,
+    });
+    expect(ledger.queues.connectorReadiness).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "gmail",
+        status: "connected",
+        providerIds: ["gmail"],
+      }),
+      expect.objectContaining({
+        id: "inbox-response-monitoring",
+        providerIds: ["gmail", "outlook"],
+        affectedApplications: 1,
+      }),
+    ]));
     expect(ledger.queues.evidenceGates.map((gate) => gate.id)).toEqual(
       expect.arrayContaining(["connector-gmail", "connector-inbox-response-monitoring"])
     );

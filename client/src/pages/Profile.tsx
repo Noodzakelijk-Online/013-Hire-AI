@@ -1003,6 +1003,7 @@ function EvidenceProviderRow({
       ? AlertTriangle
       : LockKeyhole;
   const connectorAlreadyRequested = provider.connectionStatus === "connection_requested";
+  const connectorNeedsAuthorization = provider.authorizationIncomplete === true;
   const connectorActionAvailable = onRequestConnection && provider.status !== "connected";
   const connectorCanDisconnect = onDisconnect && ["connection_requested", "connected", "needs_reauth"].includes(
     provider.connectionStatus || ""
@@ -1040,7 +1041,7 @@ function EvidenceProviderRow({
               disabled={isRequesting || connectorAlreadyRequested}
               onClick={() => onRequestConnection(provider.id as ConnectorProviderId)}
             >
-              {connectorAlreadyRequested ? "Requested" : "Request"}
+              {connectorAlreadyRequested ? "Requested" : connectorNeedsAuthorization ? "Request consent" : "Request"}
             </Button>
           ) : null}
           {connectorCanDisconnect ? (

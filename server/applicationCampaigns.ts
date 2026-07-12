@@ -383,7 +383,9 @@ function providerIsConnected(provider?: ProfileEvidenceProvider) {
 }
 
 function providerNeedsCompletion(provider: ProfileEvidenceProvider) {
-  return provider.connectionStatus === "connection_requested" || provider.connectionStatus === "needs_reauth";
+  return provider.connectionStatus === "connection_requested" ||
+    provider.connectionStatus === "needs_reauth" ||
+    provider.authorizationIncomplete === true;
 }
 
 function connectorReadinessItem(input: {

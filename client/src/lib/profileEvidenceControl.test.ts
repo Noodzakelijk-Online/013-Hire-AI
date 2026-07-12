@@ -136,11 +136,40 @@ describe("profile evidence control", () => {
     expect(gmail?.status).toBe("consent_required");
     expect(gmail?.connectionStatus).toBe("connection_requested");
     expect(gmail?.consentScopes).toContain("email.messages.read_recruiting");
-    expect(googleDrive?.status).toBe("connected");
+    expect(googleDrive?.status).toBe("consent_required");
     expect(googleDrive?.connectionStatus).toBe("connected");
+    expect(googleDrive?.authorizationIncomplete).toBe(true);
     expect(googleDrive?.accountLabel).toBe("candidate-drive@example.com");
-    expect(summary.connectedCount).toBe(5);
-    expect(summary.consentRequiredCount).toBe(3);
+    expect(summary.connectedCount).toBe(4);
+    expect(summary.consentRequiredCount).toBe(4);
+  });
+
+  it("does not treat a connected inbox with metadata-only consent as reply-monitoring access", () => {
+    const summary = getProfileEvidenceControlSummary({
+      profile: {
+        resumeUrl: "https://storage.example.local/resumes/1/current.pdf",
+        resumeFileKey: "resumes/1/current.pdf",
+      },
+      readiness: {
+        score: 84,
+        autoApplyEligible: true,
+        blockers: [],
+        warnings: [],
+      },
+      connectorAccounts: [{
+        provider: "gmail",
+        status: "connected",
+        consentScopes: ["email.metadata.read"],
+      }],
+    });
+
+    const gmail = summary.providers.find((provider) => provider.id === "gmail");
+    expect(gmail).toMatchObject({
+      status: "consent_required",
+      connectionStatus: "connected",
+      authorizationIncomplete: true,
+    });
+    expect(gmail?.detail).toContain("recruiting-message read consent is incomplete");
   });
 
   it("tracks professional profile connector requests without treating them as imported evidence", () => {
