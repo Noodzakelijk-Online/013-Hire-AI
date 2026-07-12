@@ -70,7 +70,7 @@ Hire.AI operates on a **success-based fee model** — there are no upfront costs
 | **AI / LLM** | Manus built-in LLM API (GPT-class, server-side) |
 | **Resume Parsing** | pdf-parse (PDF), mammoth (DOCX), LLM structured extraction |
 | **Type Safety** | TypeScript end-to-end (tRPC + Superjson) |
-| **Testing** | Vitest (435 tests across 91 test files) |
+| **Testing** | Vitest (436 tests across 91 test files) |
 | **Build** | Vite (frontend), esbuild (server) |
 
 ---
@@ -295,7 +295,7 @@ The project uses [Vitest](https://vitest.dev/) for unit and integration testing.
 pnpm test
 ```
 
-**Current status: 435 tests passing across 91 test files**
+**Current status: 436 tests passing across 91 test files**
 
 | Test File | Coverage |
 |---|---|

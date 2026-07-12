@@ -87,6 +87,15 @@ describe("Real-Time Job Discovery", () => {
     expect(caller.discovery.unsubscribe).toBeDefined();
     expect(caller.discovery.triggerCheck).toBeDefined();
   });
+
+  it("passes job-type filters through the public discovery contract", async () => {
+    const caller = appRouter.createCaller(createPublicContext());
+
+    const result = await caller.discovery.getRecentJobs({ jobTypes: ["contract"] });
+
+    expect(result.total).toBeGreaterThan(0);
+    expect(result.jobs.every((job) => job.jobType === "contract")).toBe(true);
+  });
 });
 
 describe("Resume Management", () => {

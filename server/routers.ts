@@ -2634,6 +2634,7 @@ export const appRouter = router({
         locations: z.array(boundedFilterText).max(20).optional(),
         platformIds: z.array(z.number().int().positive()).max(100).optional(),
         minSalary: z.number().int().min(0).max(10_000_000).optional(),
+        jobTypes: z.array(z.enum(["full-time", "part-time", "contract", "temporary"])).max(4).optional(),
       }))
       .query(async ({ input }) => getRecentJobs(input)),
 
@@ -2654,6 +2655,7 @@ export const appRouter = router({
         locations: z.array(z.string()).optional(),
         platformIds: z.array(z.number()).optional(),
         minSalary: z.number().optional(),
+        jobTypes: z.array(z.enum(["full-time", "part-time", "contract", "temporary"])).max(4).optional(),
       }))
       .mutation(({ ctx, input }) => {
         const manager = getSubscriptionManager();
