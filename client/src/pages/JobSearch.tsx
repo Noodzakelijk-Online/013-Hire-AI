@@ -9,6 +9,11 @@ import { getSafeExternalUrl, openExternalUrl } from "@/lib/externalUrl";
 import { getJobMatchDecisionSummary } from "@/lib/jobMatchDecisionSummary";
 import { getJobSourcingControlSummary } from "@/lib/jobSourcingControl";
 import {
+  getJobSearchAutonomousPolicy,
+  isJobSearchAutonomousPolicyDirty,
+  mergeJobSearchAutonomousPolicy,
+} from "@/lib/jobSearchAutonomousPolicy";
+import {
   countActiveJobSearchFilters,
   defaultJobSearchFilters,
   filterJobListings,
@@ -50,6 +55,7 @@ import {
   Send,
   AlertCircle,
   ClipboardCheck,
+  Save,
   XCircle,
 } from "lucide-react";
 
@@ -119,7 +125,10 @@ export default function JobSearch() {
   );
 
   // Fetch user profile for matching
-  const { data: profileData } = trpc.profile.get.useQuery();
+  const {
+    data: profileData,
+    refetch: refetchProfileData,
+  } = trpc.profile.get.useQuery();
   const { data: autonomousPlan, refetch: refetchAutonomousPlan } = trpc.automation.plan.useQuery({
     mode: autonomousMode,
     remoteOnly: showRemoteOnly,
@@ -148,17 +157,25 @@ export default function JobSearch() {
   useEffect(() => {
     if (!profileData?.preferences) return;
 
-    try {
-      const saved = JSON.parse(profileData.preferences);
-      setAutonomousMode(saved.mode === "auto_apply" ? "auto_apply" : "review_first");
-      setShowRemoteOnly(saved.remoteOnly ?? true);
-      setRequireHumanReview(saved.requireHumanReview ?? true);
-      setAllowUnsupportedATS(saved.allowUnsupportedATS ?? false);
-      setCreateFollowUps(saved.createFollowUps ?? false);
-    } catch {
-      // Keep safe defaults when legacy preference data cannot be parsed.
-    }
+    const saved = getJobSearchAutonomousPolicy(profileData.preferences);
+    setAutonomousMode(saved.mode);
+    setShowRemoteOnly(saved.remoteOnly);
+    setRequireHumanReview(saved.requireHumanReview);
+    setAllowUnsupportedATS(saved.allowUnsupportedATS);
+    setCreateFollowUps(saved.createFollowUps);
   }, [profileData?.preferences]);
+
+  const jobSearchPolicyDraft = {
+    mode: autonomousMode,
+    remoteOnly: showRemoteOnly,
+    requireHumanReview,
+    allowUnsupportedATS,
+    createFollowUps,
+  };
+  const hasUnsavedJobSearchPolicy = isJobSearchAutonomousPolicyDirty(
+    profileData?.preferences,
+    jobSearchPolicyDraft
+  );
 
   // AI Match mutation
   const matchMutation = trpc.matching.calculateMatch.useMutation({
@@ -200,6 +217,14 @@ export default function JobSearch() {
       refetchJobs();
     },
     onError: () => toast.error("Autonomous run failed"),
+  });
+  const saveJobSearchPolicyMutation = trpc.profile.update.useMutation({
+    onSuccess: () => {
+      toast.success("Sourcing policy saved");
+      refetchProfileData();
+      refetchAutonomousPlan();
+    },
+    onError: (error) => toast.error(error.message || "Failed to save sourcing policy"),
   });
 
   const autonomousDecisionByJobId = useMemo(() => {
@@ -368,6 +393,10 @@ export default function JobSearch() {
 
   const handleAutonomousControlAction = () => {
     if (autonomousControl.runsAgent) {
+      if (hasUnsavedJobSearchPolicy) {
+        toast.info("Save the sourcing policy before running it.");
+        return;
+      }
       autonomousRunMutation.mutate({
         mode: autonomousMode,
         remoteOnly: showRemoteOnly,
@@ -379,6 +408,12 @@ export default function JobSearch() {
     }
 
     setLocation(autonomousControl.route);
+  };
+
+  const handleSaveJobSearchPolicy = () => {
+    saveJobSearchPolicyMutation.mutate({
+      preferences: mergeJobSearchAutonomousPolicy(profileData?.preferences, jobSearchPolicyDraft),
+    });
   };
 
   const formatSalary = (min?: number | null, max?: number | null) => {
@@ -562,6 +597,23 @@ export default function JobSearch() {
                 <SelectItem value="auto_apply">Accelerated</SelectItem>
               </SelectContent>
             </Select>
+            {hasUnsavedJobSearchPolicy && (
+              <Badge data-testid="job-search-unsaved-policy" variant="outline" className="border-amber-500/40 text-amber-300">
+                Unsaved policy
+              </Badge>
+            )}
+            <Button
+              data-testid="job-search-save-policy"
+              variant="outline"
+              size="sm"
+              onClick={handleSaveJobSearchPolicy}
+              disabled={!hasUnsavedJobSearchPolicy || saveJobSearchPolicyMutation.isPending}
+            >
+              {saveJobSearchPolicyMutation.isPending
+                ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                : <Save className="w-4 h-4 mr-2" />}
+              Save policy
+            </Button>
             <Button
               data-testid="job-search-autonomous-primary"
               size="sm"
