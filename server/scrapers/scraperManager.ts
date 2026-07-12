@@ -20,13 +20,13 @@ export interface ScrapeOptions {
 
 export class ScraperManager {
   private scrapers: Map<string, BaseScraper> = new Map();
+  private initializationErrors: Map<string, string> = new Map();
 
   /**
    * Initialize all scrapers
    */
   async initialize(): Promise<void> {
     const db = await getDb();
-    const supportedPlatformNames = getSupportedPlatforms();
     const platforms = db
       ? await db.select().from(jobPlatforms).where(eq(jobPlatforms.isActive, 1))
       : samplePlatforms.filter((platform) => platform.isActive === 1);
@@ -42,17 +42,10 @@ export class ScraperManager {
           console.log(`[ScraperManager] Initialized scraper for ${platform.name}`);
         }
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.initializationErrors.set(platform.name, message);
         console.error(`[ScraperManager] Failed to initialize scraper for ${platform.name}:`, error);
       }
-    }
-
-    if (this.scrapers.size === 0) {
-      supportedPlatformNames.forEach((platformName, index) => {
-        const scraper = this.createScraper(platformName, index + 1);
-        if (scraper) {
-          this.scrapers.set(platformName, scraper);
-        }
-      });
     }
 
     console.log(`[ScraperManager] Initialized ${this.scrapers.size} scrapers`);
@@ -70,6 +63,19 @@ export class ScraperManager {
    */
   getSupportedPlatforms(): string[] {
     return getSupportedPlatforms();
+  }
+
+  /**
+   * Registered adapters and configured source records are intentionally separate.
+   * A scraper can only be scheduled after an active platform record gives it a
+   * durable platform id for job provenance and deduplication.
+   */
+  getInitializedPlatforms(): string[] {
+    return Array.from(this.scrapers.keys()).sort((left, right) => left.localeCompare(right));
+  }
+
+  getInitializationError(platformName: string): string | null {
+    return this.initializationErrors.get(platformName) ?? null;
   }
 
   /**

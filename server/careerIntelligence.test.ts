@@ -159,17 +159,23 @@ describe("Scraping API", () => {
 
       expect(result).toBeDefined();
       expect(result.initialized).toBe(true);
-      expect(result.availableScrapers).toBeGreaterThanOrEqual(48);
+      expect(result.availableScrapers).toBeGreaterThan(0);
+      expect(result.registeredScrapers).toBeGreaterThanOrEqual(48);
       expect(result.supportedPlatforms).toBeInstanceOf(Array);
       expect(result.supportedPlatforms.length).toBeGreaterThanOrEqual(48);
       expect(result.platforms).toBeInstanceOf(Array);
+      expect(result.coverage).toMatchObject({
+        registeredSources: expect.any(Number),
+        configuredActiveSources: expect.any(Number),
+        readySources: expect.any(Number),
+        unconfiguredSources: expect.any(Number),
+      });
+      expect(result.coverage.readySources).toBe(result.availableScrapers);
       expect(result.scheduler).toMatchObject({
         intervalMinutes: expect.any(Number),
         maxJobsPerRun: expect.any(Number),
       });
-      // Check that some common platforms are present
-      const platformNames = result.supportedPlatforms.map((p: any) => p.name);
-      expect(platformNames.length).toBeGreaterThan(0);
+      expect(result.supportedPlatforms).toContain("RemoteOK");
     });
 
     it("rejects scraper visibility and controls for a regular user", async () => {
@@ -178,6 +184,19 @@ describe("Scraping API", () => {
       await expect(caller.scraping.status()).rejects.toMatchObject({ code: "FORBIDDEN" });
       await expect(caller.scraping.listScrapers()).rejects.toMatchObject({ code: "FORBIDDEN" });
       await expect(caller.scraping.runNow()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    });
+
+    it("rejects a registered source that is not configured and ready", async () => {
+      const caller = appRouter.createCaller(createAuthContext("admin"));
+
+      await expect(caller.scraping.startScheduler({
+        intervalMinutes: 60,
+        maxJobsPerRun: 100,
+        enabledPlatforms: ["Indeed"],
+      })).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: expect.stringContaining("configured, ready scraper"),
+      });
     });
   });
 });

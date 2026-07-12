@@ -148,7 +148,10 @@ export default function AdminPanel() {
     setScrapingMaxJobsPerRun(String(scrapingStatus.scheduler.maxJobsPerRun));
     setRestrictScrapingSources(Boolean(scrapingStatus.scheduler.enabledPlatforms?.length));
     setSelectedScrapingSources(
-      scrapingStatus.scheduler.enabledPlatforms?.slice() ?? scrapingStatus.platforms.map((platform) => platform.name)
+      scrapingStatus.scheduler.enabledPlatforms?.slice()
+        ?? scrapingStatus.platforms
+          .filter((platform) => platform.readiness === "ready")
+          .map((platform) => platform.name)
     );
     scrapingScheduleInitialized.current = true;
   }, [scrapingStatus?.scheduler]);
@@ -491,10 +494,11 @@ export default function AdminPanel() {
                 <CardContent>
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                     {[
-                      ["Configured sources", scrapingStatus?.platforms.length ?? 0],
+                      ["Ready sources", scrapingStatus?.coverage.readySources ?? 0],
+                      ["Registry sources", scrapingStatus?.coverage.registeredSources ?? 0],
                       ["Successful runs", scrapingStatus?.scheduler.totalRunsCompleted ?? 0],
                       ["Jobs saved", scrapingStatus?.scheduler.totalJobsScraped ?? 0],
-                      ["Source errors", scrapingStatus?.scheduler.errors.length ?? 0],
+                      ["Source issues", (scrapingStatus?.scheduler.errors.length ?? 0) + (scrapingStatus?.coverage.unavailableConfiguredSources ?? 0)],
                     ].map(([label, value]) => (
                       <div key={String(label)} className="rounded-md border border-slate-800 bg-slate-950/50 p-3">
                         <div className="text-xs text-slate-500">{label}</div>
@@ -520,6 +524,22 @@ export default function AdminPanel() {
                       </div>
                     </div>
                   </div>
+                  {(scrapingStatus?.coverage.unconfiguredSources ?? 0) > 0 && (
+                    <div data-testid="admin-scraping-coverage-gap" className="mt-4 rounded-md border border-blue-500/30 bg-blue-500/10 p-3 text-sm text-blue-100">
+                      <div className="font-medium">Source registry needs configuration</div>
+                      <p className="mt-1 text-xs text-blue-200">
+                        {scrapingStatus?.coverage.unconfiguredSources} registered source{scrapingStatus?.coverage.unconfiguredSources === 1 ? " is" : "s are"} not configured for this deployment. The scheduler only runs ready sources with durable provenance.
+                      </p>
+                    </div>
+                  )}
+                  {(scrapingStatus?.coverage.unavailableConfiguredSources ?? 0) > 0 && (
+                    <div data-testid="admin-scraping-unavailable-sources" className="mt-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+                      <div className="font-medium">Configured sources need attention</div>
+                      <p className="mt-1 text-xs text-amber-200">
+                        {scrapingStatus?.coverage.unavailableConfiguredSources} active source{scrapingStatus?.coverage.unavailableConfiguredSources === 1 ? " is" : "s are"} configured but not ready. They are excluded from scheduling until initialization succeeds.
+                      </p>
+                    </div>
+                  )}
                   {scrapingStatus?.scheduler.errors.length ? (
                     <div className="mt-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
                       <div className="font-medium">Latest source issues</div>
@@ -578,7 +598,7 @@ export default function AdminPanel() {
                     </div>
                     {restrictScrapingSources && (
                       <div data-testid="admin-scraping-source-selector" className="mt-3 grid gap-2 sm:grid-cols-2">
-                        {scrapingStatus?.platforms.map((platform) => {
+                        {scrapingStatus?.platforms.filter((platform) => platform.readiness === "ready").map((platform) => {
                           const selected = selectedScrapingSources.includes(platform.name);
                           return (
                             <div key={platform.id} className="flex items-center gap-2 text-sm text-slate-300">
@@ -644,7 +664,7 @@ export default function AdminPanel() {
 
             <Card className="mt-4 bg-slate-900/60 border-slate-800/50">
               <CardHeader>
-                <CardTitle className="text-base text-white">Configured source health</CardTitle>
+                <CardTitle className="text-base text-white">Active source health</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto">
@@ -652,6 +672,7 @@ export default function AdminPanel() {
                     <thead>
                       <tr className="border-b border-slate-800 text-slate-400">
                         <th className="py-2 pr-4 text-left">Source</th>
+                        <th className="py-2 pr-4 text-left">Readiness</th>
                         <th className="py-2 pr-4 text-left">Tier</th>
                         <th className="py-2 pr-4 text-left">Category</th>
                         <th className="py-2 text-left">Last successful scrape</th>
@@ -661,6 +682,11 @@ export default function AdminPanel() {
                       {scrapingStatus?.platforms.map((platform) => (
                         <tr key={platform.id} className="border-b border-slate-800/50">
                           <td className="py-3 pr-4 font-medium text-white">{platform.name}</td>
+                          <td className="py-3 pr-4">
+                            <Badge variant="outline" className={platform.readiness === "ready" ? "border-emerald-500/30 text-emerald-300" : "border-amber-500/30 text-amber-300"}>
+                              {platform.readiness === "ready" ? "Ready" : "Unavailable"}
+                            </Badge>
+                          </td>
                           <td className="py-3 pr-4 text-slate-400">{platform.tier}</td>
                           <td className="py-3 pr-4 text-slate-400">{platform.category || "General"}</td>
                           <td className="py-3 text-slate-300">
@@ -670,7 +696,7 @@ export default function AdminPanel() {
                       ))}
                       {(!scrapingStatus || scrapingStatus.platforms.length === 0) && (
                         <tr>
-                          <td colSpan={4} className="py-8 text-center text-slate-500">No configured scraper sources.</td>
+                          <td colSpan={5} className="py-8 text-center text-slate-500">No active configured scraper sources.</td>
                         </tr>
                       )}
                     </tbody>

@@ -27,6 +27,7 @@ describe("scraper manager platform restrictions", () => {
     expect(remoteOk.scrape).toHaveBeenCalledOnce();
     expect(remotive.scrape).not.toHaveBeenCalled();
     expect(Object.keys(result.platformResults)).toEqual(["RemoteOK"]);
+    expect(manager.getInitializedPlatforms()).toEqual(["RemoteOK", "Remotive"]);
   });
 
   it("reports an unavailable configured platform without scraping another source", async () => {
@@ -41,5 +42,6 @@ describe("scraper manager platform restrictions", () => {
     expect(result.platformResults["Unavailable Board"].errors).toEqual([
       "No scraper available for platform: Unavailable Board",
     ]);
+    expect(manager.getInitializationError("Unavailable Board")).toBeNull();
   });
 });

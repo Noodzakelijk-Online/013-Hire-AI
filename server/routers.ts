@@ -1909,8 +1909,11 @@ export const appRouter = router({
       const scheduler = getScheduler();
       const schedulerStatus = scheduler.getStatus();
       const configuredPlatforms = await getAllJobPlatforms();
-      const platforms = configuredPlatforms
+      const configuredSupportedPlatforms = configuredPlatforms
         .filter((platform) => supportedPlatforms.includes(platform.name))
+      const initializedPlatformNames = new Set(manager.getInitializedPlatforms());
+      const platforms = configuredSupportedPlatforms
+        .filter((platform) => platform.isActive === 1)
         .map((platform) => ({
           id: platform.id,
           name: platform.name,
@@ -1918,15 +1921,35 @@ export const appRouter = router({
           tier: platform.tier,
           isActive: platform.isActive === 1,
           lastScraped: platform.lastScraped,
+          readiness: initializedPlatformNames.has(platform.name) ? "ready" : "unavailable",
+          initializationError: manager.getInitializationError(platform.name),
         }));
+      const inactiveConfiguredSources = configuredSupportedPlatforms.filter((platform) => platform.isActive !== 1);
+      const unconfiguredSources = supportedPlatforms.filter(
+        (platformName) => !configuredPlatforms.some((platform) => platform.name === platformName)
+      );
+      const unsupportedConfiguredSources = configuredPlatforms
+        .filter((platform) => !supportedPlatforms.includes(platform.name))
+        .map((platform) => platform.name);
+      const readySources = platforms.filter((platform) => platform.readiness === "ready");
 
       return {
         initialized: true,
-        availableScrapers: supportedPlatforms.length,
+        availableScrapers: readySources.length,
+        registeredScrapers: supportedPlatforms.length,
         supportedPlatforms,
         platforms,
+        coverage: {
+          registeredSources: supportedPlatforms.length,
+          configuredActiveSources: platforms.length,
+          readySources: readySources.length,
+          unavailableConfiguredSources: platforms.filter((platform) => platform.readiness === "unavailable").length,
+          unconfiguredSources: unconfiguredSources.length,
+          inactiveConfiguredSources: inactiveConfiguredSources.length,
+          unsupportedConfiguredSources,
+        },
         scheduler: schedulerStatus,
-        message: `Scraper system ready. Supporting ${supportedPlatforms.length} platforms.`,
+        message: `${readySources.length} configured source${readySources.length === 1 ? " is" : "s are"} ready for discovery. ${unconfiguredSources.length} registered source${unconfiguredSources.length === 1 ? " is" : "s are"} not configured.`,
       };
     }),
 
@@ -1939,21 +1962,31 @@ export const appRouter = router({
       }).optional())
       .mutation(async ({ input }) => {
         const { getScheduler } = await import("./scrapers/scheduler");
-        const { getSupportedPlatforms } = await import("./scrapers/index");
-        const unsupportedPlatforms = input?.enabledPlatforms?.filter(
-          (platformName) => !getSupportedPlatforms().includes(platformName)
+        const { getScraperManager } = await import("./scrapers/scraperManager");
+        const manager = await getScraperManager();
+        const readyPlatforms = new Set(manager.getInitializedPlatforms());
+        if (readyPlatforms.size === 0) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "No configured, ready scraper sources are available to schedule.",
+          });
+        }
+        const currentScheduler = getScheduler();
+        const requestedPlatforms = input?.enabledPlatforms ?? currentScheduler.getStatus().enabledPlatforms;
+        const unsupportedPlatforms = requestedPlatforms?.filter(
+          (platformName) => !readyPlatforms.has(platformName)
         ) ?? [];
         if (unsupportedPlatforms.length > 0) {
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: `No supported scraper is available for: ${unsupportedPlatforms.join(", ")}`,
+            message: `No configured, ready scraper is available for: ${unsupportedPlatforms.join(", ")}`,
           });
         }
-        const scheduler = getScheduler(input ? {
+        const scheduler = input ? getScheduler({
           intervalMinutes: input.intervalMinutes || 60,
           maxJobsPerRun: input.maxJobsPerRun || 100,
           enabledPlatforms: input.enabledPlatforms ?? null,
-        } : undefined);
+        }) : currentScheduler;
         
         scheduler.start();
         return { success: true, message: "Scheduler started", scheduler: scheduler.getStatus() };
