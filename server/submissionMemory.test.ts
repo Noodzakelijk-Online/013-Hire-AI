@@ -42,7 +42,8 @@ describe("submission confirmation memory fallback", () => {
     expect(result.evidenceAttemptId).toBeTruthy();
 
     const applications = await getUserApplications(userId);
-    expect(applications.find((item) => item.id === applicationId)?.status).toBe("applied");
+    const confirmedApplication = applications.find((item) => item.id === applicationId);
+    expect(confirmedApplication?.status).toBe("applied");
 
     const approvals = await listUserApplicationApprovals(userId, "all");
     const resolvedApproval = approvals.find((item) => item.id === Number(approval.insertId));
@@ -55,6 +56,7 @@ describe("submission confirmation memory fallback", () => {
     );
     expect(submissionAttempt?.attemptType).toBe("manual_confirmation");
     expect(submissionAttempt?.status).toBe("submitted");
+    expect(submissionAttempt?.platformId).toBe(confirmedApplication?.job?.platformId);
     expect(submissionAttempt?.confirmationText).toContain("Application submitted");
     expect(submissionAttempt?.confirmationUrl).toBe("https://boards.example.local/applications/QA-98301");
     expect(artifacts.auditEvents.some((event) =>

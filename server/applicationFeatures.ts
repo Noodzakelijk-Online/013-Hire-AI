@@ -423,6 +423,7 @@ export async function confirmApplicationSubmission(input: ConfirmSubmissionInput
       applicationId: input.applicationId,
       userId,
       jobId: application.jobId,
+      platformId: application.job?.platformId ?? undefined,
       attemptType: "manual_confirmation",
       status: "submitted",
       startedAt: confirmedAt,
@@ -460,8 +461,15 @@ export async function confirmApplicationSubmission(input: ConfirmSubmissionInput
 
   return await db.transaction(async (tx) => {
     const application = await tx
-      .select({ id: applications.id, userId: applications.userId, jobId: applications.jobId, status: applications.status })
+      .select({
+        id: applications.id,
+        userId: applications.userId,
+        jobId: applications.jobId,
+        status: applications.status,
+        platformId: jobs.platformId,
+      })
       .from(applications)
+      .innerJoin(jobs, eq(applications.jobId, jobs.id))
       .where(and(eq(applications.id, input.applicationId), eq(applications.userId, userId)))
       .limit(1);
     if (!application[0]) throw new Error("Application not found.");
@@ -578,6 +586,7 @@ export async function confirmApplicationSubmission(input: ConfirmSubmissionInput
       applicationId: input.applicationId,
       userId: application[0].userId,
       jobId: application[0].jobId,
+      platformId: application[0].platformId,
       attemptType: "manual_confirmation",
       status: "submitted",
       startedAt: confirmedAt,
