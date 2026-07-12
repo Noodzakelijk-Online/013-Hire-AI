@@ -131,6 +131,9 @@ async function getFollowUpSuppressionState(
   })));
 
   for (const { application, followUps } of followUpsByApplication) {
+    if (!["applied", "viewed", "interview"].includes(application.status || "pending")) {
+      continue;
+    }
     for (const followUp of followUps as FollowUp[]) {
       if (followUp.sentDate) continue;
 

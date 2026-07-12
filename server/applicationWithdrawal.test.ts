@@ -73,7 +73,7 @@ describe("application withdrawal", () => {
     expect(approvals.find((approval) => approval.id === Number(submissionApproval.insertId))?.status).toBe("cancelled");
     expect(approvals.find((approval) => approval.id === followUpApproval!.id)?.status).toBe("cancelled");
     await expect(markFollowUpSent(followUp.id, userId)).rejects.toThrow(
-      "Follow-up approval is required before marking it sent."
+      "Follow-ups can only be created after an application has been submitted."
     );
 
     const artifacts = await getApplicationLedgerArtifacts(applicationId, userId);

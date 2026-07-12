@@ -32,6 +32,7 @@ import {
   createFollowUp,
   getFollowUps,
   withdrawApplication,
+  acceptOfferApplication,
   markFollowUpSent,
   markFollowUpResponseReceived,
   generateInterviewPreparationForApplication,
@@ -1344,20 +1345,10 @@ export const appRouter = router({
         acceptanceNote: z.string().trim().min(8).max(5000),
       }))
       .mutation(async ({ ctx, input }) => {
-        const { createAuditEvent, getUserApplications, updateApplicationStatus } = await import("./db");
-        const application = (await getUserApplications(ctx.user.id)).find((item) => item.id === input.applicationId);
-        if (!application) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Application not found." });
-        }
-        if (application.status !== "offer") {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: "Only a recorded offer can be confirmed as accepted.",
-          });
-        }
+        const { createAuditEvent } = await import("./db");
 
         try {
-          await updateApplicationStatus(input.applicationId, "accepted", ctx.user.id);
+          const result = await acceptOfferApplication(input.applicationId, ctx.user.id);
           await createAuditEvent({
             userId: ctx.user.id,
             entityType: "application",
@@ -1370,6 +1361,8 @@ export const appRouter = router({
               status: "accepted",
               confirmed: input.confirmed,
               acceptanceNote: input.acceptanceNote,
+              cancelledFollowUpApprovalIds: result.cancelledFollowUpApprovalIds,
+              cancelledInterviewIds: result.cancelledInterviewIds,
             }),
             riskLevel: "high",
           });

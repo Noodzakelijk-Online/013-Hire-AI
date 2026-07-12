@@ -2281,6 +2281,7 @@ export async function getFollowUps(applicationId: number, userId: number) {
 }
 
 const WITHDRAWAL_CANCELLATION_NOTE = "Application was withdrawn, so this unsent external action is no longer permitted.";
+const OFFER_ACCEPTANCE_CANCELLATION_NOTE = "Offer acceptance ended this application campaign, so this unsent external action is no longer permitted.";
 
 function isWithdrawalCancellableApproval(
   approval: { approvalType: string; entityId: number; status: string },
@@ -2593,11 +2594,188 @@ export async function withdrawApplication(
   });
 }
 
+export async function acceptOfferApplication(applicationId: number, userId: number) {
+  const db = await getDb();
+  const acceptedAt = new Date();
+
+  if (!db) {
+    const application = (await getUserApplications(userId)).find((item) => item.id === applicationId);
+    if (!application) throw new Error("Application not found.");
+    if (application.status !== "offer") {
+      throw new Error("Only a recorded offer can be confirmed as accepted.");
+    }
+
+    const unsentFollowUpIds = new Set(
+      (await getFollowUps(applicationId, userId))
+        .filter((followUp) => !followUp.sentDate)
+        .map((followUp) => followUp.id)
+    );
+    const cancelledFollowUpApprovals = (await listUserApplicationApprovals(userId, "all")).filter((approval) =>
+      approval.applicationId === applicationId &&
+      approval.entityType === "follow_up" &&
+      approval.approvalType === "follow_up_send" &&
+      unsentFollowUpIds.has(approval.entityId) &&
+      ["pending", "approved"].includes(approval.status)
+    );
+    for (const approval of cancelledFollowUpApprovals) {
+      if (approval.status === "pending") {
+        await resolveApplicationApproval(
+          approval.id,
+          userId,
+          "cancelled",
+          OFFER_ACCEPTANCE_CANCELLATION_NOTE,
+          "user"
+        );
+      } else {
+        approval.status = "cancelled";
+        approval.decidedBy = "user";
+        approval.decisionNote = OFFER_ACCEPTANCE_CANCELLATION_NOTE;
+        approval.decidedAt = acceptedAt;
+        approval.updatedAt = acceptedAt;
+      }
+    }
+
+    const cancelledInterviews = memoryInterviewSchedules.filter((interview) =>
+      interview.applicationId === applicationId &&
+      ["scheduled", "rescheduled"].includes(interview.status || "scheduled")
+    );
+    const cancelledInterviewIds = cancelledInterviews.map((interview) => interview.id);
+    for (const interview of cancelledInterviews) {
+      interview.status = "cancelled";
+      interview.updatedAt = acceptedAt;
+    }
+
+    await updateApplicationStatus(applicationId, "accepted", userId);
+    if (cancelledFollowUpApprovals.length > 0 || cancelledInterviewIds.length > 0) {
+      await createAuditEvent({
+        userId,
+        entityType: "application",
+        entityId: applicationId,
+        action: "application_actions_retired_after_offer_acceptance",
+        actor: "user",
+        source: "applications.confirmOfferAcceptance",
+        afterState: JSON.stringify({
+          status: "accepted",
+          cancelledFollowUpApprovalIds: cancelledFollowUpApprovals.map((approval) => approval.id),
+          cancelledInterviewIds,
+          externalFollowUpSent: false,
+          externalInterviewCancellationSent: false,
+        }),
+        riskLevel: "high",
+      });
+    }
+
+    return {
+      cancelledFollowUpApprovalIds: cancelledFollowUpApprovals.map((approval) => approval.id),
+      cancelledInterviewIds,
+    };
+  }
+
+  return await db.transaction(async (tx) => {
+    const application = await tx
+      .select({ id: applications.id, status: applications.status })
+      .from(applications)
+      .where(and(eq(applications.id, applicationId), eq(applications.userId, userId)))
+      .limit(1);
+    if (!application[0]) throw new Error("Application not found.");
+    if (application[0].status !== "offer") {
+      throw new Error("Only a recorded offer can be confirmed as accepted.");
+    }
+
+    const unsentFollowUps = await tx
+      .select({ id: followUps.id })
+      .from(followUps)
+      .where(and(eq(followUps.applicationId, applicationId), isNull(followUps.sentDate)));
+    const unsentFollowUpIds = unsentFollowUps.map((followUp) => followUp.id);
+    const cancelledFollowUpApprovals = unsentFollowUpIds.length > 0
+      ? await tx
+        .select({ id: applicationApprovals.id })
+        .from(applicationApprovals)
+        .where(and(
+          eq(applicationApprovals.userId, userId),
+          eq(applicationApprovals.applicationId, applicationId),
+          eq(applicationApprovals.entityType, "follow_up"),
+          eq(applicationApprovals.approvalType, "follow_up_send"),
+          inArray(applicationApprovals.entityId, unsentFollowUpIds),
+          inArray(applicationApprovals.status, ["pending", "approved"])
+        ))
+      : [];
+    const cancelledFollowUpApprovalIds = cancelledFollowUpApprovals.map((approval) => approval.id);
+    if (cancelledFollowUpApprovalIds.length > 0) {
+      await tx
+        .update(applicationApprovals)
+        .set({
+          status: "cancelled",
+          decidedBy: "user",
+          decisionNote: OFFER_ACCEPTANCE_CANCELLATION_NOTE,
+          decidedAt: acceptedAt,
+        })
+        .where(and(
+          inArray(applicationApprovals.id, cancelledFollowUpApprovalIds),
+          inArray(applicationApprovals.status, ["pending", "approved"])
+        ));
+    }
+
+    const scheduledInterviews = await tx
+      .select({ id: interviewSchedules.id })
+      .from(interviewSchedules)
+      .where(and(
+        eq(interviewSchedules.applicationId, applicationId),
+        inArray(interviewSchedules.status, ["scheduled", "rescheduled"])
+      ));
+    const cancelledInterviewIds = scheduledInterviews.map((interview) => interview.id);
+    if (cancelledInterviewIds.length > 0) {
+      await tx
+        .update(interviewSchedules)
+        .set({ status: "cancelled" })
+        .where(and(
+          inArray(interviewSchedules.id, cancelledInterviewIds),
+          inArray(interviewSchedules.status, ["scheduled", "rescheduled"])
+        ));
+    }
+
+    const statusUpdate = await tx
+      .update(applications)
+      .set({ status: "accepted", lastActivity: acceptedAt })
+      .where(and(
+        eq(applications.id, applicationId),
+        eq(applications.userId, userId),
+        eq(applications.status, "offer")
+      ));
+    if (Number(statusUpdate[0].affectedRows) === 0) {
+      throw new Error("Application status changed concurrently. Refresh and try again.");
+    }
+
+    if (cancelledFollowUpApprovalIds.length > 0 || cancelledInterviewIds.length > 0) {
+      await tx.insert(auditEvents).values({
+        userId,
+        entityType: "application",
+        entityId: applicationId,
+        action: "application_actions_retired_after_offer_acceptance",
+        actor: "user",
+        source: "applications.confirmOfferAcceptance",
+        afterState: JSON.stringify({
+          status: "accepted",
+          cancelledFollowUpApprovalIds,
+          cancelledInterviewIds,
+          externalFollowUpSent: false,
+          externalInterviewCancellationSent: false,
+        }),
+        riskLevel: "high",
+      });
+    }
+
+    return { cancelledFollowUpApprovalIds, cancelledInterviewIds };
+  });
+}
+
 export async function markFollowUpSent(followUpId: number, userId: number) {
   const db = await getDb();
   if (!db) {
     const followUp = await findOwnedMemoryFollowUp(followUpId, userId);
     if (followUp.sentDate) return { success: true };
+    const application = await getFollowUpApplication(followUp.applicationId, userId);
+    assertFollowUpAllowed(application.status || "pending");
 
     const approvals = await listUserApplicationApprovals(userId, "all");
     const approval = approvals.find((item) =>
@@ -2635,6 +2813,7 @@ export async function markFollowUpSent(followUpId: number, userId: number) {
         id: followUps.id,
         applicationId: followUps.applicationId,
         sentDate: followUps.sentDate,
+        applicationStatus: applications.status,
       })
       .from(followUps)
       .innerJoin(applications, eq(followUps.applicationId, applications.id))
@@ -2642,6 +2821,7 @@ export async function markFollowUpSent(followUpId: number, userId: number) {
       .limit(1);
     if (!followUp[0]) throw new Error("Follow-up not found.");
     if (followUp[0].sentDate) return { success: true };
+    assertFollowUpAllowed(followUp[0].applicationStatus);
 
     const approval = await tx
       .select({ id: applicationApprovals.id, status: applicationApprovals.status })
