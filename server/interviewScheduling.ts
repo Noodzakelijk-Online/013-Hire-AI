@@ -33,13 +33,13 @@ export function getInterviewSchedulingRequirement(
   schedules: InterviewScheduleState[],
   responses: EmployerResponseState[]
 ): InterviewSchedulingRequirement {
-  if (schedules.some((schedule) => ["scheduled", "rescheduled"].includes(schedule.status || "scheduled"))) {
-    return null;
-  }
-
   const latestInvite = latestInterviewInvite(responses);
   if (latestInvite && !hasScheduleCreatedAfter(schedules, latestInvite.receivedAt)) {
     return "new_invite";
+  }
+
+  if (schedules.some((schedule) => ["scheduled", "rescheduled"].includes(schedule.status || "scheduled"))) {
+    return null;
   }
 
   if (schedules.some((schedule) => schedule.status === "cancelled")) {
