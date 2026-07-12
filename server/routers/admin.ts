@@ -96,6 +96,16 @@ export const adminRouter = router({
       .from(successFees)
       .where(eq(successFees.status, "suspended"));
 
+    const [pausedFees] = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(successFees)
+      .where(eq(successFees.status, "paused"));
+
+    const [disputedFees] = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(successFees)
+      .where(eq(successFees.status, "disputed"));
+
     const [totalRevenue] = await db
       .select({ total: sql<number>`COALESCE(SUM(amount), 0)` })
       .from(feePayments)
@@ -130,6 +140,8 @@ export const adminRouter = router({
       activeFees: Number(activeFees.count),
       pendingFees: Number(pendingFees.count),
       suspendedFees: Number(suspendedFees.count),
+      pausedFees: Number(pausedFees.count),
+      disputedFees: Number(disputedFees.count),
       totalRevenueUsd: Number(totalRevenue.total) / 100,
       monthlyRevenueUsd: Number(monthlyRevenue.total) / 100,
       overdueVerifications: Number(overdueVerifications.count),

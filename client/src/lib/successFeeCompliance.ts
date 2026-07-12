@@ -12,7 +12,9 @@ export type SuccessFeeComplianceStatus = "none" | "clear" | "due_soon" | "needs_
 export type SuccessFeeComplianceRisk = "low" | "medium" | "high" | "critical";
 export type SuccessFeeComplianceActionId =
   | "review_offer_attribution"
+  | "resolve_disputed_fee"
   | "resolve_suspended_payment"
+  | "review_paused_billing"
   | "submit_verification"
   | "prepare_verification"
   | "monitor"
@@ -22,6 +24,8 @@ export interface SuccessFeeComplianceSummary {
   status: SuccessFeeComplianceStatus;
   activeFees: number;
   suspendedFees: number;
+  pausedFees: number;
+  disputedFees: number;
   pendingVerification: number;
   overdueVerifications: number;
   dueSoonVerifications: number;
@@ -60,6 +64,8 @@ export function getSuccessFeeComplianceSummary(
 ): SuccessFeeComplianceSummary {
   const activeFees = fees.filter((fee) => ACTIVE_FEE_STATUSES.has(fee.status || ""));
   const suspendedFees = fees.filter((fee) => fee.status === "suspended");
+  const pausedFees = fees.filter((fee) => fee.status === "paused");
+  const disputedFees = fees.filter((fee) => fee.status === "disputed");
   const verificationDeadlines = activeFees
     .map((fee) => coerceDate(fee.nextVerificationDue))
     .filter((date): date is Date => Boolean(date))
@@ -77,11 +83,13 @@ export function getSuccessFeeComplianceSummary(
     ? Math.ceil((nextVerificationDue.getTime() - now.getTime()) / 86_400_000)
     : null;
 
-  if (pendingOfferAttributions > 0 || suspendedFees.length > 0 || overdueVerifications > 0) {
+  if (pendingOfferAttributions > 0 || disputedFees.length > 0 || suspendedFees.length > 0 || pausedFees.length > 0 || overdueVerifications > 0) {
     return {
       status: "needs_attention",
       activeFees: activeFees.length,
       suspendedFees: suspendedFees.length,
+      pausedFees: pausedFees.length,
+      disputedFees: disputedFees.length,
       pendingVerification,
       overdueVerifications,
       dueSoonVerifications,
@@ -92,8 +100,12 @@ export function getSuccessFeeComplianceSummary(
       label: "Needs attention",
       nextAction: pendingOfferAttributions > 0
         ? "Review offer attribution and report hires that came through Hire.AI."
+        : disputedFees.length > 0
+          ? "Resolve the disputed success-fee record through review before billing enforcement advances."
         : suspendedFees.length > 0
           ? "Resolve the suspended success-fee payment before billing enforcement advances."
+          : pausedFees.length > 0
+            ? "Review the paused success-fee record before billing resumes."
         : "Submit overdue employment verification proof.",
     };
   }
@@ -103,6 +115,8 @@ export function getSuccessFeeComplianceSummary(
       status: "due_soon",
       activeFees: activeFees.length,
       suspendedFees: suspendedFees.length,
+      pausedFees: pausedFees.length,
+      disputedFees: disputedFees.length,
       pendingVerification,
       overdueVerifications,
       dueSoonVerifications,
@@ -120,6 +134,8 @@ export function getSuccessFeeComplianceSummary(
       status: "clear",
       activeFees: activeFees.length,
       suspendedFees: suspendedFees.length,
+      pausedFees: pausedFees.length,
+      disputedFees: disputedFees.length,
       pendingVerification,
       overdueVerifications,
       dueSoonVerifications,
@@ -136,6 +152,8 @@ export function getSuccessFeeComplianceSummary(
     status: "none",
     activeFees: 0,
     suspendedFees: 0,
+    pausedFees: 0,
+    disputedFees: 0,
     pendingVerification: 0,
     overdueVerifications: 0,
     dueSoonVerifications: 0,
@@ -166,6 +184,19 @@ export function getSuccessFeeComplianceAction(
     };
   }
 
+  if (summary.disputedFees > 0) {
+    return {
+      id: "resolve_disputed_fee",
+      label: "Success-fee dispute review",
+      detail: "A success-fee record is disputed. Review the billing record and supporting evidence before any enforcement or reactivation decision.",
+      cta: "Review billing",
+      route: "/billing",
+      risk: "critical",
+      proofRequired: true,
+      approvalGated: true,
+    };
+  }
+
   if (summary.suspendedFees > 0) {
     return {
       id: "resolve_suspended_payment",
@@ -176,6 +207,19 @@ export function getSuccessFeeComplianceAction(
       risk: "high",
       proofRequired: false,
       approvalGated: false,
+    };
+  }
+
+  if (summary.pausedFees > 0) {
+    return {
+      id: "review_paused_billing",
+      label: "Paused billing review",
+      detail: "A success-fee record is paused. Review its reason and supporting evidence before billing is resumed or closed.",
+      cta: "Review billing",
+      route: "/billing",
+      risk: "high",
+      proofRequired: true,
+      approvalGated: true,
     };
   }
 

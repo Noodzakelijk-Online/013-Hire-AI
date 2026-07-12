@@ -2,6 +2,8 @@ export interface AdminStatsLike {
   activeFees?: number | null;
   pendingFees?: number | null;
   suspendedFees?: number | null;
+  pausedFees?: number | null;
+  disputedFees?: number | null;
   overdueVerifications?: number | null;
   monthlyRevenueUsd?: number | null;
   totalRevenueUsd?: number | null;

@@ -80,6 +80,42 @@ describe("success fee compliance summary", () => {
     });
   });
 
+  it("routes disputed and paused fees to review rather than treating them as no-fee state", () => {
+    const disputed = getSuccessFeeComplianceSummary(
+      [{ status: "disputed", monthlyFeeAmount: 10_000 }],
+      [],
+      now
+    );
+    const paused = getSuccessFeeComplianceSummary(
+      [{ status: "paused", monthlyFeeAmount: 10_000 }],
+      [],
+      now
+    );
+
+    expect(disputed).toMatchObject({
+      status: "needs_attention",
+      disputedFees: 1,
+      pausedFees: 0,
+    });
+    expect(getSuccessFeeComplianceAction(disputed)).toMatchObject({
+      id: "resolve_disputed_fee",
+      route: "/billing",
+      risk: "critical",
+      approvalGated: true,
+    });
+    expect(paused).toMatchObject({
+      status: "needs_attention",
+      pausedFees: 1,
+      disputedFees: 0,
+    });
+    expect(getSuccessFeeComplianceAction(paused)).toMatchObject({
+      id: "review_paused_billing",
+      route: "/billing",
+      risk: "high",
+      approvalGated: true,
+    });
+  });
+
   it("reports clear state for active fees without pending work", () => {
     const summary = getSuccessFeeComplianceSummary(
       [{

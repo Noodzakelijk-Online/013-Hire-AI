@@ -5,6 +5,9 @@ import type { SuccessFeeComplianceSummary } from "./successFeeCompliance";
 const clearCompliance: SuccessFeeComplianceSummary = {
   status: "none",
   activeFees: 0,
+  suspendedFees: 0,
+  pausedFees: 0,
+  disputedFees: 0,
   pendingVerification: 0,
   overdueVerifications: 0,
   dueSoonVerifications: 0,

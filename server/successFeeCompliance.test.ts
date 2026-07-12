@@ -93,4 +93,24 @@ describe("success fee compliance", () => {
       { type: "payment_suspended", priority: "high", successFeeId: 1 },
     ]);
   });
+
+  it("surfaces disputed and paused fees as explicit review work", () => {
+    const now = new Date("2026-06-30T12:00:00.000Z");
+    const fees = [
+      fee({ id: 2, status: "paused" }),
+      fee({ id: 3, status: "disputed" }),
+    ];
+
+    const summary = getSuccessFeeComplianceSummary(fees, [], now);
+    const queue = getSuccessFeeComplianceQueue(fees, [], now);
+
+    expect(summary).toMatchObject({
+      status: "needs_attention",
+      pausedFees: 1,
+      disputedFees: 1,
+      nextAction: expect.stringContaining("disputed success-fee record"),
+    });
+    expect(queue.map((item) => item.type)).toEqual(["billing_disputed", "billing_paused"]);
+    expect(queue[0]).toMatchObject({ priority: "critical", successFeeId: 3 });
+  });
 });

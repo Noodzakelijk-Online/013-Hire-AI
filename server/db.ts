@@ -1854,6 +1854,8 @@ export async function getAdminMemoryFallback() {
       activeFees: fees.filter((fee) => fee.status === "active").length,
       pendingFees: fees.filter((fee) => fee.status === "pending_verification").length,
       suspendedFees: fees.filter((fee) => fee.status === "suspended").length,
+      pausedFees: fees.filter((fee) => fee.status === "paused").length,
+      disputedFees: fees.filter((fee) => fee.status === "disputed").length,
       totalRevenueUsd: 0,
       monthlyRevenueUsd: 0,
       overdueVerifications: overdue.length,

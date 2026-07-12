@@ -293,6 +293,8 @@ export default function AdminPanel() {
     { label: "Overdue Verifications", value: stats?.overdueVerifications ?? 0, icon: AlertTriangle, color: "text-orange-400" },
     { label: "Review Items", value: reviewQueue?.length ?? 0, icon: Shield, color: "text-cyan-400" },
     { label: "Suspended", value: stats?.suspendedFees ?? 0, icon: Ban, color: "text-red-400" },
+    { label: "Paused", value: stats?.pausedFees ?? 0, icon: Pause, color: "text-slate-400" },
+    { label: "Disputed", value: stats?.disputedFees ?? 0, icon: AlertTriangle, color: "text-orange-400" },
     { label: "Monthly Revenue", value: `$${(stats?.monthlyRevenueUsd ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}`, icon: DollarSign, color: "text-cyan-400" },
     { label: "Total Revenue", value: `$${(stats?.totalRevenueUsd ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}`, icon: DollarSign, color: "text-blue-400" },
     { label: "Total Users", value: stats?.totalUsers ?? 0, icon: Users, color: "text-purple-400" },
@@ -430,7 +432,7 @@ export default function AdminPanel() {
         </Card>
 
         {/* Stats Row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 mb-8">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-5 mb-8">
           {statCards.map((s) => (
             <Card key={s.label} className="bg-slate-900/60 border-slate-800/50">
               <CardContent className="p-4">

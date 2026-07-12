@@ -29,7 +29,9 @@ export interface OfferAttributionReviewLike {
 export type SuccessFeeComplianceStatus = "none" | "clear" | "due_soon" | "needs_attention";
 export type SuccessFeeComplianceQueueItemType =
   | "offer_attribution"
+  | "billing_disputed"
   | "payment_suspended"
+  | "billing_paused"
   | "verification_pending"
   | "verification_due_soon"
   | "verification_overdue";
@@ -38,6 +40,8 @@ export interface SuccessFeeComplianceSummary {
   status: SuccessFeeComplianceStatus;
   activeFees: number;
   suspendedFees: number;
+  pausedFees: number;
+  disputedFees: number;
   pendingVerification: number;
   overdueVerifications: number;
   dueSoonVerifications: number;
@@ -89,6 +93,8 @@ export function getSuccessFeeComplianceSummary(
 ): SuccessFeeComplianceSummary {
   const activeFees = fees.filter(isActiveFee);
   const suspendedFees = fees.filter((fee) => fee.status === "suspended");
+  const pausedFees = fees.filter((fee) => fee.status === "paused");
+  const disputedFees = fees.filter((fee) => fee.status === "disputed");
   const verificationDeadlines = activeFees
     .map((fee) => coerceDate(fee.nextVerificationDue))
     .filter((date): date is Date => Boolean(date))
@@ -104,11 +110,13 @@ export function getSuccessFeeComplianceSummary(
   const nextVerificationDue = verificationDeadlines[0] || null;
   const daysUntilNextVerification = daysUntil(nextVerificationDue, now);
 
-  if (pendingOfferAttributions > 0 || suspendedFees.length > 0 || overdueVerifications > 0) {
+  if (pendingOfferAttributions > 0 || disputedFees.length > 0 || suspendedFees.length > 0 || pausedFees.length > 0 || overdueVerifications > 0) {
     return {
       status: "needs_attention",
       activeFees: activeFees.length,
       suspendedFees: suspendedFees.length,
+      pausedFees: pausedFees.length,
+      disputedFees: disputedFees.length,
       pendingVerification,
       overdueVerifications,
       dueSoonVerifications,
@@ -119,8 +127,12 @@ export function getSuccessFeeComplianceSummary(
       label: "Needs attention",
       nextAction: pendingOfferAttributions > 0
         ? "Review offer attribution and report hires that came through Hire.AI."
+        : disputedFees.length > 0
+          ? "Resolve the disputed success-fee record through review before billing enforcement advances."
         : suspendedFees.length > 0
           ? "Resolve the suspended success-fee payment before billing enforcement advances."
+          : pausedFees.length > 0
+            ? "Review the paused success-fee record before billing resumes."
         : "Submit overdue employment verification proof.",
     };
   }
@@ -130,6 +142,8 @@ export function getSuccessFeeComplianceSummary(
       status: "due_soon",
       activeFees: activeFees.length,
       suspendedFees: suspendedFees.length,
+      pausedFees: pausedFees.length,
+      disputedFees: disputedFees.length,
       pendingVerification,
       overdueVerifications,
       dueSoonVerifications,
@@ -147,6 +161,8 @@ export function getSuccessFeeComplianceSummary(
       status: "clear",
       activeFees: activeFees.length,
       suspendedFees: suspendedFees.length,
+      pausedFees: pausedFees.length,
+      disputedFees: disputedFees.length,
       pendingVerification,
       overdueVerifications,
       dueSoonVerifications,
@@ -163,6 +179,8 @@ export function getSuccessFeeComplianceSummary(
     status: "none",
     activeFees: 0,
     suspendedFees: 0,
+    pausedFees: 0,
+    disputedFees: 0,
     pendingVerification: 0,
     overdueVerifications: 0,
     dueSoonVerifications: 0,
@@ -199,11 +217,45 @@ export function getSuccessFeeComplianceQueue(
   }));
 
   const feeItems: SuccessFeeComplianceQueueItem[] = [];
+  for (const fee of fees.filter((item) => item.status === "disputed")) {
+    feeItems.push({
+      type: "billing_disputed",
+      priority: "critical",
+      action: "Resolve the disputed success-fee record through review before billing enforcement advances.",
+      successFeeId: fee.id,
+      approvalId: null,
+      applicationId: fee.applicationId ?? null,
+      employerName: fee.employerName,
+      jobTitle: fee.jobTitle,
+      status: fee.status,
+      nextVerificationDue: coerceDate(fee.nextVerificationDue),
+      daysUntilDue: null,
+      monthlyFeeAmount: fee.monthlyFeeAmount,
+      responseSummary: null,
+    });
+  }
   for (const fee of fees.filter((item) => item.status === "suspended")) {
     feeItems.push({
       type: "payment_suspended",
       priority: "high",
       action: "Resolve the suspended success-fee payment before billing enforcement advances.",
+      successFeeId: fee.id,
+      approvalId: null,
+      applicationId: fee.applicationId ?? null,
+      employerName: fee.employerName,
+      jobTitle: fee.jobTitle,
+      status: fee.status,
+      nextVerificationDue: coerceDate(fee.nextVerificationDue),
+      daysUntilDue: null,
+      monthlyFeeAmount: fee.monthlyFeeAmount,
+      responseSummary: null,
+    });
+  }
+  for (const fee of fees.filter((item) => item.status === "paused")) {
+    feeItems.push({
+      type: "billing_paused",
+      priority: "high",
+      action: "Review the paused success-fee record before billing resumes.",
       successFeeId: fee.id,
       approvalId: null,
       applicationId: fee.applicationId ?? null,
