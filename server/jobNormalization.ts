@@ -35,6 +35,19 @@ const PERIOD_MULTIPLIERS: Record<string, number> = {
   yearly: 1,
 };
 
+function detectCurrency(text: string) {
+  const codes = Array.from(new Set(Object.values(CURRENCY_SYMBOLS)));
+  const explicitCode = codes.find((code) =>
+    new RegExp(`\\b${code.toLowerCase()}\\b`, "i").test(text)
+  );
+  if (explicitCode) return explicitCode;
+
+  const symbol = Object.entries(CURRENCY_SYMBOLS)
+    .sort(([left], [right]) => right.length - left.length)
+    .find(([candidate]) => text.includes(candidate.toLowerCase()));
+  return symbol?.[1] || "USD";
+}
+
 export function normalizeSalary(salaryString: string | null | undefined): NormalizedSalary {
   const result: NormalizedSalary = {
     min: null,
@@ -48,13 +61,7 @@ export function normalizeSalary(salaryString: string | null | undefined): Normal
 
   const text = salaryString.toLowerCase().trim();
 
-  // Detect currency
-  for (const [symbol, code] of Object.entries(CURRENCY_SYMBOLS)) {
-    if (text.includes(symbol.toLowerCase()) || text.includes(code.toLowerCase())) {
-      result.currency = code;
-      break;
-    }
-  }
+  result.currency = detectCurrency(text);
 
   // Detect period
   if (text.includes("/hr") || text.includes("per hour") || text.includes("hourly") || text.includes("/hour")) {
@@ -118,40 +125,72 @@ export interface NormalizedLocation {
 const COUNTRY_ALIASES: Record<string, string> = {
   "usa": "United States",
   "us": "United States",
+  "united states": "United States",
   "united states of america": "United States",
   "uk": "United Kingdom",
   "gb": "United Kingdom",
+  "united kingdom": "United Kingdom",
   "great britain": "United Kingdom",
   "england": "United Kingdom",
   "de": "Germany",
+  "germany": "Germany",
   "deutschland": "Germany",
   "fr": "France",
+  "france": "France",
   "ca": "Canada",
+  "canada": "Canada",
   "au": "Australia",
+  "australia": "Australia",
   "nz": "New Zealand",
+  "new zealand": "New Zealand",
   "in": "India",
+  "india": "India",
   "sg": "Singapore",
+  "singapore": "Singapore",
   "jp": "Japan",
+  "japan": "Japan",
   "nl": "Netherlands",
+  "netherlands": "Netherlands",
   "holland": "Netherlands",
   "ie": "Ireland",
+  "ireland": "Ireland",
   "es": "Spain",
+  "spain": "Spain",
   "it": "Italy",
+  "italy": "Italy",
   "pt": "Portugal",
+  "portugal": "Portugal",
   "br": "Brazil",
+  "brazil": "Brazil",
   "mx": "Mexico",
+  "mexico": "Mexico",
   "ar": "Argentina",
+  "argentina": "Argentina",
   "pl": "Poland",
+  "poland": "Poland",
   "cz": "Czech Republic",
   "czechia": "Czech Republic",
+  "czech republic": "Czech Republic",
   "se": "Sweden",
+  "sweden": "Sweden",
   "no": "Norway",
+  "norway": "Norway",
   "dk": "Denmark",
+  "denmark": "Denmark",
   "fi": "Finland",
+  "finland": "Finland",
   "ch": "Switzerland",
+  "switzerland": "Switzerland",
   "at": "Austria",
+  "austria": "Austria",
   "be": "Belgium",
+  "belgium": "Belgium",
 };
+
+function containsLocationAlias(text: string, alias: string) {
+  const escapedAlias = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|[^a-z0-9])${escapedAlias}(?:$|[^a-z0-9])`, "i").test(text);
+}
 
 const US_STATES: Record<string, string> = {
   "al": "Alabama", "ak": "Alaska", "az": "Arizona", "ar": "Arkansas",
@@ -241,8 +280,9 @@ export function normalizeLocation(locationString: string | null | undefined): No
   }
 
   // Detect country
-  for (const [alias, country] of Object.entries(COUNTRY_ALIASES)) {
-    if (text.includes(alias)) {
+  for (const [alias, country] of Object.entries(COUNTRY_ALIASES)
+    .sort(([left], [right]) => right.length - left.length)) {
+    if (containsLocationAlias(text, alias)) {
       result.country = country;
       result.region = REGION_MAPPING[country] || "Other";
       break;
