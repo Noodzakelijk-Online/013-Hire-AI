@@ -14,6 +14,10 @@ export interface ApplicationEvidenceGateApplicationLike {
   status?: string | null;
 }
 
+export interface ApplicationApprovalEvidenceGateLike {
+  approvalType?: string | null;
+}
+
 export interface ApplicationEvidenceGateSummary {
   gates: ApplicationEvidenceGateLike[];
   count: number;
@@ -94,4 +98,15 @@ export function getApplicationEvidenceGateSummary(
     route: firstGate?.route || "/profile",
     blockedCapabilities,
   };
+}
+
+export function getApprovalEvidenceGateSummary(
+  approval: ApplicationApprovalEvidenceGateLike | null | undefined,
+  gates: ApplicationEvidenceGateLike[] = []
+): ApplicationEvidenceGateSummary {
+  if (approval?.approvalType !== "application_submission") {
+    return getApplicationEvidenceGateSummary({ status: "withdrawn" }, gates);
+  }
+
+  return getApplicationEvidenceGateSummary({ status: "pending" }, gates);
 }

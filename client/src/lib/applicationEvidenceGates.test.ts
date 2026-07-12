@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getApplicationEvidenceGateSummary } from "./applicationEvidenceGates";
+import { getApplicationEvidenceGateSummary, getApprovalEvidenceGateSummary } from "./applicationEvidenceGates";
 
 const gates = [
   {
@@ -52,5 +52,11 @@ describe("application evidence gates", () => {
 
     expect(summary.count).toBe(0);
     expect(summary.headline).toBe("No evidence gates block this application.");
+  });
+
+  it("blocks only application-submission approvals on profile evidence", () => {
+    expect(getApprovalEvidenceGateSummary({ approvalType: "application_submission" }, gates).count).toBe(1);
+    expect(getApprovalEvidenceGateSummary({ approvalType: "follow_up_send" }, gates).count).toBe(0);
+    expect(getApprovalEvidenceGateSummary({ approvalType: "offer_attribution" }, gates).count).toBe(0);
   });
 });

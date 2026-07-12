@@ -9,6 +9,7 @@ import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
 import { formatAutonomousRunSummary, getAutonomousRunCounts } from "@/lib/autonomousRunSummary";
 import { getApplicationDeepLink } from "@/lib/applicationDeepLinks";
+import { getApprovalEvidenceGateSummary } from "@/lib/applicationEvidenceGates";
 import { getCommandCenterSummary } from "@/lib/commandCenterSummary";
 import { getSuccessFeeComplianceAction, getSuccessFeeComplianceSummary } from "@/lib/successFeeCompliance";
 import {
@@ -728,7 +729,14 @@ export default function Dashboard() {
 
                 {reviewQueueCount > 0 ? (
                   <div className="grid gap-3 xl:grid-cols-2">
-                    {operatingLedger.queues.pendingApprovals.map((approval) => (
+                    {operatingLedger.queues.pendingApprovals.map((approval) => {
+                      const evidenceGate = getApprovalEvidenceGateSummary(
+                        approval,
+                        operatingLedger.queues.evidenceGates
+                      );
+                      const evidenceBlocked = evidenceGate.count > 0;
+
+                      return (
                       <div
                         key={`approval-${approval.id}`}
                         className="rounded-md border border-slate-800 bg-slate-950/40 p-3"
@@ -754,11 +762,16 @@ export default function Dashboard() {
                             )}
                           </div>
                         </div>
+                        {evidenceBlocked && (
+                          <p className="mt-2 text-xs text-amber-200">{evidenceGate.detail}</p>
+                        )}
                         <div className="mt-3 flex flex-wrap gap-2">
                           <Button
                             size="sm"
                             className="bg-emerald-600 hover:bg-emerald-500"
-                            disabled={resolveApproval.isPending}
+                            data-testid={`dashboard-approval-approve-${approval.id}`}
+                            disabled={resolveApproval.isPending || evidenceBlocked}
+                            title={evidenceBlocked ? evidenceGate.detail : undefined}
                             onClick={() => handleResolveApproval(approval, "approved")}
                           >
                             <CheckCircle className="mr-2 h-4 w-4" />
@@ -774,9 +787,21 @@ export default function Dashboard() {
                             <XCircle className="mr-2 h-4 w-4" />
                             Reject
                           </Button>
+                          {evidenceBlocked && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              data-testid={`dashboard-approval-resolve-evidence-${approval.id}`}
+                              onClick={() => setLocation(evidenceGate.route)}
+                            >
+                              <User className="mr-2 h-4 w-4" />
+                              Resolve Evidence
+                            </Button>
+                          )}
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
 
                     {operatingLedger.queues.reviewDecisions.map((decision) => {
                       const actionSummary = getReviewQueueActionSummary("job_decision", decision);

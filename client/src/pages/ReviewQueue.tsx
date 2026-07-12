@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { trpc } from "@/lib/trpc";
 import { getApplicationDeepLink } from "@/lib/applicationDeepLinks";
+import { getApprovalEvidenceGateSummary } from "@/lib/applicationEvidenceGates";
 import {
   formatApplicationDecision,
   formatApprovalType,
@@ -273,7 +274,14 @@ export default function ReviewQueue() {
                 </div>
                 {operatingLedger?.queues.pendingApprovals.length ? (
                   <div className="space-y-3">
-                    {operatingLedger.queues.pendingApprovals.map((approval) => (
+                    {operatingLedger.queues.pendingApprovals.map((approval) => {
+                      const evidenceGate = getApprovalEvidenceGateSummary(
+                        approval,
+                        operatingLedger.queues.evidenceGates
+                      );
+                      const evidenceBlocked = evidenceGate.count > 0;
+
+                      return (
                       <Card key={approval.id}>
                         <CardHeader className="pb-3">
                           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -299,12 +307,18 @@ export default function ReviewQueue() {
                             summary={getQueueAction("approval", approval)}
                             onOpen={setLocation}
                           />
+                          {evidenceBlocked && (
+                            <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-200">
+                              {evidenceGate.detail}
+                            </div>
+                          )}
                           <div className="flex flex-wrap gap-2">
                             <Button
                               size="sm"
                               data-testid="approval-approve"
                               data-approval-type={approval.approvalType}
-                              disabled={resolveApproval.isPending}
+                              disabled={resolveApproval.isPending || evidenceBlocked}
+                              title={evidenceBlocked ? evidenceGate.detail : undefined}
                               onClick={() => handleResolveApproval(approval, "approved")}
                             >
                               <CheckCircle className="mr-2 h-4 w-4" />
@@ -322,10 +336,22 @@ export default function ReviewQueue() {
                               <XCircle className="mr-2 h-4 w-4" />
                               Reject
                             </Button>
+                            {evidenceBlocked && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                data-testid={`approval-resolve-evidence-${approval.id}`}
+                                onClick={() => setLocation(evidenceGate.route)}
+                              >
+                                <User className="mr-2 h-4 w-4" />
+                                Resolve Evidence
+                              </Button>
+                            )}
                           </div>
                         </CardContent>
                       </Card>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <EmptyQueueLine label="No pending user approvals." />
