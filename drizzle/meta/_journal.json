@@ -148,6 +148,13 @@
       "when": 1782698400000,
       "tag": "0020_autonomous_run_summary",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "5",
+      "when": 1783814400000,
+      "tag": "0021_retire_social_access_tokens",
+      "breakpoints": true
     }
   ]
 }

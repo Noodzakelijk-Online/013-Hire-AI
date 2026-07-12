@@ -113,7 +113,7 @@ Express 4 Server (Node.js 22 ESM)
 - **Unified Operating Ledger** — Connects source platform, decisions, materials, submission evidence, responses, follow-ups, interviews, offer attribution, and compliance work.
 - **Saved Jobs** — Bookmark interesting listings for manual review
 - **AI Preferences** — Configure controlled preparation, daily review limits, discovery policy, and job preferences
-- **Job Alerts** — Configure matching and notification preferences for new high-match listings
+- **Job Alerts** — Configure matching preferences for new high-match listings; candidates review matches in the command center, while user notifications are reserved for verified interview invites
 - **Career Intelligence** — Salary benchmarking, skill gap analysis, and market insights
 
 ### For Platform Operators (Admin)

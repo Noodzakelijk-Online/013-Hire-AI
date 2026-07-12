@@ -120,14 +120,15 @@ export const userProfiles = mysqlTable("user_profiles", {
 
 /**
  * Social Media Profiles
- * Stores connected social media accounts for job discovery
+ * Stores user-provided public social profile references. OAuth consent and
+ * connection state live in userConnectorAccounts; raw credentials are never
+ * persisted in application tables.
  */
 export const socialMediaProfiles = mysqlTable("social_media_profiles", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("user_id").notNull(),
   platform: mysqlEnum("platform", ["facebook", "twitter", "linkedin"]).notNull(),
   profileUrl: varchar("profile_url", { length: 500 }),
-  accessToken: text("access_token"),
   isActive: int("is_active").default(1).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
