@@ -11,6 +11,7 @@ describe("application employer response classification", () => {
     expect(resolveEmployerResponseStatus("applied", "interview_invite")).toBe("interview");
     expect(resolveEmployerResponseStatus("interview", "offer")).toBe("offer");
     expect(resolveEmployerResponseStatus("applied", "rejection")).toBe("rejected");
+    expect(resolveEmployerResponseStatus("interview", "no_response")).toBeNull();
   });
 
   it("records a traceable response note", () => {

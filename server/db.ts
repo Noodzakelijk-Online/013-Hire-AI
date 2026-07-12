@@ -1737,6 +1737,28 @@ export async function getUserSuccessFees(userId: number) {
     .orderBy(desc(successFees.createdAt));
 }
 
+export async function touchApplicationActivity(
+  applicationId: number,
+  userId: number,
+  occurredAt = new Date()
+) {
+  const db = await getDb();
+  if (!db) {
+    const application = memoryApplications.find((item) =>
+      item.id === applicationId && item.userId === userId
+    );
+    if (!application) throw new Error("Application not found.");
+    application.lastActivity = occurredAt;
+    application.updatedAt = new Date();
+    return;
+  }
+
+  await db
+    .update(applications)
+    .set({ lastActivity: occurredAt })
+    .where(and(eq(applications.id, applicationId), eq(applications.userId, userId)));
+}
+
 /**
  * Supplies the admin command center with the same in-memory ledger state used
  * by local review fixtures. Mutating admin actions intentionally remain

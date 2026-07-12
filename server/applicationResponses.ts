@@ -6,6 +6,7 @@ export type EmployerResponseType =
   | "interview_invite"
   | "offer"
   | "employer_question"
+  | "no_response"
   | "other";
 
 export type EmployerResponseSource =
@@ -56,6 +57,7 @@ const TYPE_LABELS: Record<EmployerResponseType, string> = {
   interview_invite: "interview invite",
   offer: "offer",
   employer_question: "employer question",
+  no_response: "no employer response yet",
   other: "other employer response",
 };
 
@@ -81,6 +83,7 @@ export function resolveEmployerResponseStatus(
       return "interview";
     case "offer":
       return "offer";
+    case "no_response":
     case "other":
       return null;
   }

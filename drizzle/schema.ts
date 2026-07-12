@@ -265,6 +265,7 @@ export const employerResponses = mysqlTable("employer_responses", {
     "interview_invite",
     "offer",
     "employer_question",
+    "no_response",
     "other",
   ]).notNull(),
   source: mysqlEnum("source", ["email", "employer_portal", "linkedin", "phone", "other"]).notNull(),

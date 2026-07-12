@@ -2235,24 +2235,33 @@ export default function Applications() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-300">Source</label>
-                <Select
-                  value={interviewOutcomeSource}
-                  onValueChange={(value) => setInterviewOutcomeSource(value as EmployerResponseSource)}
-                >
-                  <SelectTrigger className="w-full bg-slate-800 border-slate-700 text-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="email">Email</SelectItem>
-                    <SelectItem value="employer_portal">Employer portal</SelectItem>
-                    <SelectItem value="linkedin">LinkedIn</SelectItem>
-                    <SelectItem value="phone">Phone</SelectItem>
-                    <SelectItem value="other">Other</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {interviewOutcome === "no_response" ? (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-300">Source</label>
+                  <p className="rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-400">
+                    Internal status check
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-300">Source</label>
+                  <Select
+                    value={interviewOutcomeSource}
+                    onValueChange={(value) => setInterviewOutcomeSource(value as EmployerResponseSource)}
+                  >
+                    <SelectTrigger className="w-full bg-slate-800 border-slate-700 text-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="email">Email</SelectItem>
+                      <SelectItem value="employer_portal">Employer portal</SelectItem>
+                      <SelectItem value="linkedin">LinkedIn</SelectItem>
+                      <SelectItem value="phone">Phone</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="space-y-2 md:col-span-2">
                 <label className="text-sm font-medium text-slate-300">Outcome summary</label>
                 <Textarea

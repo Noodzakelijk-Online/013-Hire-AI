@@ -24,6 +24,7 @@ import {
   getUserApplications,
   listAdminReviewItems,
   listUserApplicationApprovals,
+  touchApplicationActivity,
   upsertUserProfile,
 } from "./db";
 import { getFollowUps, recordInterviewOutcome, scheduleInterview, updateInterviewStatus } from "./applicationFeatures";
@@ -298,6 +299,7 @@ describe("autonomous submission approval gates", () => {
       source: "email",
       summary: "Recruiter invited the candidate to a technical round after the first interview.",
     }, userId);
+    await touchApplicationActivity(applicationId, userId, staleDate);
 
     const result = await runAutonomousForUser(userId, {
       createFollowUps: true,

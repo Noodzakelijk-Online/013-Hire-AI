@@ -21,6 +21,7 @@ import {
   getUserApplications,
   listUserApplicationApprovals,
   resolveApplicationApproval,
+  touchApplicationActivity,
   updateApplicationStatus,
   upsertInterviewPreparation,
 } from "./db";
@@ -654,7 +655,7 @@ function existingEmployerResponseResult(response: {
 }
 
 function shouldCancelUnsentFollowUpApprovals(responseType: EmployerResponseInput["responseType"]) {
-  return responseType !== "viewed";
+  return !["viewed", "no_response"].includes(responseType);
 }
 
 function staleFollowUpCancellationNote(responseType: EmployerResponseInput["responseType"], responseId: number) {
@@ -743,6 +744,8 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
 
     if (response.nextStatus && response.nextStatus !== currentStatus) {
       await updateApplicationStatus(input.applicationId, response.nextStatus, userId);
+    } else {
+      await touchApplicationActivity(input.applicationId, userId, response.receivedAt);
     }
 
     const cancelledFollowUpApprovalIds: number[] = [];
@@ -1707,6 +1710,9 @@ export async function updateInterviewStatus(
 
     interview.status = status;
     interview.updatedAt = new Date();
+    if (status === "completed") {
+      await touchApplicationActivity(interview.applicationId, userId);
+    }
     await createAuditEvent({
       userId,
       entityType: "application",
@@ -1811,9 +1817,14 @@ function interviewOutcomeResponseType(outcome: InterviewOutcomeType): EmployerRe
     case "rejection":
       return "rejection";
     case "no_response":
+      return "no_response";
     case "other":
       return "other";
   }
+}
+
+function interviewOutcomeSource(input: RecordInterviewOutcomeInput): EmployerResponseInput["source"] {
+  return input.outcome === "no_response" ? "other" : input.source;
 }
 
 function interviewOutcomeSummary(input: RecordInterviewOutcomeInput) {
@@ -1841,7 +1852,7 @@ export async function recordInterviewOutcome(input: RecordInterviewOutcomeInput,
     const response = await recordEmployerResponse({
       applicationId: interview.applicationId,
       responseType: interviewOutcomeResponseType(input.outcome),
-      source: input.source,
+      source: interviewOutcomeSource(input),
       summary: interviewOutcomeSummary(input),
       receivedAt,
     }, userId);
@@ -1892,7 +1903,7 @@ export async function recordInterviewOutcome(input: RecordInterviewOutcomeInput,
   const response = await recordEmployerResponse({
     applicationId: interview[0].applicationId,
     responseType: interviewOutcomeResponseType(input.outcome),
-    source: input.source,
+    source: interviewOutcomeSource(input),
     summary: interviewOutcomeSummary(input),
     receivedAt,
   }, userId);

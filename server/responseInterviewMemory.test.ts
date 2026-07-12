@@ -18,6 +18,7 @@ import {
   getUserOfferAttributionReviews,
   listAdminReviewItems,
   listUserApplicationApprovals,
+  resolveApplicationApproval,
 } from "./db";
 
 describe("response and interview memory fallback", () => {
@@ -399,5 +400,60 @@ describe("response and interview memory fallback", () => {
       event.action === "interview_outcome_recorded" &&
       event.afterState?.includes(`"responseId":${outcome.responseId}`)
     )).toBe(true);
+  });
+
+  it("records no-response outcomes as internal checks without retiring a follow-up handoff", async () => {
+    const userId = 98205;
+    const application = await createApplication({
+      userId,
+      jobId: 2,
+      status: "interview",
+      notes: "Interview completed without a recruiter reply yet.",
+    });
+    const applicationId = Number(application.insertId);
+    const scheduled = await scheduleInterview({
+      applicationId,
+      interviewType: "video",
+      scheduledAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
+    }, userId);
+    const followUp = await createFollowUp({
+      applicationId,
+      message: "Thank you for the interview. I remain very interested in the role.",
+    }, userId);
+    const approval = (await listUserApplicationApprovals(userId, "pending")).find((item) =>
+      item.entityType === "follow_up" && item.entityId === followUp.id
+    );
+    expect(approval).toBeTruthy();
+    await resolveApplicationApproval(
+      approval!.id,
+      userId,
+      "approved",
+      "Approved for the manual send handoff.",
+      "user"
+    );
+
+    const outcome = await recordInterviewOutcome({
+      interviewId: scheduled.id,
+      outcome: "no_response",
+      source: "email",
+      summary: "Checked the application after the interview; no employer response has arrived yet.",
+    }, userId);
+
+    const artifacts = await getApplicationLedgerArtifacts(applicationId, userId);
+    const approvals = await listUserApplicationApprovals(userId, "all");
+    const ledger = await getUserOperatingLedger(userId);
+
+    expect(outcome.responseType).toBe("no_response");
+    expect(outcome.status).toBe("interview");
+    expect(artifacts.employerResponses[0]).toMatchObject({
+      id: outcome.responseId,
+      responseType: "no_response",
+      source: "other",
+      statusAfter: "interview",
+    });
+    expect(approvals.find((item) => item.id === approval!.id)?.status).toBe("approved");
+    expect(ledger.metrics.employerResponsesNeedingReply).toBe(0);
+    expect(ledger.metrics.approvedFollowUpsReadyToSend).toBe(1);
+    expect(artifacts.auditEvents.some((event) => event.action === "stale_follow_up_approvals_cancelled")).toBe(false);
   });
 });
