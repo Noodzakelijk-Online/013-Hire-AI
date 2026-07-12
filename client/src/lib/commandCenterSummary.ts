@@ -292,8 +292,8 @@ export function getCommandCenterSummary(
       nextAction: "Draft follow-ups for quiet applications, then approve sending only after review.",
       primaryCta: "Open Applications",
       primaryRoute: "/applications",
-      secondaryCta: "Scan Jobs",
-      secondaryRoute: "/dashboard",
+      secondaryCta: "Review Matches",
+      secondaryRoute: "/jobs",
     };
   }
 
@@ -330,9 +330,9 @@ export function getCommandCenterSummary(
     status: "clear",
     label: "Ready",
     headline: "No urgent blockers are waiting for you.",
-    nextAction: "Run a scan to find new matches, or review the ledger for recent activity.",
-    primaryCta: "Scan Jobs",
-    primaryRoute: "/dashboard",
+    nextAction: "Review current matches or wait for the scheduled discovery cycle to add new listings.",
+    primaryCta: "Review Matches",
+    primaryRoute: "/jobs",
     secondaryCta: "Open Ledger",
     secondaryRoute: "/applications",
   };

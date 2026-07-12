@@ -377,6 +377,24 @@ describe("command center summary", () => {
 
     expect(summary.status).toBe("clear");
     expect(summary.openActions).toBe(0);
-    expect(summary.primaryCta).toBe("Scan Jobs");
+    expect(summary.primaryCta).toBe("Review Matches");
+    expect(summary.primaryRoute).toBe("/jobs");
+  });
+
+  it("uses the dashboard route for verified interview navigation", () => {
+    const summary = getCommandCenterSummary({
+      readiness: {
+        autoApplyEligible: true,
+        blockers: [],
+        warnings: [],
+      },
+      queues: {},
+      metrics: {
+        unreadInterviewNotifications: 1,
+      },
+    }, clearCompliance);
+
+    expect(summary.primaryCta).toBe("Open Dashboard");
+    expect(summary.primaryRoute).toBe("/dashboard");
   });
 });

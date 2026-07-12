@@ -168,12 +168,12 @@ export default function Dashboard() {
     toast.success("Logged out successfully");
   };
 
-  const handleScanJobs = () => {
+  const handleRunAutonomousReview = () => {
     if (operatingLedger?.campaign.status !== "active") {
       toast.info("Resume the campaign before running autonomous work.");
       return;
     }
-    toast.info("Evaluating jobs against your saved automation policy...");
+    toast.info("Preparing review-safe work from the current jobs and automation policy...");
     runAutonomousAgent.mutate();
   };
   const toggleCampaignStatus = () => {
@@ -241,10 +241,6 @@ export default function Dashboard() {
       ]
     : [];
   const runCommandCenterAction = (route: string) => {
-    if (route === "/dashboard") {
-      handleScanJobs();
-      return;
-    }
     setLocation(route);
   };
 
@@ -423,7 +419,7 @@ export default function Dashboard() {
           <Button
             variant="outline"
             className="border-cyan-500/50 text-cyan-400 hover:bg-cyan-500/10"
-            onClick={handleScanJobs}
+            onClick={handleRunAutonomousReview}
             disabled={runAutonomousAgent.isPending}
           >
             {runAutonomousAgent.isPending ? (
@@ -431,7 +427,7 @@ export default function Dashboard() {
             ) : (
               <RefreshCw className="mr-2 h-4 w-4" />
             )}
-            {runAutonomousAgent.isPending ? "Scanning..." : "Scan for Jobs"}
+            {runAutonomousAgent.isPending ? "Preparing..." : "Prepare review work"}
           </Button>
         </div>
 

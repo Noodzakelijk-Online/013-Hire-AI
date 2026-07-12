@@ -70,7 +70,7 @@ Hire.AI operates on a **success-based fee model** — there are no upfront costs
 | **AI / LLM** | Manus built-in LLM API (GPT-class, server-side) |
 | **Resume Parsing** | pdf-parse (PDF), mammoth (DOCX), LLM structured extraction |
 | **Type Safety** | TypeScript end-to-end (tRPC + Superjson) |
-| **Testing** | Vitest (394 tests across 84 test files) |
+| **Testing** | Vitest (423 tests across 89 test files) |
 | **Build** | Vite (frontend), esbuild (server) |
 
 ---
@@ -106,14 +106,14 @@ Express 4 Server (Node.js 22 ESM)
 
 ### For Job Seekers
 
-- **Automated Job Scanning** — Continuously scans 50+ remote job boards (LinkedIn, Indeed, Glassdoor, Remote.co, We Work Remotely, etc.)
-- **AI Job Matching** — Scores each listing against the user's skills, experience, and preferences using LLM
-- **Autonomous Applications** — Submits tailored applications with AI-generated cover letters
+- **Controlled Job Discovery** — Normalizes and deduplicates listings from configured, ready remote-job sources while exposing freshness and source coverage.
+- **AI Job Matching** — Scores listings against the candidate profile and saved policy, with review reasons and evidence gates.
+- **Review-Gated Application Preparation** — Creates tailored materials and internal approval work; Hire.AI never claims an employer submission without deterministic evidence or explicit manual confirmation.
 - **Resume Parsing** — Upload PDF or DOCX; AI extracts and populates the profile automatically
-- **Unified Dashboard** — Single view of all metrics: applications sent, response rate, interview conversion, recent activity, and full application history
+- **Unified Operating Ledger** — Connects source platform, decisions, materials, submission evidence, responses, follow-ups, interviews, offer attribution, and compliance work.
 - **Saved Jobs** — Bookmark interesting listings for manual review
-- **AI Preferences** — Configure application preparation, daily review limits, scan frequency, and job preferences
-- **Job Alerts** — Email/notification alerts for new high-match listings
+- **AI Preferences** — Configure controlled preparation, daily review limits, discovery policy, and job preferences
+- **Job Alerts** — Configure matching and notification preferences for new high-match listings
 - **Career Intelligence** — Salary benchmarking, skill gap analysis, and market insights
 
 ### For Platform Operators (Admin)
@@ -131,7 +131,11 @@ Express 4 Server (Node.js 22 ESM)
 |---|---|
 | `users` | User accounts, OAuth identity, role (admin/user), ToS acceptance, Stripe customer ID, account status |
 | `jobs` | Scraped job listings with metadata (title, company, salary, platform, match score) |
-| `applications` | Application records (status: pending/applied/interviewing/offered/rejected) |
+| `applications` | Application records linked to job, platform, status, and provenance |
+| `application_decisions` | Persisted apply/save/ignore/review decisions with match and risk rationale |
+| `application_materials` | Resume version, cover letter, custom answers, claims, and profile snapshot used for preparation |
+| `application_attempts` / `submission_evidence` | Internal attempts and deterministic proof required before a submission is recorded |
+| `application_approvals` / `audit_events` | Approval gates and traceable consequential-action history |
 | `saved_jobs` | User-bookmarked job listings |
 | `user_profiles` | Extended profile (skills, experience, education, resume URL, preferences) |
 | `success_fees` | Active success fee agreements (salary, fee amount, Stripe subscription ID, next verification due) |
@@ -274,9 +278,9 @@ All API calls go through tRPC at `/api/trpc`. The full type-safe contract is def
 | Namespace | Procedures |
 |---|---|
 | `auth` | `me`, `logout`, `acceptTos` |
-| `jobs` | `scan`, `getMatches`, `getById`, `saveJob`, `unsaveJob`, `getSaved` |
-| `applications` | `getAll`, `getById`, `updateStatus`, `getStats` |
-| `profile` | `get`, `update`, `uploadResume`, `parseResume` |
+| `jobs` | `list`, `getMatches`, `getSources`, `getDiscoveryStatus`, `saveJob`, `unsaveJob`, `getSaved` |
+| `applications` | `list`, `getOperatingLedger`, `decide`, `prepare`, `confirmSubmission`, `recordResponse`, `createFollowUpDraft`, `scheduleInterview` |
+| `profile` | `get`, `getReadiness`, `update`, `uploadResume`, `parseResume` |
 | `successFees` | `reportHire`, `getActive`, `submitVerification`, `reportEnded`, `getPaymentHistory`, `createStripeSession` |
 | `admin` | `getActiveFees`, `getOverdueVerifications`, `getFailedPayments`, `suspendAccount`, `reinstateAccount`, `flagForLegalAction`, `getRevenueMetrics` |
 | `system` | `notifyOwner` |
@@ -291,7 +295,7 @@ The project uses [Vitest](https://vitest.dev/) for unit and integration testing.
 pnpm test
 ```
 
-**Current status: 394 tests passing across 84 test files**
+**Current status: 423 tests passing across 89 test files**
 
 | Test File | Coverage |
 |---|---|
