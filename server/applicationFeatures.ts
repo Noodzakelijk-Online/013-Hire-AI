@@ -15,6 +15,7 @@ import {
   getEmployerResponses,
   getInterviewPreparationForJob,
   getDb,
+  getApplicationLedgerArtifacts,
   getJobById,
   getUserApplications,
   listUserApplicationApprovals,
@@ -332,6 +333,14 @@ export interface ConfirmSubmissionInput extends SubmissionEvidenceInput {
   applicationId: number;
 }
 
+function isMatchingSubmissionEvidence(
+  attempt: { confirmationText?: string | null; confirmationUrl?: string | null },
+  evidence: { noteContent: string; confirmationUrl: string | null }
+) {
+  return attempt.confirmationText === evidence.noteContent &&
+    (attempt.confirmationUrl || null) === evidence.confirmationUrl;
+}
+
 export async function confirmApplicationSubmission(input: ConfirmSubmissionInput, userId: number) {
   const db = await getDb();
   const evidence = normalizeSubmissionEvidence(input);
@@ -344,6 +353,22 @@ export async function confirmApplicationSubmission(input: ConfirmSubmissionInput
     const currentStatus = application.status || "pending";
     if (!canTransitionApplicationStatus(currentStatus, "applied")) {
       throw new Error(`Application cannot move from ${currentStatus} to applied.`);
+    }
+
+    const artifacts = await getApplicationLedgerArtifacts(input.applicationId, userId);
+    const recordedSubmission = artifacts.attempts.find((attempt) =>
+      attempt.attemptType === "manual_confirmation" && attempt.status === "submitted"
+    );
+    if (currentStatus === "applied" && recordedSubmission) {
+      if (isMatchingSubmissionEvidence(recordedSubmission, evidence)) {
+        return {
+          success: true,
+          status: "applied" as const,
+          evidenceAttemptId: recordedSubmission.id,
+          existing: true,
+        };
+      }
+      throw new Error("Application submission is already confirmed. Add any new proof as an application note instead.");
     }
 
     const confirmedAt = new Date();
@@ -446,6 +471,33 @@ export async function confirmApplicationSubmission(input: ConfirmSubmissionInput
       throw new Error(`Application cannot move from ${currentStatus} to applied.`);
     }
 
+    const recordedSubmission = await tx
+      .select({
+        id: applicationAttempts.id,
+        confirmationText: applicationAttempts.confirmationText,
+        confirmationUrl: applicationAttempts.confirmationUrl,
+      })
+      .from(applicationAttempts)
+      .where(and(
+        eq(applicationAttempts.applicationId, input.applicationId),
+        eq(applicationAttempts.userId, userId),
+        eq(applicationAttempts.attemptType, "manual_confirmation"),
+        eq(applicationAttempts.status, "submitted")
+      ))
+      .orderBy(desc(applicationAttempts.createdAt))
+      .limit(1);
+    if (currentStatus === "applied" && recordedSubmission[0]) {
+      if (isMatchingSubmissionEvidence(recordedSubmission[0], evidence)) {
+        return {
+          success: true,
+          status: "applied" as const,
+          evidenceAttemptId: recordedSubmission[0].id,
+          existing: true,
+        };
+      }
+      throw new Error("Application submission is already confirmed. Add any new proof as an application note instead.");
+    }
+
     const confirmedAt = new Date();
     const submissionApproval = await tx
       .select({ id: applicationApprovals.id, status: applicationApprovals.status })
@@ -522,7 +574,7 @@ export async function confirmApplicationSubmission(input: ConfirmSubmissionInput
       content: evidence.noteContent,
     });
 
-    await tx.insert(applicationAttempts).values({
+    const attempt = await tx.insert(applicationAttempts).values({
       applicationId: input.applicationId,
       userId: application[0].userId,
       jobId: application[0].jobId,
@@ -534,6 +586,7 @@ export async function confirmApplicationSubmission(input: ConfirmSubmissionInput
       confirmationUrl: evidence.confirmationUrl,
       retryCount: 0,
     });
+    const attemptId = Number(attempt[0].insertId);
 
     await tx.insert(auditEvents).values({
       userId,
@@ -547,6 +600,7 @@ export async function confirmApplicationSubmission(input: ConfirmSubmissionInput
         status: "applied",
         evidenceSource: evidence.source,
         confirmationUrl: evidence.confirmationUrl,
+        attemptId,
       }),
       riskLevel: "high",
       approvalId,
@@ -556,6 +610,7 @@ export async function confirmApplicationSubmission(input: ConfirmSubmissionInput
       success: true,
       status: "applied" as const,
       evidenceNoteId: Number(note[0].insertId),
+      evidenceAttemptId: attemptId,
     };
   });
 }

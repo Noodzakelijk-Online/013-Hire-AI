@@ -124,6 +124,45 @@ describe("submission confirmation memory fallback", () => {
     expect(applications.find((item) => item.id === applicationId)?.status).toBe("pending");
   });
 
+  it("keeps exact submission-confirmation retries idempotent", async () => {
+    const userId = 98305;
+    const application = await createApplication({
+      userId,
+      jobId: 5,
+      status: "pending",
+      notes: "Prepared application awaiting deterministic submission evidence.",
+    });
+    const applicationId = Number(application.insertId);
+    const input = {
+      applicationId,
+      source: "ats_confirmation" as const,
+      evidence: "The ATS displayed confirmation number QA-98305 after the employer form was submitted.",
+      confirmationUrl: "https://boards.example.local/applications/QA-98305",
+    };
+
+    const first = await confirmApplicationSubmission(input, userId);
+    const retry = await confirmApplicationSubmission(input, userId);
+    const artifacts = await getApplicationLedgerArtifacts(applicationId, userId);
+
+    expect(retry).toMatchObject({
+      success: true,
+      status: "applied",
+      evidenceAttemptId: first.evidenceAttemptId,
+      existing: true,
+    });
+    expect(artifacts.attempts.filter((attempt) =>
+      attempt.attemptType === "manual_confirmation" && attempt.status === "submitted"
+    )).toHaveLength(1);
+    expect(artifacts.auditEvents.filter((event) =>
+      event.action === "application_submission_confirmed"
+    )).toHaveLength(1);
+
+    await expect(confirmApplicationSubmission({
+      ...input,
+      evidence: "A different confirmation record was pasted after the first submission proof was already stored.",
+    }, userId)).rejects.toThrow("already confirmed");
+  });
+
   it("validates evidence before changing application state", async () => {
     const userId = 98304;
     const application = await createApplication({
