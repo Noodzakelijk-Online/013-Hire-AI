@@ -1,7 +1,14 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure } from "../_core/trpc";
-import { createAdminReviewItem, createAuditEvent, getDb, getUserOfferAttributionReviews, getUserSuccessFees } from "../db";
+import {
+  createAdminReviewItem,
+  createAuditEvent,
+  dismissOfferAttributionAdminReviews,
+  getDb,
+  getUserOfferAttributionReviews,
+  getUserSuccessFees,
+} from "../db";
 import { applicationApprovals, applications, successFees, employmentVerifications, feePayments, users } from "../../drizzle/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { isAcceptedOfferApplicationStatus } from "@shared/offerEligibility";
@@ -296,6 +303,31 @@ export const successFeesRouter = router({
         riskLevel: "critical",
         approvalId: billingApprovalId,
       });
+      const dismissedSourceOfferReviewIds = input.applicationId === undefined
+        ? []
+        : (await dismissOfferAttributionAdminReviews(
+          userId,
+          input.applicationId,
+          "Superseded by the user's report-hire flow; continue review on the linked success-fee record."
+        )).dismissedReviewIds;
+      if (dismissedSourceOfferReviewIds.length > 0 && input.applicationId !== undefined) {
+        await createAuditEvent({
+          userId,
+          entityType: "application",
+          entityId: input.applicationId,
+          action: "offer_attribution_review_superseded_by_hire_report",
+          actor: "system",
+          source: "successFees.reportHire",
+          afterState: JSON.stringify({
+            successFeeId: fee.id,
+            dismissedSourceOfferReviewIds,
+            successorReviewEntityType: "success_fee",
+            externalCommunicationSent: false,
+          }),
+          riskLevel: "high",
+          approvalId: offerAttributionApprovalId,
+        });
+      }
       await createAdminReviewItem({
         userId,
         entityType: "success_fee",
