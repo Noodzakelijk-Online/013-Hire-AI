@@ -2203,6 +2203,16 @@ export async function markFollowUpResponseReceived(followUpId: number, userId: n
       .update(applications)
       .set({ lastActivity: receivedAt })
       .where(and(eq(applications.id, followUp[0].applicationId), eq(applications.userId, userId)));
+    await tx.insert(auditEvents).values({
+      userId,
+      entityType: "application",
+      entityId: followUp[0].applicationId,
+      action: "follow_up_response_marked_received",
+      actor: "user",
+      source: "applications.markFollowUpResponse",
+      afterState: JSON.stringify({ followUpId, receivedAt: receivedAt.toISOString() }),
+      riskLevel: "low",
+    });
 
     return { success: true };
   });
