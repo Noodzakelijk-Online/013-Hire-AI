@@ -88,6 +88,12 @@ type GitHubProfileCandidate = {
   }>;
 };
 
+type LinkedInIdentityCandidate = {
+  name: string | null;
+  email: string | null;
+  emailVerified: boolean;
+};
+
 export default function Profile() {
   const { loading, isAuthenticated } = useAuth();
   const [isUploading, setIsUploading] = useState(false);
@@ -114,6 +120,7 @@ export default function Profile() {
   const [cloudResumeDocuments, setCloudResumeDocuments] = useState<CloudResumeDocument[]>([]);
   const [inboxResponseCandidates, setInboxResponseCandidates] = useState<InboxResponseCandidate[]>([]);
   const [githubProfileCandidate, setGitHubProfileCandidate] = useState<GitHubProfileCandidate | null>(null);
+  const [linkedInIdentityCandidate, setLinkedInIdentityCandidate] = useState<LinkedInIdentityCandidate | null>(null);
   const [selectedGitHubRepositoryUrls, setSelectedGitHubRepositoryUrls] = useState<string[]>([]);
 
   // Queries
@@ -196,6 +203,14 @@ export default function Profile() {
       toast.success("GitHub profile ready for review");
     },
     onError: (error) => toast.error(error.message || "Unable to discover this GitHub profile"),
+  });
+  const discoverLinkedInIdentity = trpc.profile.discoverLinkedInIdentity.useMutation({
+    onSuccess: async (candidate) => {
+      setLinkedInIdentityCandidate(candidate);
+      toast.success("LinkedIn identity ready for review");
+      await evidenceReadinessQuery.refetch();
+    },
+    onError: (error) => toast.error(error.message || "Unable to discover this LinkedIn identity"),
   });
   const importGitHubProfile = trpc.profile.importGitHubProfile.useMutation({
     onSuccess: async ({ addedSkills }) => {
@@ -311,6 +326,9 @@ export default function Profile() {
   const githubConnected = evidenceControl.providers.some((provider) =>
     provider.id === "github" && provider.status === "connected"
   );
+  const linkedInConnected = evidenceControl.providers.some((provider) =>
+    provider.id === "linkedin" && provider.status === "connected"
+  );
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -398,7 +416,13 @@ export default function Profile() {
     disconnectConnector.mutate({ provider });
   };
 
-  const handleLinkedInConnect = () => handleRequestConnectorConnection("linkedin");
+  const handleLinkedInConnect = () => {
+    if (linkedInConnected) {
+      discoverLinkedInIdentity.mutate();
+      return;
+    }
+    handleRequestConnectorConnection("linkedin");
+  };
 
   const handleGitHubConnect = () => handleRequestConnectorConnection("github");
 
@@ -583,10 +607,10 @@ export default function Profile() {
                 variant="outline"
                 className="h-24 flex-col gap-2 border-slate-700 hover:border-cyan-500 hover:bg-cyan-500/10"
                 onClick={handleLinkedInConnect}
-                disabled={startConnectorOAuth.isPending}
+                disabled={startConnectorOAuth.isPending || discoverLinkedInIdentity.isPending}
               >
-                <Linkedin className="w-6 h-6 text-blue-500" />
-                <span className="text-white">Connect LinkedIn</span>
+                {discoverLinkedInIdentity.isPending ? <Loader2 className="w-6 h-6 animate-spin text-cyan-400" /> : <Linkedin className="w-6 h-6 text-blue-500" />}
+                <span className="text-white">{linkedInConnected ? "Review LinkedIn Identity" : "Connect LinkedIn"}</span>
               </Button>
               
               <Button
@@ -746,6 +770,24 @@ export default function Profile() {
                     Import reviewed skills
                   </Button>
                 </div>
+              </div>
+            ) : null}
+            {linkedInIdentityCandidate ? (
+              <div data-testid="linkedin-identity-candidate" className="mt-4 flex flex-wrap items-start justify-between gap-3 rounded-md border border-slate-700/60 bg-slate-950/40 p-3">
+                <div>
+                  <p className="text-sm font-medium text-white">
+                    {linkedInIdentityCandidate.name || "LinkedIn account"}
+                  </p>
+                  {linkedInIdentityCandidate.email ? (
+                    <p className="mt-1 text-xs text-slate-400">{linkedInIdentityCandidate.email}</p>
+                  ) : null}
+                </div>
+                <Badge variant="outline" className="border-slate-600 text-slate-300">
+                  {linkedInIdentityCandidate.emailVerified ? "Email confirmed" : "Identity connected"}
+                </Badge>
+                <p className="basis-full text-xs text-slate-500">
+                  LinkedIn account identity is available. Add professional evidence through a profile URL or reviewed profile text.
+                </p>
               </div>
             ) : null}
             {inboxResponseCandidates.length > 0 ? (

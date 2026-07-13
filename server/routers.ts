@@ -573,6 +573,35 @@ export const appRouter = router({
         return { success: true };
       }),
 
+    discoverLinkedInIdentity: protectedProcedure
+      .mutation(async ({ ctx }) => {
+        const { discoverLinkedInIdentity } = await import("./linkedInProfileDiscovery");
+        const { createAuditEvent } = await import("./db");
+        try {
+          const candidate = await discoverLinkedInIdentity(ctx.user.id);
+          await createAuditEvent({
+            userId: ctx.user.id,
+            entityType: "user",
+            entityId: ctx.user.id,
+            action: "linkedin_identity_discovered",
+            actor: "user",
+            source: "profile.discoverLinkedInIdentity",
+            afterState: JSON.stringify({
+              hasName: Boolean(candidate.name),
+              hasEmail: Boolean(candidate.email),
+              emailVerified: candidate.emailVerified,
+            }),
+            riskLevel: "low",
+          });
+          return candidate;
+        } catch (error) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: error instanceof Error ? error.message : "LinkedIn identity discovery could not be completed.",
+          });
+        }
+      }),
+
     discoverGitHubProfile: protectedProcedure
       .mutation(async ({ ctx }) => {
         const { discoverGitHubProfile } = await import("./githubProfileDiscovery");
