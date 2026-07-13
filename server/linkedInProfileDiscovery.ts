@@ -71,6 +71,23 @@ async function getLinkedInAccessToken(
   return { account, accessToken: dependencies.decryptConnectorToken(authorization.encryptedAccessToken) };
 }
 
+async function markLinkedInAccessNeedsReauth(
+  userId: number,
+  account: ConnectorAccount,
+  dependencies: LinkedInProfileDiscoveryDependencies
+) {
+  await dependencies.upsertUserConnectorAccount({
+    userId,
+    provider: "linkedin",
+    status: "needs_reauth",
+    consentScopes: account.consentScopes,
+    externalAccountLabel: account.externalAccountLabel,
+    connectionRequestedAt: account.connectionRequestedAt,
+    lastVerifiedAt: account.lastVerifiedAt,
+    disconnectedAt: null,
+  });
+}
+
 function parseLinkedInUserInfo(payload: unknown) {
   if (!payload || typeof payload !== "object") return null;
   const value = payload as Record<string, unknown>;
@@ -102,7 +119,13 @@ export async function discoverLinkedInIdentity(
   const response = await fetcher("https://api.linkedin.com/v2/userinfo", {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  if (!response.ok) throw new Error("LinkedIn identity discovery is temporarily unavailable.");
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      await markLinkedInAccessNeedsReauth(userId, account, dependencies);
+      throw new Error("LinkedIn authorization is no longer valid. Reauthorize before identity discovery.");
+    }
+    throw new Error("LinkedIn identity discovery is temporarily unavailable.");
+  }
 
   const identity = parseLinkedInUserInfo(await response.json() as unknown);
   if (!identity) throw new Error("LinkedIn did not return a usable identity profile.");

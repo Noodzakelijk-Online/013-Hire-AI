@@ -143,6 +143,23 @@ async function getGitHubAccessToken(
   return { account, accessToken: refreshed.accessToken };
 }
 
+async function markGitHubAccessNeedsReauth(
+  userId: number,
+  account: ConnectorAccount,
+  dependencies: GitHubProfileDiscoveryDependencies
+) {
+  await dependencies.upsertUserConnectorAccount({
+    userId,
+    provider: "github",
+    status: "needs_reauth",
+    consentScopes: account.consentScopes,
+    externalAccountLabel: account.externalAccountLabel,
+    connectionRequestedAt: account.connectionRequestedAt,
+    lastVerifiedAt: account.lastVerifiedAt,
+    disconnectedAt: null,
+  });
+}
+
 function parseUser(payload: unknown) {
   if (!payload || typeof payload !== "object") return null;
   const value = payload as Record<string, unknown>;
@@ -208,7 +225,13 @@ export async function discoverGitHubProfile(
   const { account, accessToken } = await getGitHubAccessToken(userId, now, fetcher, dependencies);
   const headers = githubHeaders(accessToken);
   const userResponse = await fetcher("https://api.github.com/user", { headers });
-  if (!userResponse.ok) throw new Error("GitHub profile discovery is temporarily unavailable.");
+  if (!userResponse.ok) {
+    if (userResponse.status === 401 || userResponse.status === 403) {
+      await markGitHubAccessNeedsReauth(userId, account, dependencies);
+      throw new Error("GitHub authorization is no longer valid. Reauthorize before profile discovery.");
+    }
+    throw new Error("GitHub profile discovery is temporarily unavailable.");
+  }
   const user = parseUser(await userResponse.json() as unknown);
   if (!user) throw new Error("GitHub did not return a usable public profile.");
 
@@ -222,7 +245,13 @@ export async function discoverGitHubProfile(
     }),
     { headers }
   );
-  if (!repositoriesResponse.ok) throw new Error("GitHub repository discovery is temporarily unavailable.");
+  if (!repositoriesResponse.ok) {
+    if (repositoriesResponse.status === 401 || repositoriesResponse.status === 403) {
+      await markGitHubAccessNeedsReauth(userId, account, dependencies);
+      throw new Error("GitHub authorization is no longer valid. Reauthorize before profile discovery.");
+    }
+    throw new Error("GitHub repository discovery is temporarily unavailable.");
+  }
   const repositories = parseRepositories(await repositoriesResponse.json() as unknown);
   const suggestedSkills = Array.from(new Set(
     repositories.flatMap((repository) => repository.language ? [repository.language] : [])

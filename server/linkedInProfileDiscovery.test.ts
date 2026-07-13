@@ -70,4 +70,17 @@ describe("LinkedIn identity discovery", () => {
       .rejects.toThrow("freshly authorized");
     expect(fetcher).not.toHaveBeenCalled();
   });
+
+  it("marks the connector for reauthorization when LinkedIn rejects its grant", async () => {
+    const deps = dependencies();
+    const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 401 }));
+
+    await expect(discoverLinkedInIdentity(21, { fetcher, now, dependencies: deps }))
+      .rejects.toThrow("authorization is no longer valid");
+    expect(deps.upsertUserConnectorAccount).toHaveBeenCalledWith(expect.objectContaining({
+      provider: "linkedin",
+      status: "needs_reauth",
+      lastVerifiedAt: now,
+    }));
+  });
 });

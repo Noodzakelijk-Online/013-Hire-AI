@@ -123,6 +123,19 @@ describe("GitHub profile discovery", () => {
     expect(fetcher.mock.calls[0][1].headers.Authorization).toBe("Bearer renewed-github-token");
   });
 
+  it("marks the connector for reauthorization when GitHub rejects its grant", async () => {
+    const deps = dependencies();
+    const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 403 }));
+
+    await expect(discoverGitHubProfile(18, { fetcher, now, dependencies: deps }))
+      .rejects.toThrow("authorization is no longer valid");
+    expect(deps.upsertUserConnectorAccount).toHaveBeenCalledWith(expect.objectContaining({
+      provider: "github",
+      status: "needs_reauth",
+      lastVerifiedAt: now,
+    }));
+  });
+
   it("merges source-supported skills without duplicate casing", () => {
     expect(mergeGitHubSkills("React, typescript", ["TypeScript", "Python"]))
       .toBe("React, typescript, Python");
