@@ -35,6 +35,7 @@ export interface CommandCenterSummary {
   employerResponsesNeedingReply: number;
   followUpsDue: number;
   approvedFollowUpsReadyToSend: number;
+  followUpDeliveryReconciliation: number;
   connectorReadiness: number;
   preparedApplications: number;
   dailyRemaining: number | null;
@@ -58,6 +59,7 @@ export interface CommandCenterLedgerInput extends OperatingReviewQueueInput {
     employerResponsesNeedingReply?: number | null;
     followUpsDue?: number | null;
     approvedFollowUpsReadyToSend?: number | null;
+    followUpDeliveryReconciliation?: number | null;
     connectorReadiness?: number | null;
     dailyRemaining?: number | null;
   } | null;
@@ -104,6 +106,8 @@ export function getCommandCenterSummary(
   const followUpsDue = positiveNumber(ledger?.metrics?.followUpsDue) || queueCounts.followUpsDue;
   const approvedFollowUpsReadyToSend =
     positiveNumber(ledger?.metrics?.approvedFollowUpsReadyToSend) || queueCounts.approvedFollowUpsReadyToSend;
+  const followUpDeliveryReconciliation =
+    positiveNumber(ledger?.metrics?.followUpDeliveryReconciliation) || queueCounts.followUpDeliveryReconciliation;
   const connectorReadiness =
     positiveNumber(ledger?.metrics?.connectorReadiness) || queueCounts.connectorReadiness;
   const preparedApplications = positiveNumber(ledger?.metrics?.preparedApplications);
@@ -124,6 +128,7 @@ export function getCommandCenterSummary(
     employerResponsesNeedingReply +
     followUpsDue +
     approvedFollowUpsReadyToSend +
+    followUpDeliveryReconciliation +
     connectorReadiness +
     preparedApplications;
 
@@ -140,6 +145,7 @@ export function getCommandCenterSummary(
     employerResponsesNeedingReply,
     followUpsDue,
     approvedFollowUpsReadyToSend,
+    followUpDeliveryReconciliation,
     connectorReadiness,
     preparedApplications,
     dailyRemaining,
@@ -169,6 +175,20 @@ export function getCommandCenterSummary(
       headline: `${approvalItems} consequential action${approvalItems === 1 ? "" : "s"} need your decision.`,
       nextAction: "Approve or reject prepared submissions, follow-ups, interviews, or offer attribution before anything external happens.",
       primaryCta: "Open Review Queue",
+      primaryRoute: "/review-queue",
+      secondaryCta: "Open Ledger",
+      secondaryRoute: "/applications",
+    };
+  }
+
+  if (followUpDeliveryReconciliation > 0) {
+    return {
+      ...base,
+      status: "blocked",
+      label: "Delivery verification",
+      headline: `${followUpDeliveryReconciliation} approved follow-up delivery outcome${followUpDeliveryReconciliation === 1 ? " is" : "s are"} uncertain.`,
+      nextAction: "Check the connected mailbox, then record a manual result if delivery is confirmed. Do not retry the send.",
+      primaryCta: "Verify Delivery",
       primaryRoute: "/review-queue",
       secondaryCta: "Open Ledger",
       secondaryRoute: "/applications",

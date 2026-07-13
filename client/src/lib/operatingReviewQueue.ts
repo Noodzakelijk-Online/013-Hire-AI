@@ -3,6 +3,7 @@ export type ReviewDecisionResolution = "save" | "ignore";
 export type ReviewQueueActionKind =
   | "approval"
   | "send_handoff"
+  | "delivery_reconciliation"
   | "evidence_gate"
   | "connector_readiness"
   | "job_decision"
@@ -25,7 +26,7 @@ export interface ReviewQueueActionSummary {
   route: string;
   risk: ReviewQueueActionRisk;
   approvalGated: boolean;
-  externalAction: "none" | "manual_handoff" | "approved_delivery" | "blocked_until_approved" | "blocked_until_evidence";
+  externalAction: "none" | "manual_handoff" | "approved_delivery" | "delivery_reconciliation" | "blocked_until_approved" | "blocked_until_evidence";
 }
 
 export type ReviewQueueControlStatus =
@@ -38,6 +39,7 @@ export type ReviewQueueControlStatus =
 export type ReviewQueueControlSection =
   | "approvals"
   | "send-handoffs"
+  | "delivery-reconciliation"
   | "evidence-gates"
   | "connector-readiness"
   | "job-decisions"
@@ -78,6 +80,7 @@ export interface OperatingReviewQueueInput {
     employerResponsesNeedingReply?: unknown[];
     followUpsDue?: unknown[];
     approvedFollowUpsReadyToSend?: unknown[];
+    followUpDeliveryReconciliation?: unknown[];
     evidenceGates?: unknown[];
     successFeeCompliance?: unknown[];
     connectorReadiness?: unknown[];
@@ -174,6 +177,16 @@ export function getReviewQueueActionSummary(
         risk: coerceRisk(typeof item.riskLevel === "string" ? item.riskLevel : "medium"),
         approvalGated: false,
         externalAction: "approved_delivery",
+      };
+    case "delivery_reconciliation":
+      return {
+        label: "Delivery verification required",
+        detail: "Hire.AI could not determine whether the mailbox delivered this approved follow-up. Check the provider before recording a manual result; do not retry the send.",
+        cta: "Verify delivery",
+        route: applicationRoute(typeof item.applicationId === "number" ? item.applicationId : null, "send-follow-up"),
+        risk: "high",
+        approvalGated: false,
+        externalAction: "delivery_reconciliation",
       };
     case "evidence_gate":
       return {
@@ -422,6 +435,7 @@ export function getOperatingReviewQueueCounts(input?: OperatingReviewQueueInput 
   const employerResponsesNeedingReply = input?.queues?.employerResponsesNeedingReply?.length ?? 0;
   const followUpsDue = input?.queues?.followUpsDue?.length ?? 0;
   const approvedFollowUpsReadyToSend = input?.queues?.approvedFollowUpsReadyToSend?.length ?? 0;
+  const followUpDeliveryReconciliation = input?.queues?.followUpDeliveryReconciliation?.length ?? 0;
   const evidenceGates = input?.queues?.evidenceGates?.length ?? 0;
   const successFeeCompliance = input?.queues?.successFeeCompliance?.length ?? 0;
   const connectorReadiness = input?.queues?.connectorReadiness?.length ?? 0;
@@ -441,13 +455,14 @@ export function getOperatingReviewQueueCounts(input?: OperatingReviewQueueInput 
     employerResponsesNeedingReply,
     followUpsDue,
     approvedFollowUpsReadyToSend,
+    followUpDeliveryReconciliation,
     evidenceGates,
     successFeeCompliance,
     connectorReadiness,
     adminReviews,
     profileBlockers,
     profileWarnings,
-    total: pendingApprovals + reviewDecisions + interviewScheduling + interviewPreparationNeeded + interviewOutcomesNeeded + inboxResponseCandidates + employerResponsesNeedingReply + followUpsDue + approvedFollowUpsReadyToSend + evidenceGates + successFeeCompliance + connectorReadiness + adminReviews + profileBlockers + profileWarnings,
+    total: pendingApprovals + reviewDecisions + interviewScheduling + interviewPreparationNeeded + interviewOutcomesNeeded + inboxResponseCandidates + employerResponsesNeedingReply + followUpsDue + approvedFollowUpsReadyToSend + followUpDeliveryReconciliation + evidenceGates + successFeeCompliance + connectorReadiness + adminReviews + profileBlockers + profileWarnings,
   };
 }
 
@@ -468,6 +483,21 @@ export function getReviewQueueControlSummary(
       risk: "high",
       approvalGated: true,
       externalAction: "blocked_until_approved",
+    });
+  }
+
+  if (counts.followUpDeliveryReconciliation > 0) {
+    return controlSummary({
+      status: "blocked",
+      label: "Delivery verification",
+      headline: `${counts.followUpDeliveryReconciliation} follow-up delivery outcome${counts.followUpDeliveryReconciliation === 1 ? " is" : "s are"} uncertain.`,
+      detail: "Check the connected mailbox before recording a manual result. Hire.AI will not retry an uncertain external send.",
+      cta: "Verify delivery",
+      section: "delivery-reconciliation",
+      count: counts.followUpDeliveryReconciliation,
+      risk: "high",
+      approvalGated: false,
+      externalAction: "delivery_reconciliation",
     });
   }
 

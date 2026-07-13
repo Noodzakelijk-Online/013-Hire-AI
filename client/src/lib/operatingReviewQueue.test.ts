@@ -69,6 +69,7 @@ describe("operating review queue helpers", () => {
         employerResponsesNeedingReply: [{ applicationId: 6 }],
         followUpsDue: [{ applicationId: 7 }],
         approvedFollowUpsReadyToSend: [{ followUpId: 8 }],
+        followUpDeliveryReconciliation: [{ followUpId: 12 }],
         evidenceGates: [{ id: "profile-core-evidence" }],
         successFeeCompliance: [{ successFeeId: 9 }],
         connectorReadiness: [{ id: "gmail" }],
@@ -87,13 +88,14 @@ describe("operating review queue helpers", () => {
       employerResponsesNeedingReply: 1,
       followUpsDue: 1,
       approvedFollowUpsReadyToSend: 1,
+      followUpDeliveryReconciliation: 1,
       evidenceGates: 1,
       successFeeCompliance: 1,
       connectorReadiness: 1,
       adminReviews: 0,
       profileBlockers: 1,
       profileWarnings: 2,
-      total: 16,
+      total: 17,
     });
   });
 
@@ -179,6 +181,23 @@ describe("operating review queue helpers", () => {
       risk: "medium",
       approvalGated: true,
       externalAction: "blocked_until_approved",
+    });
+  });
+
+  it("blocks the queue on uncertain mailbox delivery before a new send handoff", () => {
+    const summary = getReviewQueueControlSummary({
+      queues: {
+        followUpDeliveryReconciliation: [{ followUpId: 8 }],
+        approvedFollowUpsReadyToSend: [{ followUpId: 9 }],
+      },
+    });
+
+    expect(summary).toMatchObject({
+      status: "blocked",
+      label: "Delivery verification",
+      section: "delivery-reconciliation",
+      risk: "high",
+      externalAction: "delivery_reconciliation",
     });
   });
 

@@ -149,6 +149,7 @@ export default function ReviewQueue() {
     ["Connectors", counts.connectorReadiness],
     ["Employer replies", counts.employerResponsesNeedingReply],
     ["Follow-ups", counts.followUpsDue],
+    ["Delivery checks", counts.followUpDeliveryReconciliation],
     ["Send handoffs", counts.approvedFollowUpsReadyToSend],
     ["Success fees", counts.successFeeCompliance],
     ["Profile blockers", counts.profileBlockers],
@@ -289,6 +290,11 @@ export default function ReviewQueue() {
                       Delivery ready
                     </Badge>
                   )}
+                  {queueControl.externalAction === "delivery_reconciliation" && (
+                    <Badge variant="outline" className="border-red-500/40 text-red-300">
+                      Do not retry
+                    </Badge>
+                  )}
                   {queueControl.externalAction === "blocked_until_evidence" && (
                     <Badge variant="outline" className="border-amber-500/40 text-amber-300">
                       Evidence gated
@@ -419,6 +425,56 @@ export default function ReviewQueue() {
                   </div>
                 ) : (
                   <EmptyQueueLine label="No pending user approvals." />
+                )}
+              </section>
+
+              <section id="review-queue-section-delivery-reconciliation" data-testid="review-queue-section-delivery-reconciliation" className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-lg font-semibold">Delivery Verification</h2>
+                  <Badge variant="outline" className="border-red-500/40 text-red-300">{counts.followUpDeliveryReconciliation}</Badge>
+                </div>
+                {operatingLedger?.queues.followUpDeliveryReconciliation.length ? (
+                  <div className="space-y-3">
+                    {operatingLedger.queues.followUpDeliveryReconciliation.map((item) => (
+                      <Card key={item.followUpId} data-testid={`follow-up-delivery-reconciliation-${item.followUpId}`} className="border-red-500/30">
+                        <CardContent className="space-y-4 pt-6">
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                              <p className="font-medium">{item.job?.title || `Application #${item.applicationId}`}</p>
+                              <p className="mt-1 text-sm text-muted-foreground">
+                                {item.job?.company || "Employer"}
+                                {item.deliveryProvider ? ` - ${item.deliveryProvider}` : ""}
+                                {item.deliveryRecipient ? ` to ${item.deliveryRecipient}` : ""}
+                              </p>
+                            </div>
+                            <Badge variant="outline" className="border-red-500/40 text-red-300">
+                              {item.deliveryState} outcome
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            This approved follow-up may already have left the mailbox. Check the provider first, then record a manual delivery result only if it is confirmed. Do not retry the send.
+                          </p>
+                          {item.deliveryFailureMessage && (
+                            <p className="rounded-md border border-red-500/20 bg-red-500/5 p-3 text-sm text-red-100">
+                              {item.deliveryFailureMessage}
+                            </p>
+                          )}
+                          <QueueActionStrip summary={getQueueAction("delivery_reconciliation", item)} onOpen={setLocation} />
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="border-red-500/40 text-red-200"
+                            onClick={() => setLocation(getApplicationDeepLink(item.applicationId, "send-follow-up"))}
+                          >
+                            <Mail className="mr-2 h-4 w-4" />
+                            Verify Delivery
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyQueueLine label="No uncertain mailbox deliveries need verification." />
                 )}
               </section>
 
@@ -1323,7 +1379,9 @@ function QueueActionStrip({
   className?: string;
   showAction?: boolean;
 }) {
-  const externalLabel = summary.externalAction === "approved_delivery"
+  const externalLabel = summary.externalAction === "delivery_reconciliation"
+    ? "Verification required"
+    : summary.externalAction === "approved_delivery"
     ? "Approved delivery"
     : summary.externalAction === "manual_handoff"
     ? "Manual handoff"

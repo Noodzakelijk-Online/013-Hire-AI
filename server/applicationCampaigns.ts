@@ -55,28 +55,35 @@ function campaignTitle(profile?: Pick<UserProfile, "desiredJobTypes"> | null): s
 
 type UserApplicationRecord = Awaited<ReturnType<typeof getUserApplications>>[number];
 
+interface FollowUpDeliveryWorkItem {
+  followUpId: number;
+  applicationId: number;
+  jobId: number;
+  approvalId: number;
+  approvalTitle: string;
+  riskLevel: string;
+  purpose: string;
+  sourceResponseId: number | null;
+  responseType: string | null;
+  messagePreview: string;
+  approvedAt: Date | null;
+  deliveryState: "draft" | "sending" | "sent" | "failed" | "unknown";
+  deliveryProvider: "gmail" | "outlook" | null;
+  deliveryRecipient: string | null;
+  deliveryFailureMessage: string | null;
+  job: {
+    id: number;
+    title: string;
+    company: string;
+    location: string | null;
+  } | null;
+}
+
 interface FollowUpSuppressionState {
   applicationsWithActiveDrafts: Set<number>;
   sourceResponsesWithActiveDrafts: Set<number>;
-  approvedFollowUpsReadyToSend: Array<{
-    followUpId: number;
-    applicationId: number;
-    jobId: number;
-    approvalId: number;
-    approvalTitle: string;
-    riskLevel: string;
-    purpose: string;
-    sourceResponseId: number | null;
-    responseType: string | null;
-    messagePreview: string;
-    approvedAt: Date | null;
-    job: {
-      id: number;
-      title: string;
-      company: string;
-      location: string | null;
-    } | null;
-  }>;
+  approvedFollowUpsReadyToSend: FollowUpDeliveryWorkItem[];
+  followUpDeliveryReconciliation: FollowUpDeliveryWorkItem[];
 }
 
 function parseFollowUpApprovalPayload(approval: Pick<ApplicationApproval, "payload">): {
@@ -109,6 +116,38 @@ function isActiveFollowUpSendApproval(approval: ApplicationApproval) {
   );
 }
 
+function getFollowUpDeliveryWorkItem(
+  application: UserApplicationRecord,
+  followUp: FollowUp,
+  approval: ApplicationApproval,
+  payload: ReturnType<typeof parseFollowUpApprovalPayload>
+): FollowUpDeliveryWorkItem {
+  const message = followUp.message || payload.message || "";
+  return {
+    followUpId: followUp.id,
+    applicationId: application.id,
+    jobId: application.jobId,
+    approvalId: approval.id,
+    approvalTitle: approval.title,
+    riskLevel: approval.riskLevel,
+    purpose: payload.purpose || "routine_follow_up",
+    sourceResponseId: payload.sourceResponseId ?? null,
+    responseType: payload.responseType ?? null,
+    messagePreview: message.length > 180 ? `${message.slice(0, 177)}...` : message,
+    approvedAt: approval.decidedAt ?? null,
+    deliveryState: followUp.deliveryState || "draft",
+    deliveryProvider: followUp.deliveryProvider || null,
+    deliveryRecipient: followUp.deliveryRecipient || null,
+    deliveryFailureMessage: followUp.deliveryFailureMessage || null,
+    job: application.job ? {
+      id: application.job.id,
+      title: application.job.title,
+      company: application.job.company,
+      location: application.job.location,
+    } : null,
+  };
+}
+
 async function getFollowUpSuppressionState(
   applications: UserApplicationRecord[],
   approvals: ApplicationApproval[],
@@ -123,6 +162,7 @@ async function getFollowUpSuppressionState(
     applicationsWithActiveDrafts: new Set(),
     sourceResponsesWithActiveDrafts: new Set(),
     approvedFollowUpsReadyToSend: [],
+    followUpDeliveryReconciliation: [],
   };
 
   if (activeFollowUpApprovalById.size === 0) return state;
@@ -148,31 +188,20 @@ async function getFollowUpSuppressionState(
         state.sourceResponsesWithActiveDrafts.add(payload.sourceResponseId);
       }
       if (approval.status === "approved") {
-        const message = followUp.message || payload.message || "";
-        state.approvedFollowUpsReadyToSend.push({
-          followUpId: followUp.id,
-          applicationId: application.id,
-          jobId: application.jobId,
-          approvalId: approval.id,
-          approvalTitle: approval.title,
-          riskLevel: approval.riskLevel,
-          purpose: payload.purpose || "routine_follow_up",
-          sourceResponseId: payload.sourceResponseId ?? null,
-          responseType: payload.responseType ?? null,
-          messagePreview: message.length > 180 ? `${message.slice(0, 177)}...` : message,
-          approvedAt: approval.decidedAt ?? null,
-          job: application.job ? {
-            id: application.job.id,
-            title: application.job.title,
-            company: application.job.company,
-            location: application.job.location,
-          } : null,
-        });
+        const workItem = getFollowUpDeliveryWorkItem(application, followUp, approval, payload);
+        if (["sending", "unknown"].includes(workItem.deliveryState)) {
+          state.followUpDeliveryReconciliation.push(workItem);
+        } else {
+          state.approvedFollowUpsReadyToSend.push(workItem);
+        }
       }
     }
   }
 
   state.approvedFollowUpsReadyToSend.sort((a, b) =>
+    (b.approvedAt?.getTime() ?? 0) - (a.approvedAt?.getTime() ?? 0)
+  );
+  state.followUpDeliveryReconciliation.sort((a, b) =>
     (b.approvedAt?.getTime() ?? 0) - (a.approvedAt?.getTime() ?? 0)
   );
   return state;
@@ -288,6 +317,7 @@ function getFollowUpDueQueue(
     applicationsWithActiveDrafts: new Set(),
     sourceResponsesWithActiveDrafts: new Set(),
     approvedFollowUpsReadyToSend: [],
+    followUpDeliveryReconciliation: [],
   }
 ) {
   const applicationsById = new Map(applications.map((application) => [application.id, application]));
@@ -642,6 +672,7 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
   const successFeeComplianceQueue = getSuccessFeeComplianceQueue(successFees, offerAttributionReviews);
   const followUpDueQueue = followUpReadiness.actionReadyQueue;
   const approvedFollowUpsReadyToSend = followUpSuppressionState.approvedFollowUpsReadyToSend;
+  const followUpDeliveryReconciliation = followUpSuppressionState.followUpDeliveryReconciliation;
   const actionReadyPlanSummary = {
     ...plan.summary,
     followUpsActionReady: followUpReadiness.actionReadyCount,
@@ -703,6 +734,9 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
       : "",
     approvedFollowUpsReadyToSend.length > 0
       ? `Record send handoff for ${approvedFollowUpsReadyToSend.length} approved follow-up draft${approvedFollowUpsReadyToSend.length === 1 ? "" : "s"}.`
+      : "",
+    followUpDeliveryReconciliation.length > 0
+      ? `Verify ${followUpDeliveryReconciliation.length} uncertain mailbox ${followUpDeliveryReconciliation.length === 1 ? "delivery" : "deliveries"} before any retry.`
       : "",
     successFeeCompliance.status === "needs_attention" || successFeeCompliance.status === "due_soon"
       ? successFeeCompliance.nextAction
@@ -798,6 +832,7 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
       successFeeMonthlyCents: successFeeCompliance.monthlyFeeCents,
       pendingApprovals: approvals.length,
       approvedFollowUpsReadyToSend: approvedFollowUpsReadyToSend.length,
+      followUpDeliveryReconciliation: followUpDeliveryReconciliation.length,
       evidenceGates: evidenceGates.length,
       connectorReadiness: connectorReadinessQueue.length,
       openAdminReviews: userAdminReviews.length,
@@ -818,6 +853,7 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
       employerResponsesNeedingReply: employerResponseQueue.slice(0, 5),
       followUpsDue: followUpDueQueue.slice(0, 5),
       approvedFollowUpsReadyToSend: approvedFollowUpsReadyToSend.slice(0, 5),
+      followUpDeliveryReconciliation: followUpDeliveryReconciliation.slice(0, 5),
       evidenceGates,
       successFeeCompliance: successFeeComplianceQueue.slice(0, 5),
       connectorReadiness: connectorReadinessQueue,

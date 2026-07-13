@@ -384,6 +384,31 @@ describe("command center summary", () => {
     expect(summary.primaryRoute).toBe("/jobs");
   });
 
+  it("blocks on uncertain mailbox delivery before approved handoffs or new follow-ups", () => {
+    const summary = getCommandCenterSummary({
+      readiness: {
+        autoApplyEligible: true,
+        blockers: [],
+        warnings: [],
+      },
+      queues: {
+        followUpDeliveryReconciliation: [{ followUpId: 1 }],
+        approvedFollowUpsReadyToSend: [{ followUpId: 2 }],
+      },
+      metrics: {
+        followUpDeliveryReconciliation: 1,
+        approvedFollowUpsReadyToSend: 1,
+        followUpsDue: 2,
+      },
+    }, clearCompliance);
+
+    expect(summary.status).toBe("blocked");
+    expect(summary.label).toBe("Delivery verification");
+    expect(summary.followUpDeliveryReconciliation).toBe(1);
+    expect(summary.openActions).toBe(4);
+    expect(summary.primaryRoute).toBe("/review-queue");
+  });
+
   it("uses the dashboard route for verified interview navigation", () => {
     const summary = getCommandCenterSummary({
       readiness: {

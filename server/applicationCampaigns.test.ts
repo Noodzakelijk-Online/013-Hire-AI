@@ -9,7 +9,7 @@ vi.mock("./resumeStorage", async (importOriginal) => ({
   getActiveResume: mocks.getActiveResume,
 }));
 import { getActionReadyFollowUpNextActions, getUserOperatingLedger } from "./applicationCampaigns";
-import { createFollowUp, markFollowUpSent, recordEmployerResponse, recordInterviewOutcome, scheduleInterview, updateInterviewStatus } from "./applicationFeatures";
+import { createFollowUp, getFollowUps, markFollowUpSent, recordEmployerResponse, recordInterviewOutcome, scheduleInterview, updateInterviewStatus } from "./applicationFeatures";
 import {
   createAdminReviewItem,
   createApplication,
@@ -935,5 +935,62 @@ describe("application campaign operating ledger", () => {
       event.afterState?.includes(`"cancelledApprovalIds":[${approval!.id}]`) &&
       event.afterState?.includes('"cancelledStatuses":["approved"]')
     )).toBe(true);
+  });
+
+  it("moves an uncertain connected-mail follow-up out of the send handoff queue", async () => {
+    const userId = 99028;
+    await upsertUserProfile({
+      userId,
+      skills: "React, TypeScript, customer communication",
+      experience: "Five years building customer-facing software.",
+      desiredJobTypes: "Frontend Engineer",
+      desiredLocations: "Remote",
+      resumeUrl: "https://example.com/frontend-resume.pdf",
+      resumeFileKey: "resumes/99011/frontend-resume.pdf",
+      preferences: JSON.stringify({ createFollowUps: true }),
+    });
+    const application = await createApplication({
+      userId,
+      jobId: 2,
+      status: "applied",
+      appliedDate: new Date(Date.now() - 8 * 86400000),
+      lastActivity: new Date(Date.now() - 8 * 86400000),
+      notes: "Submitted application with an uncertain mailbox delivery.",
+    });
+    const applicationId = Number(application.insertId);
+    const followUp = await createFollowUp({
+      applicationId,
+      message: "Hi, I am checking in on my submitted application.",
+    }, userId);
+    const approval = (await listUserApplicationApprovals(userId, "pending")).find((item) =>
+      item.entityType === "follow_up" && item.entityId === followUp.id
+    );
+    expect(approval).toBeTruthy();
+
+    await resolveApplicationApproval(
+      approval!.id,
+      userId,
+      "approved",
+      "Approved follow-up for connected mailbox delivery.",
+      "user"
+    );
+    const [storedFollowUp] = await getFollowUps(applicationId, userId);
+    storedFollowUp.deliveryState = "sending";
+    storedFollowUp.deliveryProvider = "gmail";
+    storedFollowUp.deliveryRecipient = "recruiter@example.com";
+
+    const ledger = await getUserOperatingLedger(userId);
+
+    expect(ledger.metrics.approvedFollowUpsReadyToSend).toBe(0);
+    expect(ledger.metrics.followUpDeliveryReconciliation).toBe(1);
+    expect(ledger.queues.approvedFollowUpsReadyToSend).toHaveLength(0);
+    expect(ledger.queues.followUpDeliveryReconciliation).toMatchObject([{
+      followUpId: followUp.id,
+      applicationId,
+      deliveryState: "sending",
+      deliveryProvider: "gmail",
+      deliveryRecipient: "recruiter@example.com",
+    }]);
+    expect(ledger.nextActions).toContain("Verify 1 uncertain mailbox delivery before any retry.");
   });
 });

@@ -528,6 +528,7 @@ export default function Dashboard() {
                   ["Prep", commandCenterSummary.interviewPreparationNeeded, "/review-queue"],
                   ["Outcomes", commandCenterSummary.interviewOutcomesNeeded, "/review-queue"],
                   ["Replies", commandCenterSummary.employerResponsesNeedingReply, "/review-queue"],
+                  ["Delivery checks", commandCenterSummary.followUpDeliveryReconciliation, "/review-queue"],
                   ["Send handoffs", commandCenterSummary.approvedFollowUpsReadyToSend, "/review-queue"],
                   ["Follow-ups", commandCenterSummary.followUpsDue, "/applications"],
                   ["Compliance", commandCenterSummary.complianceItems, successFeeComplianceAction.route],
@@ -1027,6 +1028,38 @@ export default function Dashboard() {
                         >
                           <Mail className="mr-2 h-4 w-4" />
                           Open Follow-up
+                        </Button>
+                      </div>
+                    ))}
+
+                    {operatingLedger.queues.followUpDeliveryReconciliation.map((item) => (
+                      <div
+                        key={`follow-up-delivery-reconciliation-${item.followUpId}`}
+                        data-testid={`dashboard-follow-up-delivery-reconciliation-${item.followUpId}`}
+                        className="rounded-md border border-red-500/30 bg-red-500/5 p-3"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-medium text-white">
+                            {item.job?.title || `Application #${item.applicationId}`}
+                          </p>
+                          <Badge variant="outline" className="border-red-500/40 text-red-300">
+                            Delivery uncertain
+                          </Badge>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {item.deliveryProvider ? `${item.deliveryProvider} ` : ""}{item.deliveryRecipient || "connected mailbox"}
+                        </p>
+                        <p className="mt-2 line-clamp-2 text-sm text-slate-300">
+                          Check the provider before recording a manual result. Hire.AI will not retry this follow-up.
+                        </p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-3 border-red-500/40 text-red-200"
+                          onClick={() => setLocation(getApplicationDeepLink(item.applicationId, "send-follow-up"))}
+                        >
+                          <Mail className="mr-2 h-4 w-4" />
+                          Verify Delivery
                         </Button>
                       </div>
                     ))}
