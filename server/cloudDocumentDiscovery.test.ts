@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  downloadCloudResumeDocument,
   discoverCloudResumeDocuments,
+  isLikelyCloudResumeDocumentName,
   type CloudDocumentDiscoveryDependencies,
 } from "./cloudDocumentDiscovery";
 
@@ -59,6 +61,7 @@ describe("cloud resume discovery", () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
       files: [
         { id: "resume-pdf", name: "Resume.pdf", mimeType: "application/pdf", size: "124", modifiedTime: "2026-07-12T10:00:00Z" },
+        { id: "portfolio-pdf", name: "portfolio.pdf", mimeType: "application/pdf", size: "456", modifiedTime: "2026-07-12T11:00:00Z" },
         { id: "native-doc", name: "Resume", mimeType: "application/vnd.google-apps.document", size: "12" },
         { id: "too-large", name: "Huge.pdf", mimeType: "application/pdf", size: String(11 * 1024 * 1024) },
       ],
@@ -99,6 +102,7 @@ describe("cloud resume discovery", () => {
       entries: [
         { ".tag": "file", path_lower: "/cv.docx", name: "CV.docx", size: 402, client_modified: "2026-07-11T09:00:00Z" },
         { ".tag": "file", path_lower: "/cover.png", name: "cover.png", size: 40 },
+        { ".tag": "file", path_lower: "/employment-letter.pdf", name: "employment-letter.pdf", size: 220 },
         { ".tag": "file", path_lower: "/resume.rtf", name: "resume.rtf", size: 40 },
       ],
     }), { status: 200 }));
@@ -121,6 +125,29 @@ describe("cloud resume discovery", () => {
       "https://api.dropboxapi.com/2/files/list_folder",
       expect.objectContaining({ method: "POST" })
     );
+  });
+
+  it("recognizes common resume and CV file names without surfacing unrelated documents", () => {
+    expect(isLikelyCloudResumeDocumentName("Ada-Lovelace_Resume_2026.pdf")).toBe(true);
+    expect(isLikelyCloudResumeDocumentName("CV - Ada Lovelace.docx")).toBe(true);
+    expect(isLikelyCloudResumeDocumentName("Curriculum Vitae.txt")).toBe(true);
+    expect(isLikelyCloudResumeDocumentName("portfolio.pdf")).toBe(false);
+    expect(isLikelyCloudResumeDocumentName("employment-letter.pdf")).toBe(false);
+  });
+
+  it("rejects an unrelated document name before downloading provider content", async () => {
+    const fetcher = vi.fn<typeof fetch>();
+
+    await expect(downloadCloudResumeDocument(501, {
+      provider: "google_drive",
+      sourceId: "employment-letter",
+      name: "employment-letter.pdf",
+      mimeType: "application/pdf",
+      size: 220,
+      modifiedAt: null,
+    }, discoveryOptions(fetcher))).rejects.toThrow("selected cloud document is not a supported resume file");
+
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it("refuses discovery when connector verification is stale before reading provider data", async () => {

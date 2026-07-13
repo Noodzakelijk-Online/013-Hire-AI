@@ -47,6 +47,21 @@ function isCloudResumeMimeType(mimeType: string) {
   ].includes(mimeType);
 }
 
+/**
+ * Cloud storage can contain many otherwise supported personal documents. Keep
+ * discovery and import scoped to files the candidate has named as a resume or
+ * CV, rather than presenting arbitrary PDFs and word-processing files as
+ * application evidence.
+ */
+export function isLikelyCloudResumeDocumentName(name: string) {
+  const normalized = name
+    .normalize("NFKD")
+    .replace(/[^a-z0-9]+/gi, " ")
+    .trim()
+    .toLowerCase();
+  return /(^| )(resume|curriculum vitae|cv)( |$)/.test(normalized);
+}
+
 function isCloudDocumentProvider(provider: string): provider is CloudDocumentProvider {
   return (CLOUD_DOCUMENT_PROVIDERS as readonly string[]).includes(provider);
 }
@@ -206,7 +221,7 @@ function parseGoogleDriveDocuments(payload: unknown): CloudResumeDocument[] {
     const sourceId = typeof value.id === "string" ? value.id : "";
     const name = typeof value.name === "string" ? value.name : "";
     const mimeType = typeof value.mimeType === "string" ? value.mimeType : "";
-    if (!sourceId || !name || !isCloudResumeMimeType(mimeType)) return [];
+    if (!sourceId || !name || !isCloudResumeMimeType(mimeType) || !isLikelyCloudResumeDocumentName(name)) return [];
     const rawSize = typeof value.size === "string" || typeof value.size === "number" ? Number(value.size) : NaN;
     const size = Number.isFinite(rawSize) && rawSize >= 0 ? rawSize : null;
     if (size !== null && size > MAX_RESUME_BYTES) return [];
@@ -232,7 +247,7 @@ function parseDropboxDocuments(payload: unknown): CloudResumeDocument[] {
     const sourceId = typeof value.path_lower === "string" ? value.path_lower : "";
     const name = typeof value.name === "string" ? value.name : "";
     const mimeType = getMimeTypeFromExtension(name);
-    if (!sourceId || !name || !isCloudResumeMimeType(mimeType)) return [];
+    if (!sourceId || !name || !isCloudResumeMimeType(mimeType) || !isLikelyCloudResumeDocumentName(name)) return [];
     const rawSize = typeof value.size === "number" ? value.size : Number(value.size);
     const size = Number.isFinite(rawSize) && rawSize >= 0 ? rawSize : null;
     if (size !== null && size > MAX_RESUME_BYTES) return [];
@@ -310,7 +325,13 @@ export async function downloadCloudResumeDocument(
   options: { fetcher?: typeof fetch; now?: Date; dependencies?: CloudDocumentDiscoveryDependencies } = {}
 ): Promise<DownloadedCloudDocument> {
   requireCloudProvider(document.provider);
-  if (!document.sourceId || document.sourceId.length > 1000 || !document.name || !isCloudResumeMimeType(document.mimeType)) {
+  if (
+    !document.sourceId ||
+    document.sourceId.length > 1000 ||
+    !document.name ||
+    !isCloudResumeMimeType(document.mimeType) ||
+    !isLikelyCloudResumeDocumentName(document.name)
+  ) {
     throw new Error("The selected cloud document is not a supported resume file.");
   }
   const fetcher = options.fetcher ?? fetch;
