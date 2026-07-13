@@ -38,6 +38,13 @@ function unique(items: string[]): string[] {
   return Array.from(new Set(items.map((item) => item.trim()).filter(Boolean)));
 }
 
+export function getLocationPolicyNextActions(plan: { nextActions: string[] }) {
+  return plan.nextActions.filter((action) =>
+    /^Excluded \d+ hybrid or on-site role(?:s)? under the remote-only campaign policy\.$/.test(action) ||
+    /^Review \d+ role(?:s)? with unverified remote eligibility before preparation\.$/.test(action)
+  );
+}
+
 function applicationStatusCount(
   applications: Array<{ status?: Application["status"] | null }>,
   statuses: string[]
@@ -709,6 +716,7 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
     campaignStatus === "paused"
       ? "Resume the paused campaign before autonomous work can run."
       : "",
+    ...getLocationPolicyNextActions(plan),
     ...readiness.nextActions,
     ...getActionReadyFollowUpNextActions(plan, followUpReadiness),
     approvals.length > 0 ? `Resolve ${approvals.length} pending user approval${approvals.length === 1 ? "" : "s"}.` : "",

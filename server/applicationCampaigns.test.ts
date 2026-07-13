@@ -8,7 +8,11 @@ vi.mock("./resumeStorage", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./resumeStorage")>()),
   getActiveResume: mocks.getActiveResume,
 }));
-import { getActionReadyFollowUpNextActions, getUserOperatingLedger } from "./applicationCampaigns";
+import {
+  getActionReadyFollowUpNextActions,
+  getLocationPolicyNextActions,
+  getUserOperatingLedger,
+} from "./applicationCampaigns";
 import { createFollowUp, getFollowUps, markFollowUpSent, recordEmployerResponse, recordInterviewOutcome, scheduleInterview, updateInterviewStatus } from "./applicationFeatures";
 import {
   createAdminReviewItem,
@@ -235,6 +239,19 @@ describe("application campaign operating ledger", () => {
     })).toEqual([
       "Review 1 high-fit job before submission.",
       "3 follow-up candidates are held by an existing draft, response, or interview workflow.",
+    ]);
+  });
+
+  it("promotes remote-only policy actions into the persisted command-center ledger", () => {
+    expect(getLocationPolicyNextActions({
+      nextActions: [
+        "Keep scouting and wait for stronger matches.",
+        "Excluded 2 hybrid or on-site roles under the remote-only campaign policy.",
+        "Review 1 role with unverified remote eligibility before preparation.",
+      ],
+    })).toEqual([
+      "Excluded 2 hybrid or on-site roles under the remote-only campaign policy.",
+      "Review 1 role with unverified remote eligibility before preparation.",
     ]);
   });
 
