@@ -87,6 +87,25 @@ describe("application status controls", () => {
     expect(audit?.afterState).toContain('"accepted"');
   });
 
+  it("requires an interview-stage application before recording an interview schedule", async () => {
+    const userId = 99304;
+    const application = await createApplication({ userId, jobId: 2, status: "applied" });
+    const applicationId = Number(application.insertId);
+    const caller = appRouter.createCaller(createContext(userId));
+
+    await expect(caller.applications.scheduleInterview({
+      applicationId,
+      interviewType: "video",
+      scheduledAt: new Date(Date.now() + 3 * 86400000).toISOString(),
+    })).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "Record an interview invitation before scheduling an interview.",
+    });
+
+    expect(await getInterviewSchedules(applicationId, userId)).toEqual([]);
+    expect((await getUserApplications(userId)).find((item) => item.id === applicationId)?.status).toBe("applied");
+  });
+
   it("retires stale internal follow-ups and interviews when an offer is accepted", async () => {
     const userId = 99303;
     const application = await createApplication({ userId, jobId: 2, status: "interview" });

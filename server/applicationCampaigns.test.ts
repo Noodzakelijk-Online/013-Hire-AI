@@ -438,7 +438,7 @@ describe("application campaign operating ledger", () => {
     const application = await createApplication({
       userId,
       jobId: 2,
-      status: "viewed",
+      status: "interview",
       notes: "Employer invited the candidate to interview.",
     });
     const applicationId = Number(application.insertId);
@@ -551,7 +551,7 @@ describe("application campaign operating ledger", () => {
   });
 
   it("returns a later interview invite to the scheduling queue after a completed round", async () => {
-    const userId = 99012;
+    const userId = 99019;
     const application = await createApplication({
       userId,
       jobId: 2,

@@ -1431,8 +1431,8 @@ export async function scheduleInterview(input: ScheduleInterviewInput, userId: n
   if (!db) {
     const application = await getInterviewApplication(input.applicationId, userId);
     const currentStatus = application.status || "pending";
-    if (!canTransitionApplicationStatus(currentStatus, "interview")) {
-      throw new Error(`Application cannot move from ${currentStatus} to interview.`);
+    if (currentStatus !== "interview") {
+      throw new Error("Record an interview invitation before scheduling an interview.");
     }
 
     const now = new Date();
@@ -1479,10 +1479,6 @@ export async function scheduleInterview(input: ScheduleInterviewInput, userId: n
     });
     const approvalId = Number(approval.insertId);
 
-    if (currentStatus !== "interview") {
-      await updateApplicationStatus(input.applicationId, "interview", userId);
-    }
-
     await createAuditEvent({
       userId,
       entityType: "application",
@@ -1512,8 +1508,8 @@ export async function scheduleInterview(input: ScheduleInterviewInput, userId: n
       .where(and(eq(applications.id, input.applicationId), eq(applications.userId, userId)))
       .limit(1);
     if (!application[0]) throw new Error("Application not found.");
-    if (!canTransitionApplicationStatus(application[0].status, "interview")) {
-      throw new Error(`Application cannot move from ${application[0].status} to interview.`);
+    if (application[0].status !== "interview") {
+      throw new Error("Record an interview invitation before scheduling an interview.");
     }
 
     const result = await tx.insert(interviewSchedules).values({
@@ -1557,11 +1553,11 @@ export async function scheduleInterview(input: ScheduleInterviewInput, userId: n
 
     const updateResult = await tx
       .update(applications)
-      .set({ status: "interview", lastActivity: input.scheduledAt })
+      .set({ lastActivity: input.scheduledAt })
       .where(and(
         eq(applications.id, input.applicationId),
         eq(applications.userId, userId),
-        eq(applications.status, application[0].status)
+        eq(applications.status, "interview")
       ));
     if (Number(updateResult[0].affectedRows) === 0) {
       throw new Error("Application status changed concurrently. Refresh and try again.");

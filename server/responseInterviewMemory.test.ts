@@ -295,8 +295,8 @@ describe("response and interview memory fallback", () => {
     const application = await createApplication({
       userId,
       jobId: 2,
-      status: "viewed",
-      notes: "Employer viewed the application.",
+      status: "interview",
+      notes: "Employer invited the candidate to interview.",
     });
     const applicationId = Number(application.insertId);
     const scheduledAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
@@ -359,7 +359,7 @@ describe("response and interview memory fallback", () => {
     const application = await createApplication({
       userId,
       jobId: 2,
-      status: "viewed",
+      status: "interview",
       notes: "Employer invited the candidate to interview.",
     });
     const applicationId = Number(application.insertId);
@@ -404,7 +404,7 @@ describe("response and interview memory fallback", () => {
   });
 
   it("records no-response outcomes as internal checks without retiring a follow-up handoff", async () => {
-    const userId = 98205;
+    const userId = 98215;
     const application = await createApplication({
       userId,
       jobId: 2,
