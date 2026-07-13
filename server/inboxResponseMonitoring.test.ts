@@ -120,6 +120,29 @@ describe("inbox response monitoring", () => {
     }));
   });
 
+  it("surfaces reauthorization when a live inbox scan invalidates a previously healthy grant", async () => {
+    const mocks = dependencies();
+    const connectedAccount = {
+      provider: "gmail",
+      status: "connected",
+      consentScopes: JSON.stringify(["email.messages.read_recruiting"]),
+      lastVerifiedAt: new Date(),
+    };
+    mocks.listUserConnectorAccounts
+      .mockResolvedValueOnce([connectedAccount])
+      .mockResolvedValueOnce([{ ...connectedAccount, status: "needs_reauth" }]);
+    mocks.discoverInboxResponseCandidates.mockRejectedValue(new Error("Gmail authorization is no longer valid."));
+
+    await expect(monitorInboxResponses(701, { dependencies: mocks })).resolves.toMatchObject({
+      providersScanned: 0,
+      inboxReauthorizationRequired: 1,
+      candidatesDiscovered: 0,
+      monitoringFailures: 1,
+      errors: ["gmail: Gmail authorization is no longer valid."],
+    });
+    expect(mocks.listUserConnectorAccounts).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps a persisted inbox candidate visible when its audit write fails", async () => {
     const mocks = dependencies();
     mocks.createAuditEvent.mockRejectedValue(new Error("Audit ledger is unavailable."));

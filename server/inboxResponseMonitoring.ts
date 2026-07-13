@@ -99,9 +99,12 @@ export async function monitorInboxResponses(
       hasRequiredScope(account.consentScopes, provider) &&
       !isConnectorAuthorizationStale(account.lastVerifiedAt);
   });
-  result.inboxReauthorizationRequired = (["gmail", "outlook"] as const).filter((provider) =>
-    needsInboxReauthorization(accounts.find((item) => item.provider === provider), provider)
-  ).length;
+  const reauthorizationRequiredProviders = new Set<InboxProvider>(
+    (["gmail", "outlook"] as const).filter((provider) =>
+      needsInboxReauthorization(accounts.find((item) => item.provider === provider), provider)
+    )
+  );
+  result.inboxReauthorizationRequired = reauthorizationRequiredProviders.size;
 
   for (const provider of providers) {
     try {
@@ -141,6 +144,20 @@ export async function monitorInboxResponses(
       const message = error instanceof Error ? error.message : String(error);
       result.monitoringFailures += 1;
       result.errors.push(`${provider}: ${message}`);
+      // A provider request can invalidate a previously healthy grant. Re-read
+      // the connector account so this same autonomous run exposes the
+      // actionable reauthorization state instead of only a generic failure.
+      try {
+        const updatedAccounts = await dependencies.listUserConnectorAccounts(userId);
+        const updatedAccount = updatedAccounts.find((item) => item.provider === provider);
+        if (needsInboxReauthorization(updatedAccount, provider)) {
+          reauthorizationRequiredProviders.add(provider);
+          result.inboxReauthorizationRequired = reauthorizationRequiredProviders.size;
+        }
+      } catch {
+        // The original provider failure remains the durable signal. A failed
+        // status refresh must not replace it or invent a reauthorization state.
+      }
       const auditError = await recordMonitoringAudit(dependencies, {
         userId,
         entityType: "user",
