@@ -116,6 +116,7 @@ const memoryAdminReviewItems: (InsertAdminReviewItem & { id: number; createdAt: 
 const memoryApplicationApprovals: (InsertApplicationApproval & { id: number; createdAt: Date; updatedAt: Date })[] = [];
 const memoryApplicationCampaigns: (InsertApplicationCampaign & { id: number; createdAt: Date; updatedAt: Date })[] = [];
 const memoryInterviewPreparations: (InsertInterviewPreparation & { id: number; createdAt: Date })[] = [];
+const memoryJobMatches: (InsertJobMatch & { id: number; createdAt: Date; updatedAt: Date })[] = [];
 const memorySuccessFees: (InsertSuccessFee & { id: number; createdAt: Date; updatedAt: Date })[] = [];
 const memoryAutonomousRuns = new Map<number, {
   leaseToken: string | null;
@@ -2793,18 +2794,71 @@ export async function listInterviewPreparationsForUser(userId: number) {
 // Job Matches
 export async function createJobMatch(match: InsertJobMatch) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  return await db.insert(jobMatches).values(match);
+  if (!db) {
+    const existing = memoryJobMatches.find((item) =>
+      item.userId === match.userId && item.jobId === match.jobId
+    );
+    if (existing) {
+      existing.matchScore = match.matchScore;
+      existing.matchReasons = match.matchReasons ?? null;
+      existing.skillsMatch = match.skillsMatch ?? null;
+      existing.experienceMatch = match.experienceMatch ?? null;
+      existing.locationMatch = match.locationMatch ?? null;
+      existing.salaryMatch = match.salaryMatch ?? null;
+      existing.updatedAt = new Date();
+      return { insertId: existing.id, existing: true };
+    }
+
+    const now = new Date();
+    const record = {
+      ...match,
+      id: memoryJobMatches.length + 1,
+      matchReasons: match.matchReasons ?? null,
+      skillsMatch: match.skillsMatch ?? null,
+      experienceMatch: match.experienceMatch ?? null,
+      locationMatch: match.locationMatch ?? null,
+      salaryMatch: match.salaryMatch ?? null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    memoryJobMatches.push(record);
+    return { insertId: record.id };
+  }
+
+  const result = await db
+    .insert(jobMatches)
+    .values(match)
+    .onDuplicateKeyUpdate({
+      set: {
+        id: sql`LAST_INSERT_ID(${jobMatches.id})`,
+        matchScore: sql`VALUES(${jobMatches.matchScore})`,
+        matchReasons: sql`VALUES(${jobMatches.matchReasons})`,
+        skillsMatch: sql`VALUES(${jobMatches.skillsMatch})`,
+        experienceMatch: sql`VALUES(${jobMatches.experienceMatch})`,
+        locationMatch: sql`VALUES(${jobMatches.locationMatch})`,
+        salaryMatch: sql`VALUES(${jobMatches.salaryMatch})`,
+        updatedAt: new Date(),
+      },
+    });
+  const writeResult = result[0];
+  return {
+    insertId: Number(writeResult.insertId),
+    existing: Number(writeResult.affectedRows) !== 1,
+  };
 }
 
 export async function getUserJobMatches(userId: number, minScore = 70) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) {
+    return memoryJobMatches
+      .filter((match) => match.userId === userId && match.matchScore >= minScore)
+      .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime()) as JobMatch[];
+  }
   return await db
     .select()
     .from(jobMatches)
     .where(and(eq(jobMatches.userId, userId), gte(jobMatches.matchScore, minScore)))
-    .orderBy(desc(jobMatches.matchScore));
+    .orderBy(desc(jobMatches.updatedAt));
 }
 
 // Decision Makers

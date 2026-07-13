@@ -280,7 +280,11 @@ export default function JobSearch() {
     const matches = new Map<number, any>();
     for (const match of jobMatches || []) {
       const current = matches.get(match.jobId);
-      if (!current || new Date(match.createdAt).getTime() > new Date(current.createdAt).getTime()) {
+      const matchUpdatedAt = new Date(match.updatedAt || match.createdAt).getTime();
+      const currentUpdatedAt = current
+        ? new Date(current.updatedAt || current.createdAt).getTime()
+        : 0;
+      if (!current || matchUpdatedAt > currentUpdatedAt) {
         matches.set(match.jobId, match);
       }
     }

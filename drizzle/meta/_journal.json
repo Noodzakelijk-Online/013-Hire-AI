@@ -183,6 +183,13 @@
       "when": 1784160000000,
       "tag": "0025_job_platform_scrape_outcomes",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "5",
+      "when": 1784246400000,
+      "tag": "0026_job_match_ledger",
+      "breakpoints": true
     }
   ]
 }

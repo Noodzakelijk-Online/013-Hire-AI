@@ -528,7 +528,11 @@ export const jobMatches = mysqlTable("job_matches", {
   locationMatch: int("location_match"),
   salaryMatch: int("salary_match"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("job_matches_user_job_unique").on(table.userId, table.jobId),
+  index("job_matches_user_score_idx").on(table.userId, table.matchScore),
+]);
 
 /**
  * Interview Preparation
