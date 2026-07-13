@@ -82,6 +82,34 @@ describe("autonomous orchestrator", () => {
     expect(plan.decisions[0].automationNotes.join(" ")).not.toContain("form may be prepared automatically");
   });
 
+  it("blocks explicit payment or forwarding signals before autonomous preparation", () => {
+    const plan = buildAutonomousPlan([{
+      ...baseJob,
+      description: "Deposit the company check, retain a fee, and transfer the remaining funds.",
+    }], profile, [], {
+      mode: "auto_apply",
+      requireHumanReview: false,
+      minMatchScore: 0,
+    });
+
+    expect(plan.decisions[0].action).toBe("blocked");
+    expect(plan.decisions[0].blockers.join(" ")).toContain("check handling");
+  });
+
+  it("queues ambiguous listing-safety signals for review instead of applying", () => {
+    const plan = buildAutonomousPlan([{
+      ...baseJob,
+      applicationEmail: "recruiting@example@gmail.com",
+    }], profile, [], {
+      mode: "auto_apply",
+      requireHumanReview: false,
+      minMatchScore: 0,
+    });
+
+    expect(plan.decisions[0].action).toBe("queue_for_review");
+    expect(plan.decisions[0].automationNotes.join(" ")).toContain("consumer email domain");
+  });
+
   it("keeps jobs outside explicit target roles out of autonomous queues", () => {
     const plan = buildAutonomousPlan([baseJob], {
       ...profile,

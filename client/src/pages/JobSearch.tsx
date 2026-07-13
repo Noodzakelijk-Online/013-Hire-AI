@@ -30,6 +30,7 @@ import {
   filterJobListings,
   type JobApplicationProcessFilter,
   type JobExperienceLevel,
+  type JobListingSafetyFilter,
   type JobPostedWithin,
   type JobSearchFilterState,
   type JobTypeFilter,
@@ -69,6 +70,7 @@ import {
   Save,
   XCircle,
 } from "lucide-react";
+import { assessListingSafety } from "@shared/listingSafety";
 
 export default function JobSearch() {
   const { user, loading: authLoading } = useAuth();
@@ -88,6 +90,7 @@ export default function JobSearch() {
   const [openHiringSupportOnly, setOpenHiringSupportOnly] = useState(false);
   const [diversityFriendlyOnly, setDiversityFriendlyOnly] = useState(false);
   const [salaryDisclosedOnly, setSalaryDisclosedOnly] = useState(false);
+  const [listingSafety, setListingSafety] = useState<JobListingSafetyFilter>(defaultJobSearchFilters.listingSafety);
   const [selectedJob, setSelectedJob] = useState<any>(null);
   const [activeTab, setActiveTab] = useState("all");
   const [autonomousMode, setAutonomousMode] = useState<"review_first" | "auto_apply">("review_first");
@@ -110,11 +113,13 @@ export default function JobSearch() {
     diversityFriendlyOnly,
     salaryDisclosedOnly,
     postedWithin,
+    listingSafety,
   }), [
     diversityFriendlyOnly,
     openHiringSupportOnly,
     postedWithin,
     salaryDisclosedOnly,
+    listingSafety,
     salaryRange,
     selectedSalaryCurrency,
     selectedLocation,
@@ -339,6 +344,7 @@ export default function JobSearch() {
     setOpenHiringSupportOnly(defaultJobSearchFilters.openHiringSupportOnly);
     setDiversityFriendlyOnly(defaultJobSearchFilters.diversityFriendlyOnly);
     setSalaryDisclosedOnly(defaultJobSearchFilters.salaryDisclosedOnly);
+    setListingSafety(defaultJobSearchFilters.listingSafety);
   };
 
   const scoredJobs = useMemo(() => {
@@ -543,6 +549,7 @@ export default function JobSearch() {
 
   const JobCard = ({ job, showMatchScore = true }: { job: any; showMatchScore?: boolean }) => {
     const listingDate = getJobListingDate(job);
+    const listingSafetyAssessment = assessListingSafety(job);
 
     return (
       <Card
@@ -590,6 +597,12 @@ export default function JobSearch() {
                 <Badge variant="secondary" className="text-xs bg-slate-800 text-slate-300">
                   <Clock className="w-3 h-3 mr-1" />
                   {listingDate.source === "posted" ? "Posted" : "Discovered"} {listingDate.date.toLocaleDateString()}
+                </Badge>
+              )}
+              {listingSafetyAssessment.status === "review" && (
+                <Badge variant="secondary" className="text-xs border border-amber-500/40 bg-amber-500/10 text-amber-200">
+                  <AlertCircle className="w-3 h-3 mr-1" />
+                  Review signals
                 </Badge>
               )}
             </div>
@@ -952,7 +965,7 @@ export default function JobSearch() {
                     <SelectItem value="all">All Platforms</SelectItem>
                     {platformsData?.map((platform) => (
                       <SelectItem key={platform.id} value={platform.id.toString()}>
-                        {platform.name}
+                        {platform.name}{platform.discoveryPolicy?.mode === "automated" ? "" : " · Integration required"}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -993,6 +1006,16 @@ export default function JobSearch() {
                     <SelectItem value="workday">Workday</SelectItem>
                     <SelectItem value="email">Email</SelectItem>
                     <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={listingSafety} onValueChange={(value) => setListingSafety(value as JobListingSafetyFilter)}>
+                  <SelectTrigger data-testid="job-filter-listing-safety" className="w-[170px] bg-slate-800 border-slate-700">
+                    <SelectValue placeholder="Listing safety" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="clear">No risk signals</SelectItem>
+                    <SelectItem value="review">Needs review</SelectItem>
+                    <SelectItem value="all">All non-blocked</SelectItem>
                   </SelectContent>
                 </Select>
                 <Select value={postedWithin} onValueChange={(value) => setPostedWithin(value as JobPostedWithin)}>

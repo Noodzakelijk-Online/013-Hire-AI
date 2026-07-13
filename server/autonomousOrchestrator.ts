@@ -3,6 +3,7 @@ import { detectATSType, isAutomationSupported } from "./applicationAutomation";
 import { normalizeExperienceLevel, normalizeLocation } from "./jobNormalization";
 import { getLocationPreferenceFit } from "../shared/locationEligibility";
 import { isJobListingCurrent } from "../shared/jobListingFreshness";
+import { assessListingSafety } from "../shared/listingSafety";
 import { areSalaryCurrenciesComparable, normalizeSalaryCurrency } from "../shared/salaryCurrency";
 
 export type AutonomousMode = "review_first" | "auto_apply";
@@ -363,6 +364,7 @@ export function buildAutonomousPlan(
   const rankedDecisions = currentJobs
     .map((job) => {
       const { score, reasons, blockers } = scoreJobForProfile(job, profile);
+      const listingSafety = assessListingSafety(job, now);
       const normalizedLocation = normalizeLocation(job.location);
       const remoteEligibilityUnknown = remoteOnly && normalizedLocation.remoteType === "unknown";
       const support = job.applicationUrl
@@ -374,6 +376,13 @@ export function buildAutonomousPlan(
             message: "No application URL",
           };
       const automationNotes: string[] = [support.message];
+
+      if (listingSafety.status === "blocked") {
+        blockers.push(...listingSafety.reasons);
+      } else if (listingSafety.status === "review") {
+        automationNotes.push(...listingSafety.reasons);
+        automationNotes.push("Listing safety signals require review before any application preparation.");
+      }
 
       if (appliedJobIds.has(job.id)) {
         blockers.push("Already applied to this job");
@@ -403,11 +412,13 @@ export function buildAutonomousPlan(
       );
       const salaryCurrencyReviewRequired = blockers.some((blocker) => blocker.startsWith("Salary is listed in "));
 
-      if (score >= minMatchScore && hardBlockers.length === 0) {
+      if (listingSafety.status === "blocked") {
+        action = "blocked";
+      } else if (score >= minMatchScore && hardBlockers.length === 0) {
         if (resumeMissing) {
           action = "blocked";
           automationNotes.push("An active versioned resume is required before Hire.AI can prepare application materials for this role.");
-        } else if (remoteEligibilityUnknown || salaryCurrencyReviewRequired) {
+        } else if (listingSafety.status === "review" || remoteEligibilityUnknown || salaryCurrencyReviewRequired) {
           action = "queue_for_review";
         } else if (!support.supported && allowUnsupportedATS) {
           action = "manual_apply";
@@ -436,7 +447,7 @@ export function buildAutonomousPlan(
         priority: score >= 85 ? "urgent" : score >= 75 ? "high" : score >= minMatchScore ? "normal" : "low",
         reasons: reasons.slice(0, 4),
         blockers,
-        reviewRequired: requireHumanReview || !support.supported || remoteEligibilityUnknown || blockers.length > 0,
+        reviewRequired: requireHumanReview || !support.supported || listingSafety.status === "review" || remoteEligibilityUnknown || blockers.length > 0,
         automationNotes,
         userDecisionLocked,
       } satisfies AutonomousJobDecision;

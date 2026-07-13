@@ -200,4 +200,41 @@ describe("job search filters", () => {
 
     expect(result.map((job) => job.id)).toEqual([4]);
   });
+
+  it("hides explicit payment and forwarding signals from discovery", () => {
+    const result = filterJobListings([
+      ...jobs,
+      {
+        ...jobs[0],
+        id: 4,
+        description: "Deposit a company check and transfer the remaining funds after keeping your fee.",
+      },
+    ], {
+      ...defaultJobSearchFilters,
+      remoteOnly: false,
+      listingSafety: "all",
+    });
+
+    expect(result.map((job) => job.id)).not.toContain(4);
+  });
+
+  it("lets a user switch from clear listings to ambiguous listings that need review", () => {
+    const reviewJob = {
+      ...jobs[0],
+      id: 4,
+      applicationEmail: "talent.example@gmail.com",
+    };
+    const clear = filterJobListings([reviewJob], {
+      ...defaultJobSearchFilters,
+      remoteOnly: false,
+    });
+    const review = filterJobListings([reviewJob], {
+      ...defaultJobSearchFilters,
+      remoteOnly: false,
+      listingSafety: "review",
+    });
+
+    expect(clear).toHaveLength(0);
+    expect(review.map((job) => job.id)).toEqual([4]);
+  });
 });

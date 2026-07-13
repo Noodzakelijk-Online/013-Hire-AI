@@ -219,7 +219,7 @@ describe("Scraping API", () => {
       await expect(caller.scraping.runNow()).rejects.toMatchObject({ code: "FORBIDDEN" });
     });
 
-    it("configures every registered fallback adapter for source status visibility", async () => {
+    it("keeps registered fallback adapters visible without scheduling unsupported collection", async () => {
       const caller = appRouter.createCaller(createAuthContext("admin"));
       const result = await caller.scraping.status();
       const indeed = result.platforms.find((platform) => platform.name === "Indeed");
@@ -231,14 +231,15 @@ describe("Scraping API", () => {
         configuredGenericRssAdapterSources: 2,
         configuredGenericHtmlAdapterSources: 36,
         zeroListingSources: 0,
-        readySources: 48,
+        readySources: 5,
         unconfiguredSources: 0,
       });
       expect(indeed).toMatchObject({
-        readiness: "ready",
+        readiness: "unavailable",
         freshness: "awaiting_first_scan",
         adapter: { kind: "dedicated", label: "Source-specific adapter" },
       });
+      expect(indeed?.initializationError).toContain("public API or RSS ingestion contract");
     });
 
     it("rejects an empty source selection instead of widening a scheduled scan", async () => {

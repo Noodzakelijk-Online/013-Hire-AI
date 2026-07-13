@@ -4,6 +4,7 @@ export {
   filterJobListings,
   type JobApplicationProcessFilter,
   type JobExperienceLevel,
+  type JobListingSafetyFilter,
   type JobPostedWithin,
   type JobSearchFilterJob,
   type JobSearchFilterState,

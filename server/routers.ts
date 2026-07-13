@@ -71,6 +71,7 @@ const jobSearchFiltersInput = z.object({
   diversityFriendlyOnly: z.boolean().optional(),
   salaryDisclosedOnly: z.boolean().optional(),
   postedWithin: z.enum(["all", "1", "3", "7", "30"]).optional(),
+  listingSafety: z.enum(["all", "clear", "review", "blocked"]).optional(),
 }).optional();
 const auditEntityType = z.enum(["job", "application", "success_fee", "verification", "user", "admin_review"]);
 const connectorProvider = z.enum([
@@ -435,12 +436,22 @@ export const appRouter = router({
   // Job Platforms
   platforms: router({
     list: publicProcedure.query(async () => {
-      const { getAllJobPlatforms } = await import("./db");
-      return await getAllJobPlatforms();
+      const { ensureScraperPlatformCatalog, getAllJobPlatforms } = await import("./db");
+      const { getPlatformDiscoveryPolicy } = await import("./scrapers/platformCatalog");
+      await ensureScraperPlatformCatalog();
+      return (await getAllJobPlatforms()).map((platform) => ({
+        ...platform,
+        discoveryPolicy: getPlatformDiscoveryPolicy(platform.name),
+      }));
     }),
     active: publicProcedure.query(async () => {
-      const { getActiveJobPlatforms } = await import("./db");
-      return await getActiveJobPlatforms();
+      const { ensureScraperPlatformCatalog, getActiveJobPlatforms } = await import("./db");
+      const { getPlatformDiscoveryPolicy } = await import("./scrapers/platformCatalog");
+      await ensureScraperPlatformCatalog();
+      return (await getActiveJobPlatforms()).map((platform) => ({
+        ...platform,
+        discoveryPolicy: getPlatformDiscoveryPolicy(platform.name),
+      }));
     }),
   }),
 

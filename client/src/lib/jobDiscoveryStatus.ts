@@ -8,6 +8,9 @@ export type JobDiscoveryStatus =
 
 export interface JobDiscoveryStatusInput {
   activeSources?: number | null;
+  trackedSources?: number | null;
+  manualIntegrationSources?: number | null;
+  unavailableSources?: number | null;
   sourcesWithSuccessfulScrape?: number | null;
   sourcesWithFreshScrape?: number | null;
   sourcesAwaitingFirstScrape?: number | null;
@@ -27,6 +30,9 @@ export interface JobDiscoveryStatusSummary {
   label: string;
   detail: string;
   activeSources: number;
+  trackedSources: number;
+  manualIntegrationSources: number;
+  unavailableSources: number;
   sourcesWithFreshScrape: number;
   sourcesAwaitingFirstScrape: number;
   sourcesWithStaleScrape: number;
@@ -67,6 +73,9 @@ export function getJobDiscoveryStatusSummary(
   now = new Date()
 ): JobDiscoveryStatusSummary {
   const activeSources = positiveInteger(input?.activeSources);
+  const trackedSources = positiveInteger(input?.trackedSources) || activeSources;
+  const manualIntegrationSources = positiveInteger(input?.manualIntegrationSources);
+  const unavailableSources = positiveInteger(input?.unavailableSources);
   const canonicalJobs = positiveInteger(input?.canonicalJobs);
   const sourcesWithSuccessfulScrape = positiveInteger(input?.sourcesWithSuccessfulScrape);
   const sourcesWithFreshScrape = positiveInteger(input?.sourcesWithFreshScrape);
@@ -88,6 +97,9 @@ export function getJobDiscoveryStatusSummary(
   const latestSuccessfulScrapeAt = parseDate(input?.latestSuccessfulScrapeAt);
   const base = {
     activeSources,
+    trackedSources,
+    manualIntegrationSources,
+    unavailableSources,
     sourcesWithFreshScrape,
     sourcesAwaitingFirstScrape,
     sourcesWithStaleScrape,
@@ -100,13 +112,16 @@ export function getJobDiscoveryStatusSummary(
     canonicalJobs,
     latestSuccessfulScrapeAt,
   };
+  const sourceScope = trackedSources > activeSources
+    ? ` ${plural(trackedSources, "source")} are cataloged; ${plural(manualIntegrationSources, "source")} require an approved integration${unavailableSources > 0 ? ` and ${plural(unavailableSources, "legacy source")} remain unavailable` : ""}.`
+    : "";
 
   if (activeSources === 0) {
     return {
       ...base,
       status: "no_active_sources",
       label: "Discovery unavailable",
-      detail: "No active discovery sources are configured, so the job index cannot be refreshed yet.",
+      detail: `No active discovery sources are configured, so the job index cannot be refreshed yet.${sourceScope}`,
     };
   }
 
@@ -123,7 +138,7 @@ export function getJobDiscoveryStatusSummary(
       ...base,
       status: "degraded",
       label: "Discovery needs attention",
-      detail: `${issueDetails.join(", ")} on a scan in the last 24 hours. Hire.AI will not represent discovery coverage as current until those sources produce a reviewed outcome. ${plural(canonicalJobs, "canonical job")} remain in the index; confirm a listing is still open before preparing materials.`,
+      detail: `${issueDetails.join(", ")} on a scan in the last 24 hours. Hire.AI will not represent discovery coverage as current until those sources produce a reviewed outcome. ${plural(canonicalJobs, "canonical job")} remain in the index; confirm a listing is still open before preparing materials.${sourceScope}`,
     };
   }
 
@@ -132,7 +147,7 @@ export function getJobDiscoveryStatusSummary(
       ...base,
       status: "awaiting_first_scan",
       label: "Awaiting verified scan",
-      detail: `${plural(activeSources, "source")} ${activeSources === 1 ? "is" : "are"} enabled and the index contains ${plural(canonicalJobs, "canonical job")}, but no successful scan timestamp is recorded. Review posting dates before acting on a listing.`,
+      detail: `${plural(activeSources, "source")} ${activeSources === 1 ? "is" : "are"} enabled and the index contains ${plural(canonicalJobs, "canonical job")}, but no successful scan timestamp is recorded. Review posting dates before acting on a listing.${sourceScope}`,
     };
   }
 
@@ -141,7 +156,7 @@ export function getJobDiscoveryStatusSummary(
       ...base,
       status: "stale",
       label: "Discovery may be stale",
-      detail: `The last successful scan was more than 24 hours ago. ${plural(canonicalJobs, "canonical job")} remain in the index; confirm a listing is still open before preparing materials.`,
+      detail: `The last successful scan was more than 24 hours ago. ${plural(canonicalJobs, "canonical job")} remain in the index; confirm a listing is still open before preparing materials.${sourceScope}`,
     };
   }
 
@@ -151,7 +166,7 @@ export function getJobDiscoveryStatusSummary(
       ...base,
       status: "partial",
       label: "Discovery coverage partial",
-      detail: `${plural(sourcesWithFreshScrape, "source")} reported a successful scan in the last 24 hours. ${plural(sourcesNeedingAttention, "source")} ${sourcesNeedingAttention === 1 ? "needs" : "need"} a fresh scan before Hire.AI can represent discovery coverage as complete. ${plural(canonicalJobs, "canonical job")} remain available after deduplication.`,
+      detail: `${plural(sourcesWithFreshScrape, "source")} reported a successful scan in the last 24 hours. ${plural(sourcesNeedingAttention, "source")} ${sourcesNeedingAttention === 1 ? "needs" : "need"} a fresh scan before Hire.AI can represent discovery coverage as complete. ${plural(canonicalJobs, "canonical job")} remain available after deduplication.${sourceScope}`,
     };
   }
 
@@ -159,6 +174,6 @@ export function getJobDiscoveryStatusSummary(
     ...base,
     status: "current",
     label: "Discovery current",
-    detail: `${plural(sourcesWithFreshScrape, "source")} reported a successful scan in the last 24 hours. ${plural(canonicalJobs, "canonical job")} are available after deduplication.`,
+    detail: `${plural(sourcesWithFreshScrape, "source")} reported a successful scan in the last 24 hours. ${plural(canonicalJobs, "canonical job")} are available after deduplication.${sourceScope}`,
   };
 }

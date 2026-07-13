@@ -1,9 +1,11 @@
 import { normalizeSalaryCurrency } from "./salaryCurrency";
+import { assessListingSafety, type ListingSafetyStatus } from "./listingSafety";
 
 export type JobExperienceLevel = "all" | "entry" | "junior" | "mid" | "senior" | "lead" | "executive";
 export type JobApplicationProcessFilter = "all" | "greenhouse" | "lever" | "workday" | "email" | "other";
 export type JobPostedWithin = "all" | "1" | "3" | "7" | "30";
 export type JobTypeFilter = "all" | "full-time" | "part-time" | "contract" | "temporary";
+export type JobListingSafetyFilter = "all" | ListingSafetyStatus;
 
 export interface JobSearchFilterState {
   query: string;
@@ -20,6 +22,7 @@ export interface JobSearchFilterState {
   diversityFriendlyOnly: boolean;
   salaryDisclosedOnly: boolean;
   postedWithin: JobPostedWithin;
+  listingSafety: JobListingSafetyFilter;
 }
 
 export interface JobSearchFilterJob {
@@ -42,6 +45,11 @@ export interface JobSearchFilterJob {
   diversityFriendly?: number | boolean | null;
   postedDate?: Date | string | null;
   createdAt?: Date | string | null;
+  applicationUrl?: string | null;
+  applicationEmail?: string | null;
+  isActive?: number | boolean | null;
+  expiryDate?: Date | string | null;
+  updatedAt?: Date | string | null;
 }
 
 export const defaultJobSearchFilters: JobSearchFilterState = {
@@ -59,6 +67,7 @@ export const defaultJobSearchFilters: JobSearchFilterState = {
   diversityFriendlyOnly: false,
   salaryDisclosedOnly: false,
   postedWithin: "all",
+  listingSafety: "clear",
 };
 
 function text(job: JobSearchFilterJob) {
@@ -144,6 +153,11 @@ export function filterJobListings<T extends JobSearchFilterJob>(jobs: T[], filte
   const rangeIsActive = hasActiveSalaryRange(filters);
 
   return jobs.filter((job) => {
+    const safety = assessListingSafety(job, now);
+    // Explicit payment, cheque, and forwarding signals never reach the normal
+    // discovery list. Ambiguous listings remain filterable for review.
+    if (safety.status === "blocked") return false;
+    if (filters.listingSafety !== "all" && safety.status !== filters.listingSafety) return false;
     if (queryTerms.length > 0 && !queryTerms.every((term) => text(job).includes(term))) return false;
     if (selectedLocations.length > 0 && !selectedLocations.some((term) => (job.location || "").toLowerCase().includes(term))) return false;
     if (filters.jobType !== "all" && job.jobType !== filters.jobType) return false;
@@ -193,5 +207,6 @@ export function countActiveJobSearchFilters(filters: JobSearchFilterState) {
     filters.diversityFriendlyOnly,
     filters.salaryDisclosedOnly,
     filters.postedWithin !== "all",
+    filters.listingSafety !== defaultJobSearchFilters.listingSafety,
   ].filter(Boolean).length;
 }

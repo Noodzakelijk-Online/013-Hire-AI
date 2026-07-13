@@ -6,6 +6,7 @@ import { and, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { samplePlatforms } from "../sampleData";
 import { findBestJobDuplicateCandidate } from "../jobDeduplication";
 import { isJobListingCurrent } from "../../shared/jobListingFreshness";
+import { getPlatformDiscoveryPolicy, isAutomatedDiscoveryPlatform, isCatalogedPlatform } from "./platformCatalog";
 
 export interface ScrapeOptions {
   keywords?: string;
@@ -104,6 +105,13 @@ export class ScraperManager {
     // Initialize scrapers for platforms we have implemented
     for (const platform of platforms) {
       this.platformIds.set(platform.name, platform.id);
+      if (isCatalogedPlatform(platform.name) && !isAutomatedDiscoveryPlatform(platform.name)) {
+        // The catalog deliberately contains account-only, marketplace, alias,
+        // and discontinued sources. Tracking them is useful; unattended
+        // collection is not permitted without an approved ingestion contract.
+        this.initializationErrors.set(platform.name, getPlatformDiscoveryPolicy(platform.name).reason);
+        continue;
+      }
       try {
         const scraper = this.createScraper(platform.name, platform.id);
         if (scraper) {

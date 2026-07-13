@@ -46,6 +46,15 @@ describe("scraper manager platform restrictions", () => {
     expect(manager.getInitializedPlatforms()).toContain("RemoteOK");
   });
 
+  it("tracks account-only sources without initializing a scraper for them", async () => {
+    const manager = new ScraperManager();
+
+    await manager.initialize();
+
+    expect(manager.getInitializedPlatforms()).not.toContain("LinkedIn Jobs");
+    expect(manager.getInitializationError("LinkedIn Jobs")).toContain("approved integration");
+  });
+
   it("runs only the explicitly enabled platform sources", async () => {
     const manager = new ScraperManager();
     const remoteOk = createScraper(1);

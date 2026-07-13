@@ -70,7 +70,12 @@ import {
 } from "@shared/jobSearchFilters";
 import { isOfferEligibleApplicationStatus } from "@shared/offerEligibility";
 import { getListingObservationCutoff, isJobListingCurrent } from "@shared/jobListingFreshness";
-import { getMissingScraperPlatformCatalog, scraperPlatformCatalog } from "./scrapers/platformCatalog";
+import {
+  getMissingScraperPlatformCatalog,
+  getPlatformDiscoveryPolicy,
+  isAutomatedDiscoveryPlatform,
+  scraperPlatformCatalog,
+} from "./scrapers/platformCatalog";
 import { getCanonicalJobGroupIds, resolveCanonicalJobId } from "./jobDeduplication";
 import {
   getAutonomousSourceEligibility,
@@ -472,9 +477,11 @@ const sampleDuplicateJobIds = new Set(sampleJobDuplicateLinks.map((link) => link
 export async function getJobDiscoveryStatus() {
   const now = new Date();
   const freshAfter = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  await ensureScraperPlatformCatalog();
   const db = await getDb();
   if (!db) {
-    const activePlatforms = samplePlatforms.filter((platform) => platform.isActive === 1);
+    const trackedPlatforms = samplePlatforms.filter((platform) => platform.isActive === 1);
+    const activePlatforms = trackedPlatforms.filter((platform) => isAutomatedDiscoveryPlatform(platform.name));
     const canonicalJobs = sampleJobs.filter((job) =>
       isJobListingCurrent(job, now) && !sampleDuplicateJobIds.has(job.id)
     );
@@ -485,6 +492,13 @@ export async function getJobDiscoveryStatus() {
 
     return {
       activeSources: activePlatforms.length,
+      trackedSources: trackedPlatforms.length,
+      manualIntegrationSources: trackedPlatforms.filter((platform) =>
+        getPlatformDiscoveryPolicy(platform.name).mode === "manual"
+      ).length,
+      unavailableSources: trackedPlatforms.filter((platform) =>
+        getPlatformDiscoveryPolicy(platform.name).mode === "unavailable"
+      ).length,
       sourcesWithSuccessfulScrape: successfulScrapes.length,
       sourcesWithFreshScrape: freshScrapes.length,
       sourcesAwaitingFirstScrape: activePlatforms.length - successfulScrapes.length,
@@ -502,9 +516,10 @@ export async function getJobDiscoveryStatus() {
     };
   }
 
-  const [activePlatforms, jobCountRows] = await Promise.all([
+  const [trackedPlatforms, jobCountRows] = await Promise.all([
     db
       .select({
+        name: jobPlatforms.name,
         lastScraped: jobPlatforms.lastScraped,
         lastScrapeAttemptedAt: jobPlatforms.lastScrapeAttemptedAt,
         lastScrapeStatus: jobPlatforms.lastScrapeStatus,
@@ -521,6 +536,7 @@ export async function getJobDiscoveryStatus() {
         canonicalJobCondition,
       )),
   ]);
+  const activePlatforms = trackedPlatforms.filter((platform) => isAutomatedDiscoveryPlatform(platform.name));
   const successfulScrapes = activePlatforms
     .map((platform) => platform.lastScraped)
     .filter((lastScraped): lastScraped is Date => lastScraped instanceof Date);
@@ -540,6 +556,13 @@ export async function getJobDiscoveryStatus() {
 
   return {
     activeSources: activePlatforms.length,
+    trackedSources: trackedPlatforms.length,
+    manualIntegrationSources: trackedPlatforms.filter((platform) =>
+      getPlatformDiscoveryPolicy(platform.name).mode === "manual"
+    ).length,
+    unavailableSources: trackedPlatforms.filter((platform) =>
+      getPlatformDiscoveryPolicy(platform.name).mode === "unavailable"
+    ).length,
     sourcesWithSuccessfulScrape: successfulScrapes.length,
     sourcesWithFreshScrape: freshScrapes.length,
     sourcesAwaitingFirstScrape: activePlatforms.length - successfulScrapes.length,
@@ -724,13 +747,17 @@ export async function getActiveJobs(limit = 100, offset = 0, filters: Partial<Jo
     canonicalJobCondition,
   ];
   addJobSearchFilterConditions(conditions, resolvedFilters, now);
-  return await db
+  const listingRows = await db
     .select()
     .from(jobs)
     .where(and(...conditions))
     .orderBy(desc(jobs.postedDate), desc(jobs.createdAt))
     .limit(boundedLimit)
     .offset(boundedOffset);
+  // Listing safety is evaluated from the same raw fields as the autonomous
+  // pipeline, preventing explicit payment and forwarding signals from leaking
+  // into normal discovery while retaining ambiguous listings for review.
+  return filterJobListings(listingRows, resolvedFilters, now);
 }
 
 export async function getJobById(jobId: number) {

@@ -1,24 +1,30 @@
 import { describe, expect, it } from "vitest";
 import { getScraperAdapterMetadata, getSupportedPlatforms } from "./index";
 import {
+  getMissingReferencedRemoteJobPlatforms,
   getMissingScraperPlatformCatalog,
+  getPlatformDiscoveryPolicy,
+  isAutomatedDiscoveryPlatform,
+  referencedRemoteJobPlatforms,
   scraperPlatformCatalog,
 } from "./platformCatalog";
 import { samplePlatforms } from "../sampleData";
 
 describe("scraper platform catalog", () => {
-  it("covers every registered scraper with stable source metadata", () => {
+  it("covers every registered scraper and every referenced remote-job source", () => {
     const catalogNames = scraperPlatformCatalog.map((platform) => platform.name);
 
-    expect(catalogNames).toHaveLength(48);
+    expect(catalogNames).toHaveLength(60);
     expect(new Set(catalogNames).size).toBe(catalogNames.length);
-    expect(new Set(catalogNames)).toEqual(new Set(getSupportedPlatforms()));
+    expect(getSupportedPlatforms().every((name) => catalogNames.includes(name))).toBe(true);
+    expect(getMissingReferencedRemoteJobPlatforms()).toEqual([]);
+    expect(referencedRemoteJobPlatforms).toHaveLength(31);
     expect(scraperPlatformCatalog.every((platform) => platform.url.startsWith("https://"))).toBe(true);
   });
 
   it("keeps the database-free source configuration aligned with registered adapters", () => {
     expect(new Set(samplePlatforms.map((platform) => platform.name)))
-      .toEqual(new Set(getSupportedPlatforms()));
+      .toEqual(new Set(scraperPlatformCatalog.map((platform) => platform.name)));
     expect(new Set(samplePlatforms.map((platform) => platform.id)).size)
       .toBe(samplePlatforms.length);
   });
@@ -42,5 +48,15 @@ describe("scraper platform catalog", () => {
     expect(adapters.every(({ adapter }) => adapter.label.endsWith("adapter"))).toBe(true);
     expect(adapters.filter(({ adapter }) => adapter.kind !== "dedicated")
       .every(({ adapter }) => adapter.detail.includes("coverage"))).toBe(true);
+  });
+
+  it("only permits unattended discovery for explicit public API or RSS adapters", () => {
+    expect(isAutomatedDiscoveryPlatform("RemoteOK")).toBe(true);
+    expect(isAutomatedDiscoveryPlatform("Remotive")).toBe(true);
+    expect(isAutomatedDiscoveryPlatform("We Work Remotely")).toBe(true);
+    expect(isAutomatedDiscoveryPlatform("LinkedIn Jobs")).toBe(false);
+    expect(isAutomatedDiscoveryPlatform("Upwork")).toBe(false);
+    expect(getPlatformDiscoveryPolicy("Stack Overflow Jobs")).toMatchObject({ mode: "unavailable" });
+    expect(getPlatformDiscoveryPolicy("Wellfound").aliases).toContain("AngelList");
   });
 });
