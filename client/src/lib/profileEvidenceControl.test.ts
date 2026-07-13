@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getProfileEvidenceControlSummary } from "./profileEvidenceControl";
+import { getProfileEvidenceControlSummary, needsMailboxSendConsent } from "./profileEvidenceControl";
 
 describe("profile evidence control", () => {
   it("blocks autonomous preparation when resume or readiness evidence is missing", () => {
@@ -172,6 +172,19 @@ describe("profile evidence control", () => {
       authorizationIncomplete: true,
     });
     expect(gmail?.detail).toContain("recruiting-message read consent is incomplete");
+  });
+
+  it("offers outbound consent only for a connected inbox that does not already have it", () => {
+    expect(needsMailboxSendConsent({
+      id: "gmail",
+      connectionStatus: "connected",
+      consentScopes: ["email.metadata.read", "email.messages.read_recruiting"],
+    })).toBe(true);
+    expect(needsMailboxSendConsent({
+      id: "outlook",
+      connectionStatus: "connected",
+      consentScopes: ["mail.metadata.read", "mail.messages.read_recruiting", "mail.messages.send"],
+    })).toBe(false);
   });
 
   it("tracks professional profile connector requests without treating them as imported evidence", () => {

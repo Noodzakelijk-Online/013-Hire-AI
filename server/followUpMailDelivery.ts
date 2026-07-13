@@ -135,7 +135,11 @@ async function getMailAccess(
     await markMailAccessNeedsReauth(userId, account, dependencies);
     throw new Error(`${providerLabel(provider)} authorization has expired. Reauthorize before sending a follow-up.`);
   }
-  const config = dependencies.getConnectorOAuthConfig(provider as OAuthConnectorProvider);
+  const config = dependencies.getConnectorOAuthConfig(
+    provider as OAuthConnectorProvider,
+    undefined,
+    [SEND_SCOPE[provider]]
+  );
   if (!config) {
     throw new Error(`${providerLabel(provider)} token renewal is not configured in this deployment.`);
   }

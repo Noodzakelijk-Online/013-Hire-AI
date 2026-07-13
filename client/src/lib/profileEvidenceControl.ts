@@ -1,5 +1,7 @@
 export {
+  getMailboxSendConsentScope,
   getProfileEvidenceControlSummary,
+  needsMailboxSendConsent,
   type ProfileEvidenceControlInput,
   type ProfileEvidenceControlSection,
   type ProfileEvidenceControlStatus,

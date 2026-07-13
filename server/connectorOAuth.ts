@@ -53,6 +53,8 @@ export type ConnectorOAuthEnvironment = {
 type ConnectorOAuthState = {
   provider: OAuthConnectorProvider;
   userId: number;
+  /** Internal consent labels selected before this signed OAuth handoff. */
+  consentScopes?: string[];
   issuedAt: number;
   expiresAt: number;
   nonce: string;
@@ -75,10 +77,7 @@ const providerDefinitions: Record<OAuthConnectorProvider, OAuthProviderDefinitio
     tokenEndpoint: "https://oauth2.googleapis.com/token",
     clientIdEnv: "GOOGLE_OAUTH_CLIENT_ID",
     clientSecretEnv: "GOOGLE_OAUTH_CLIENT_SECRET",
-    scopes: [
-      "https://www.googleapis.com/auth/gmail.metadata",
-      "https://www.googleapis.com/auth/gmail.send",
-    ],
+    scopes: ["https://www.googleapis.com/auth/gmail.metadata"],
     authorizationParams: { access_type: "offline", prompt: "consent" },
   },
   google_drive: {
@@ -102,7 +101,7 @@ const providerDefinitions: Record<OAuthConnectorProvider, OAuthProviderDefinitio
     tokenEndpoint: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
     clientIdEnv: "MICROSOFT_OAUTH_CLIENT_ID",
     clientSecretEnv: "MICROSOFT_OAUTH_CLIENT_SECRET",
-    scopes: ["offline_access", "Mail.Read", "Mail.Send"],
+    scopes: ["offline_access", "Mail.Read"],
   },
   linkedin: {
     authorizationEndpoint: "https://www.linkedin.com/oauth/v2/authorization",
@@ -119,6 +118,32 @@ const providerDefinitions: Record<OAuthConnectorProvider, OAuthProviderDefinitio
     scopes: ["read:user"],
   },
 };
+
+const OPTIONAL_PROVIDER_SEND_SCOPES: Partial<Record<OAuthConnectorProvider, {
+  consentScope: string;
+  providerScope: string;
+}>> = {
+  gmail: {
+    consentScope: "email.messages.send",
+    providerScope: "https://www.googleapis.com/auth/gmail.send",
+  },
+  outlook: {
+    consentScope: "mail.messages.send",
+    providerScope: "Mail.Send",
+  },
+};
+
+export function getProviderScopesForConnectorConsent(
+  provider: OAuthConnectorProvider,
+  consentScopes: readonly string[] = []
+) {
+  const scopes = [...providerDefinitions[provider].scopes];
+  const optionalSendScope = OPTIONAL_PROVIDER_SEND_SCOPES[provider];
+  if (optionalSendScope && consentScopes.includes(optionalSendScope.consentScope)) {
+    scopes.push(optionalSendScope.providerScope);
+  }
+  return scopes;
+}
 
 function getDefaultEnvironment(): ConnectorOAuthEnvironment {
   return {
@@ -166,7 +191,8 @@ export function isOAuthConnectorProvider(provider: string): provider is OAuthCon
 
 export function getConnectorOAuthConfig(
   provider: OAuthConnectorProvider,
-  environment = getDefaultEnvironment()
+  environment = getDefaultEnvironment(),
+  consentScopes: readonly string[] = []
 ): ConnectorOAuthConfig | null {
   const definition = providerDefinitions[provider];
   const { clientId, clientSecret } = readClientCredential(definition, environment);
@@ -180,7 +206,14 @@ export function getConnectorOAuthConfig(
     return null;
   }
 
-  return { provider, ...definition, clientId, clientSecret, redirectUri };
+  return {
+    provider,
+    ...definition,
+    scopes: getProviderScopesForConnectorConsent(provider, consentScopes),
+    clientId,
+    clientSecret,
+    redirectUri,
+  };
 }
 
 export function getConnectorOAuthAvailability(
@@ -214,13 +247,14 @@ function stateSignature(encodedPayload: string, stateSecret: string) {
 }
 
 export function createConnectorOAuthState(
-  input: Pick<ConnectorOAuthState, "provider" | "userId">,
+  input: Pick<ConnectorOAuthState, "provider" | "userId" | "consentScopes">,
   stateSecret = getDefaultEnvironment().connectorOAuthStateSecret,
   now = Date.now()
 ) {
   if (!stateSecret.trim()) throw new Error("Connector OAuth state signing is not configured.");
   const payload: ConnectorOAuthState = {
     ...input,
+    consentScopes: input.consentScopes?.map((scope) => scope.trim()).filter(Boolean),
     issuedAt: now,
     expiresAt: now + STATE_TTL_MS,
     nonce: randomBytes(16).toString("base64url"),
@@ -247,6 +281,11 @@ export function verifyConnectorOAuthState(
       !isOAuthConnectorProvider(payload.provider) ||
       !Number.isInteger(payload.userId) ||
       payload.userId <= 0 ||
+      (payload.consentScopes !== undefined && (
+        !Array.isArray(payload.consentScopes) ||
+        payload.consentScopes.length > 20 ||
+        payload.consentScopes.some((scope) => typeof scope !== "string" || scope.length === 0 || scope.length > 120)
+      )) ||
       !Number.isFinite(payload.issuedAt) ||
       !Number.isFinite(payload.expiresAt) ||
       payload.expiresAt < now ||

@@ -201,6 +201,12 @@ describe("connector account tRPC procedures", () => {
     });
     expect(result.account.consentScopes).toContain("email.messages.send");
 
+    const baseline = await caller.connectors.requestConnection({ provider: "outlook" });
+    expect(JSON.parse(baseline.account.consentScopes || "[]")).toEqual([
+      "mail.metadata.read",
+      "mail.messages.read_recruiting",
+    ]);
+
     await expect(caller.connectors.requestConnection({
       provider: "gmail",
       consentScopes: ["mail.send.everything"],

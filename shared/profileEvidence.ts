@@ -32,6 +32,20 @@ export type ProfileEvidenceControlSection =
   | "work-experience"
   | "skills";
 
+const MAILBOX_SEND_CONSENT: Partial<Record<ProfileEvidenceProviderId, string>> = {
+  gmail: "email.messages.send",
+  outlook: "mail.messages.send",
+};
+
+export function getMailboxSendConsentScope(provider: ProfileEvidenceProviderId) {
+  return MAILBOX_SEND_CONSENT[provider] ?? null;
+}
+
+export function needsMailboxSendConsent(provider: Pick<ProfileEvidenceProvider, "id" | "connectionStatus" | "consentScopes">) {
+  const sendScope = getMailboxSendConsentScope(provider.id);
+  return provider.connectionStatus === "connected" && sendScope !== null && !provider.consentScopes?.includes(sendScope);
+}
+
 export const CONNECTOR_VERIFICATION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 export function isConnectorAuthorizationStale(

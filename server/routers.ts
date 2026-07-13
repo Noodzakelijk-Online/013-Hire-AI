@@ -107,9 +107,9 @@ function profileMatchEvidenceChanged(input: object) {
 function defaultConnectorScopes(provider: z.infer<typeof connectorProvider>) {
   switch (provider) {
     case "gmail":
-      return ["email.metadata.read", "email.messages.read_recruiting", "email.messages.send"];
+      return ["email.metadata.read", "email.messages.read_recruiting"];
     case "outlook":
-      return ["mail.metadata.read", "mail.messages.read_recruiting", "mail.messages.send"];
+      return ["mail.metadata.read", "mail.messages.read_recruiting"];
     case "google_drive":
       return ["files.metadata.read", "files.content.read_resume_candidates"];
     case "dropbox":
@@ -175,6 +175,18 @@ function assertJobCurrentForPreparation(job: Awaited<ReturnType<typeof import(".
   }
 }
 
+function allowedConnectorScopes(provider: z.infer<typeof connectorProvider>) {
+  const baselineScopes = defaultConnectorScopes(provider);
+  switch (provider) {
+    case "gmail":
+      return [...baselineScopes, "email.messages.send"];
+    case "outlook":
+      return [...baselineScopes, "mail.messages.send"];
+    default:
+      return baselineScopes;
+  }
+}
+
 function assertJobSearchTermsAccepted(user: {
   tosAcceptedAt?: Date | null;
   accountStatus?: string | null;
@@ -197,15 +209,23 @@ function resolveConnectorScopes(
   provider: z.infer<typeof connectorProvider>,
   requestedScopes?: string[]
 ) {
-  const allowedScopes = defaultConnectorScopes(provider);
+  const baselineScopes = defaultConnectorScopes(provider);
+  const allowedScopes = allowedConnectorScopes(provider);
   const requested = requestedScopes?.length
     ? Array.from(new Set(requestedScopes.map((scope) => scope.trim()).filter(Boolean)))
-    : allowedScopes;
+    : baselineScopes;
   const unsupportedScopes = requested.filter((scope) => !allowedScopes.includes(scope));
   if (unsupportedScopes.length > 0) {
     throw new TRPCError({
       code: "BAD_REQUEST",
       message: `Requested connector scope is not permitted for ${provider}: ${unsupportedScopes.join(", ")}.`,
+    });
+  }
+  const missingBaselineScopes = baselineScopes.filter((scope) => !requested.includes(scope));
+  if (missingBaselineScopes.length > 0) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Requested connector consent for ${provider} must include its monitoring baseline: ${missingBaselineScopes.join(", ")}.`,
     });
   }
   return requested;
@@ -275,7 +295,10 @@ export const appRouter = router({
       }));
     }),
     startOAuth: protectedProcedure
-      .input(z.object({ provider: connectorProvider }))
+      .input(z.object({
+        provider: connectorProvider,
+        consentScopes: z.array(z.string().trim().min(1).max(120)).max(20).optional(),
+      }))
       .mutation(async ({ ctx, input }) => {
         const {
           buildConnectorAuthorizationUrl,
@@ -296,7 +319,8 @@ export const appRouter = router({
             message: `${input.provider} OAuth is not configured for this deployment.`,
           });
         }
-        const config = getConnectorOAuthConfig(input.provider);
+        const consentScopes = resolveConnectorScopes(input.provider, input.consentScopes);
+        const config = getConnectorOAuthConfig(input.provider, undefined, consentScopes);
         if (!config) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
@@ -304,14 +328,23 @@ export const appRouter = router({
           });
         }
 
-        const { requestUserConnectorConnection, createAuditEvent } = await import("./db");
-        const consentScopes = resolveConnectorScopes(input.provider);
-        const account = await requestUserConnectorConnection({
-          userId: ctx.user.id,
+        const { listUserConnectorAccounts, requestUserConnectorConnection, createAuditEvent } = await import("./db");
+        const existingAccount = (await listUserConnectorAccounts(ctx.user.id))
+          .find((account) => account.provider === input.provider);
+        // Preserve a verified mailbox while the user completes an optional
+        // consent upgrade. A cancelled upgrade must not interrupt monitoring.
+        const account = existingAccount?.status === "connected"
+          ? existingAccount
+          : await requestUserConnectorConnection({
+            userId: ctx.user.id,
+            provider: input.provider,
+            consentScopes,
+          });
+        const state = createConnectorOAuthState({
           provider: input.provider,
+          userId: ctx.user.id,
           consentScopes,
         });
-        const state = createConnectorOAuthState({ provider: input.provider, userId: ctx.user.id });
         await createAuditEvent({
           userId: ctx.user.id,
           entityType: "user",
@@ -321,7 +354,7 @@ export const appRouter = router({
           source: "connectors.startOAuth",
           afterState: JSON.stringify({
             provider: input.provider,
-            status: "connection_requested",
+            status: existingAccount?.status === "connected" ? "authorization_upgrade_requested" : "connection_requested",
             consentScopes,
           }),
           riskLevel: "medium",

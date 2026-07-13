@@ -18,12 +18,14 @@ function getQueryParam(req: Request, key: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-function connectorConsentScopes(provider: "gmail" | "google_drive" | "dropbox" | "outlook" | "linkedin" | "github") {
+type ConnectorCallbackProvider = "gmail" | "google_drive" | "dropbox" | "outlook" | "linkedin" | "github";
+
+function defaultConnectorConsentScopes(provider: ConnectorCallbackProvider) {
   switch (provider) {
     case "gmail":
-      return ["email.metadata.read", "email.messages.read_recruiting", "email.messages.send"];
+      return ["email.metadata.read", "email.messages.read_recruiting"];
     case "outlook":
-      return ["mail.metadata.read", "mail.messages.read_recruiting", "mail.messages.send"];
+      return ["mail.metadata.read", "mail.messages.read_recruiting"];
     case "google_drive":
     case "dropbox":
       return ["files.metadata.read", "files.content.read_resume_candidates"];
@@ -34,16 +36,31 @@ function connectorConsentScopes(provider: "gmail" | "google_drive" | "dropbox" |
   }
 }
 
-type ConnectorCallbackProvider = "gmail" | "google_drive" | "dropbox" | "outlook" | "linkedin" | "github";
+function allowedConnectorConsentScopes(provider: ConnectorCallbackProvider) {
+  const baselineScopes = defaultConnectorConsentScopes(provider);
+  if (provider === "gmail") return [...baselineScopes, "email.messages.send"];
+  if (provider === "outlook") return [...baselineScopes, "mail.messages.send"];
+  return baselineScopes;
+}
+
+export function connectorConsentScopes(
+  provider: ConnectorCallbackProvider,
+  requestedScopes: readonly string[] | undefined
+) {
+  const requested = requestedScopes?.map((scope) => scope.trim()).filter(Boolean);
+  const allowed = new Set(allowedConnectorConsentScopes(provider));
+  const baseline = defaultConnectorConsentScopes(provider);
+  if (!requested || requested.length === 0 || baseline.some((scope) => !requested.includes(scope))) {
+    return baseline;
+  }
+  return Array.from(new Set(requested.filter((scope) => allowed.has(scope))));
+}
 
 const requiredProviderScopes: Record<ConnectorCallbackProvider, readonly string[]> = {
-  gmail: [
-    "https://www.googleapis.com/auth/gmail.metadata",
-    "https://www.googleapis.com/auth/gmail.send",
-  ],
+  gmail: ["https://www.googleapis.com/auth/gmail.metadata"],
   google_drive: ["https://www.googleapis.com/auth/drive.readonly"],
   dropbox: ["files.metadata.read", "files.content.read"],
-  outlook: ["Mail.Read", "Mail.Send"],
+  outlook: ["Mail.Read"],
   linkedin: ["openid", "profile", "email"],
   github: ["read:user"],
 };
@@ -55,10 +72,18 @@ const requiredProviderScopes: Record<ConnectorCallbackProvider, readonly string[
  */
 export function getMissingProviderScopes(
   provider: ConnectorCallbackProvider,
-  grantedScopes: readonly string[]
+  grantedScopes: readonly string[],
+  consentScopes: readonly string[] = defaultConnectorConsentScopes(provider)
 ) {
   const granted = new Set(grantedScopes.map((scope) => scope.trim()).filter(Boolean));
-  return requiredProviderScopes[provider].filter((scope) => !granted.has(scope));
+  const required = [...requiredProviderScopes[provider]];
+  if (provider === "gmail" && consentScopes.includes("email.messages.send")) {
+    required.push("https://www.googleapis.com/auth/gmail.send");
+  }
+  if (provider === "outlook" && consentScopes.includes("mail.messages.send")) {
+    required.push("Mail.Send");
+  }
+  return required.filter((scope) => !granted.has(scope));
 }
 
 function completeRedirect(provider: string, status: "connected" | "denied" | "failed") {
@@ -82,6 +107,7 @@ export function registerConnectorOAuthRoutes(app: Express) {
     }
 
     const provider = verifiedState.provider;
+    const consentScopes = connectorConsentScopes(provider, verifiedState.consentScopes);
     const account = (await listUserConnectorAccounts(verifiedState.userId))
       .find((item) => item.provider === provider);
     if (account?.status === "disabled") {
@@ -90,12 +116,14 @@ export function registerConnectorOAuthRoutes(app: Express) {
     }
 
     if (providerError || !code) {
-      await upsertUserConnectorAccount({
-        userId: verifiedState.userId,
-        provider,
-        status: "needs_reauth",
-        consentScopes: JSON.stringify(connectorConsentScopes(provider)),
-      });
+      if (account?.status !== "connected") {
+        await upsertUserConnectorAccount({
+          userId: verifiedState.userId,
+          provider,
+          status: "needs_reauth",
+          consentScopes: JSON.stringify(consentScopes),
+        });
+      }
       await createAuditEvent({
         userId: verifiedState.userId,
         entityType: "user",
@@ -103,14 +131,18 @@ export function registerConnectorOAuthRoutes(app: Express) {
         action: "connector_oauth_denied",
         actor: "user",
         source: "connectors.oauth.callback",
-        afterState: JSON.stringify({ provider, status: "needs_reauth" }),
+        afterState: JSON.stringify({
+          provider,
+          status: account?.status === "connected" ? "connected" : "needs_reauth",
+          authorizationUpgradeCancelled: account?.status === "connected",
+        }),
         riskLevel: "medium",
       });
       res.redirect(302, completeRedirect(provider, "denied"));
       return;
     }
 
-    const config = getConnectorOAuthConfig(provider);
+    const config = getConnectorOAuthConfig(provider, undefined, consentScopes);
     if (!config) {
       res.status(503).json({ error: "Connector OAuth is not configured for this provider." });
       return;
@@ -118,7 +150,7 @@ export function registerConnectorOAuthRoutes(app: Express) {
 
     try {
       const token = await exchangeConnectorAuthorizationCode(config, code);
-      const missingScopes = getMissingProviderScopes(provider, token.grantedScopes);
+      const missingScopes = getMissingProviderScopes(provider, token.grantedScopes, consentScopes);
       if (missingScopes.length > 0) {
         throw new Error("Required connector consent was not granted.");
       }
@@ -135,7 +167,7 @@ export function registerConnectorOAuthRoutes(app: Express) {
         userId: verifiedState.userId,
         provider,
         status: "connected",
-        consentScopes: JSON.stringify(connectorConsentScopes(provider)),
+        consentScopes: JSON.stringify(consentScopes),
         lastVerifiedAt: new Date(),
         disconnectedAt: null,
       });
@@ -155,12 +187,14 @@ export function registerConnectorOAuthRoutes(app: Express) {
       });
       res.redirect(302, completeRedirect(provider, "connected"));
     } catch {
-      await upsertUserConnectorAccount({
-        userId: verifiedState.userId,
-        provider,
-        status: "needs_reauth",
-        consentScopes: JSON.stringify(connectorConsentScopes(provider)),
-      });
+      if (account?.status !== "connected") {
+        await upsertUserConnectorAccount({
+          userId: verifiedState.userId,
+          provider,
+          status: "needs_reauth",
+          consentScopes: JSON.stringify(consentScopes),
+        });
+      }
       await createAuditEvent({
         userId: verifiedState.userId,
         entityType: "user",

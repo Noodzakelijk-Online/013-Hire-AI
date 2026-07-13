@@ -34,6 +34,8 @@ import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
 import {
   getProfileEvidenceControlSummary,
+  getMailboxSendConsentScope,
+  needsMailboxSendConsent,
   type ProfileEvidenceControlStatus,
   type ProfileEvidenceProvider,
   type ProfileEvidenceProviderId,
@@ -479,6 +481,16 @@ export default function Profile() {
     startConnectorOAuth.mutate({ provider });
   };
 
+  const handleEnableMailboxSendConsent = (provider: ConnectorProviderId) => {
+    const evidenceProvider = evidenceControl.providers.find((item) => item.id === provider);
+    const sendScope = getMailboxSendConsentScope(provider);
+    if (!evidenceProvider || !sendScope) return;
+    startConnectorOAuth.mutate({
+      provider,
+      consentScopes: Array.from(new Set([...(evidenceProvider.consentScopes ?? []), sendScope])),
+    });
+  };
+
   const handleDisconnectConnector = (provider: ConnectorProviderId) => {
     disconnectConnector.mutate({ provider });
   };
@@ -658,6 +670,11 @@ export default function Profile() {
                   onDisconnect={
                     canRequestProviderConnector(provider)
                       ? handleDisconnectConnector
+                      : undefined
+                  }
+                  onEnableMailboxSendConsent={
+                    canRequestProviderConnector(provider)
+                      ? handleEnableMailboxSendConsent
                       : undefined
                   }
                 />
@@ -1517,12 +1534,14 @@ function EvidenceProviderRow({
   isDisconnecting = false,
   onRequestConnection,
   onDisconnect,
+  onEnableMailboxSendConsent,
 }: {
   provider: ProfileEvidenceProvider;
   isRequesting?: boolean;
   isDisconnecting?: boolean;
   onRequestConnection?: (provider: ConnectorProviderId) => void;
   onDisconnect?: (provider: ConnectorProviderId) => void;
+  onEnableMailboxSendConsent?: (provider: ConnectorProviderId) => void;
 }) {
   const Icon = provider.status === "connected"
     ? CheckCircle2
@@ -1535,6 +1554,7 @@ function EvidenceProviderRow({
   const connectorCanDisconnect = onDisconnect && ["connection_requested", "connected", "needs_reauth"].includes(
     provider.connectionStatus || ""
   );
+  const connectorCanEnableMailboxSend = onEnableMailboxSendConsent && needsMailboxSendConsent(provider);
 
   return (
     <div
@@ -1569,6 +1589,19 @@ function EvidenceProviderRow({
               onClick={() => onRequestConnection(provider.id as ConnectorProviderId)}
             >
               {connectorAlreadyRequested ? "Requested" : connectorNeedsAuthorization ? "Request consent" : "Request"}
+            </Button>
+          ) : null}
+          {connectorCanEnableMailboxSend ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              data-testid={`profile-evidence-enable-send-${provider.id}`}
+              className="h-7 border-amber-700/80 px-2 text-xs text-amber-100 hover:border-amber-500 hover:bg-amber-500/10"
+              disabled={isRequesting}
+              onClick={() => onEnableMailboxSendConsent(provider.id as ConnectorProviderId)}
+            >
+              Enable sending
             </Button>
           ) : null}
           {connectorCanDisconnect ? (

@@ -61,14 +61,22 @@ describe("external connector OAuth boundary", () => {
     expect(url.toString()).not.toContain(environment.googleOAuthClientSecret);
   });
 
-  it("requests Gmail metadata plus explicit outbound-send authority", () => {
+  it("keeps mailbox authorization read-only until explicit outbound-send consent is selected", () => {
     const config = getConnectorOAuthConfig("gmail", environment)!;
+    const sendConfig = getConnectorOAuthConfig("gmail", environment, [
+      "email.metadata.read",
+      "email.messages.read_recruiting",
+      "email.messages.send",
+    ])!;
 
-    expect(config.scopes).toEqual([
+    expect(config.scopes).toEqual(["https://www.googleapis.com/auth/gmail.metadata"]);
+    expect(sendConfig.scopes).toEqual([
       "https://www.googleapis.com/auth/gmail.metadata",
       "https://www.googleapis.com/auth/gmail.send",
     ]);
     expect(config.scopes).not.toContain("https://www.googleapis.com/auth/gmail.readonly");
+    expect(getConnectorOAuthConfig("outlook", environment)!.scopes).toEqual(["offline_access", "Mail.Read"]);
+    expect(getConnectorOAuthConfig("outlook", environment, ["mail.messages.send"])!.scopes).toContain("Mail.Send");
   });
 
   it("accepts only untampered, short-lived OAuth state", () => {
