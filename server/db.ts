@@ -66,6 +66,7 @@ import {
 } from "@shared/jobSearchFilters";
 import { isOfferEligibleApplicationStatus } from "@shared/offerEligibility";
 import { getListingObservationCutoff, isJobListingCurrent } from "@shared/jobListingFreshness";
+import { getMissingScraperPlatformCatalog, scraperPlatformCatalog } from "./scrapers/platformCatalog";
 
 type InsertJob = InferInsertModel<typeof jobs>;
 type InsertUserProfile = InferInsertModel<typeof userProfiles>;
@@ -344,6 +345,27 @@ function currentListingCondition(now: Date) {
     and(isNotNull(jobs.expiryDate), gt(jobs.expiryDate, now)),
     and(isNull(jobs.expiryDate), gt(jobs.updatedAt, observationCutoff))
   )!;
+}
+
+/**
+ * Give every supported scraper a durable source record without changing any
+ * existing platform configuration or initiating an external scrape.
+ */
+export async function ensureScraperPlatformCatalog() {
+  const db = await getDb();
+  if (!db) {
+    return { created: 0, total: samplePlatforms.length };
+  }
+
+  const configured = await db.select({ name: jobPlatforms.name }).from(jobPlatforms);
+  const missing = getMissingScraperPlatformCatalog(configured.map((platform) => platform.name));
+  if (missing.length > 0) {
+    await db.insert(jobPlatforms).values(missing).onDuplicateKeyUpdate({
+      set: { name: sql`VALUES(${jobPlatforms.name})` },
+    });
+  }
+
+  return { created: missing.length, total: configured.length + missing.length, supported: scraperPlatformCatalog.length };
 }
 
 const sampleDuplicateJobIds = new Set(sampleJobDuplicateLinks.map((link) => link.duplicateJobId));

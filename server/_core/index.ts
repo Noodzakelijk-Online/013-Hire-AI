@@ -11,6 +11,7 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { registerStripeWebhook } from "../stripeWebhook";
 import { ENV, validateProductionEnv } from "./env";
+import { ensureScraperPlatformCatalog } from "../db";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -33,6 +34,7 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 
 async function startServer() {
   validateProductionEnv();
+  await ensureScraperPlatformCatalog();
 
   const app = express();
   const server = createServer(app);

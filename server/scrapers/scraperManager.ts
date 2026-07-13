@@ -1,6 +1,6 @@
 import type { BaseScraper, ScrapeResult } from "./baseScraper";
 import { getScraperForPlatform, getSupportedPlatforms, hasScraper } from "./index";
-import { getDb, updatePlatformLastScraped } from "../db";
+import { ensureScraperPlatformCatalog, getDb, updatePlatformLastScraped } from "../db";
 import { jobDuplicates, jobs, jobPlatforms } from "../../drizzle/schema";
 import { and, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { samplePlatforms } from "../sampleData";
@@ -75,6 +75,7 @@ export class ScraperManager {
    * Initialize all scrapers
    */
   async initialize(): Promise<void> {
+    await ensureScraperPlatformCatalog();
     const db = await getDb();
     const platforms = db
       ? await db.select().from(jobPlatforms).where(eq(jobPlatforms.isActive, 1))

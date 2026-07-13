@@ -41,7 +41,9 @@ export const jobPlatforms = mysqlTable("job_platforms", {
   isActive: int("is_active").default(1).notNull(),
   lastScraped: timestamp("last_scraped"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  uniqueIndex("job_platforms_name_unique").on(table.name),
+]);
 
 /**
  * Jobs Table

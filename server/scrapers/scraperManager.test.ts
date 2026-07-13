@@ -3,11 +3,13 @@ import type { BaseScraper } from "./baseScraper";
 import { ScraperManager } from "./scraperManager";
 
 const mocks = vi.hoisted(() => ({
+  ensureScraperPlatformCatalog: vi.fn(),
   getDb: vi.fn(),
   updatePlatformLastScraped: vi.fn(),
 }));
 
 vi.mock("../db", () => ({
+  ensureScraperPlatformCatalog: mocks.ensureScraperPlatformCatalog,
   getDb: mocks.getDb,
   updatePlatformLastScraped: mocks.updatePlatformLastScraped,
 }));
@@ -26,8 +28,18 @@ function createScraper(platformId: number) {
 describe("scraper manager platform restrictions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.ensureScraperPlatformCatalog.mockResolvedValue({ created: 0, total: 8 });
     mocks.getDb.mockResolvedValue(null);
     mocks.updatePlatformLastScraped.mockResolvedValue(undefined);
+  });
+
+  it("ensures the source catalog before initializing configured scrapers", async () => {
+    const manager = new ScraperManager();
+
+    await manager.initialize();
+
+    expect(mocks.ensureScraperPlatformCatalog).toHaveBeenCalledOnce();
+    expect(manager.getInitializedPlatforms()).toContain("RemoteOK");
   });
 
   it("runs only the explicitly enabled platform sources", async () => {
