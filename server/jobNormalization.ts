@@ -355,7 +355,14 @@ export function normalizeExperienceLevel(text: string | null | undefined): Norma
 
   const lower = text.toLowerCase();
 
-  if (lower.includes("entry") || lower.includes("graduate") || lower.includes("0-1") || lower.includes("no experience")) {
+  if (
+    lower.includes("entry") ||
+    lower.includes("graduate") ||
+    lower.includes("new grad") ||
+    lower.includes("intern") ||
+    lower.includes("0-1") ||
+    lower.includes("no experience")
+  ) {
     return "entry";
   }
   if (lower.includes("junior") || lower.includes("jr") || lower.includes("1-2") || lower.includes("1-3")) {

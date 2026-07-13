@@ -8,6 +8,7 @@ import { jobDuplicates, jobs } from "../drizzle/schema";
 import { asc, desc, gt, and, eq, gte, inArray, like, or, sql } from "drizzle-orm";
 import { sampleJobDuplicateLinks, sampleJobs } from "./sampleData";
 import { matchesJobAlert } from "../shared/jobAlertMatching";
+import { normalizeExperienceLevel, type NormalizedExperienceLevel } from "./jobNormalization";
 
 const canonicalJobCondition = sql`NOT EXISTS (
   SELECT 1 FROM ${jobDuplicates}
@@ -40,7 +41,32 @@ export interface JobSummary {
   jobType: "full-time" | "part-time" | "contract" | "temporary" | null;
   platformId: number;
   postedDate: Date | null;
+  requirements?: string | null;
   matchScore?: number;
+}
+
+type DiscoveryExperienceLevel = Exclude<NormalizedExperienceLevel, "unknown">;
+
+const DISCOVERY_EXPERIENCE_LEVELS = new Set<DiscoveryExperienceLevel>([
+  "entry",
+  "junior",
+  "mid",
+  "senior",
+  "lead",
+  "executive",
+]);
+
+function hasRequestedExperienceLevel(job: JobSummary, values?: string[]) {
+  if (!values?.length) return true;
+  const levels = values
+    .map((value) => value.toLowerCase().trim())
+    .filter((value): value is DiscoveryExperienceLevel =>
+      DISCOVERY_EXPERIENCE_LEVELS.has(value as DiscoveryExperienceLevel)
+    );
+  if (levels.length === 0) return true;
+
+  const experienceLevel = normalizeExperienceLevel(`${job.title} ${job.requirements || ""}`);
+  return experienceLevel !== "unknown" && levels.includes(experienceLevel);
 }
 
 export function selectCanonicalDiscoveryJobs(
@@ -82,6 +108,8 @@ export function filterDiscoveryJobs(
     if (filters.platformIds?.length && !filters.platformIds.includes(job.platformId)) return false;
 
     if (filters.jobTypes?.length && !filters.jobTypes.includes(job.jobType || "")) return false;
+
+    if (!hasRequestedExperienceLevel(job, filters.experienceLevels)) return false;
 
     if (filters.minSalary && filters.minSalary > 0) {
       const salaryCeiling = job.salaryMax ?? job.salaryMin;
@@ -179,6 +207,7 @@ class SubscriptionManager {
           jobType: jobs.jobType,
           platformId: jobs.platformId,
           postedDate: jobs.postedDate,
+          requirements: jobs.requirements,
           createdAt: jobs.createdAt,
           isDuplicate: sql<number>`EXISTS (
             SELECT 1 FROM ${jobDuplicates}
@@ -266,6 +295,7 @@ class SubscriptionManager {
         jobType: jobs.jobType,
         platformId: jobs.platformId,
         postedDate: jobs.postedDate,
+        requirements: jobs.requirements,
       })
       .from(jobs)
       .where(and(eq(jobs.isActive, 1), canonicalJobCondition))
@@ -334,6 +364,9 @@ export async function getRecentJobs(options: {
     if (options.jobTypes?.length) {
       filteredJobs = filteredJobs.filter((job) => job.jobType && options.jobTypes!.includes(job.jobType));
     }
+    if (options.experienceLevels?.length) {
+      filteredJobs = filteredJobs.filter((job) => hasRequestedExperienceLevel(job, options.experienceLevels));
+    }
 
     const mappedJobs = filteredJobs
       .sort((a, b) => (b.postedDate?.getTime() || 0) - (a.postedDate?.getTime() || 0))
@@ -347,6 +380,7 @@ export async function getRecentJobs(options: {
         jobType: job.jobType,
         platformId: job.platformId,
         postedDate: job.postedDate,
+        requirements: job.requirements,
       }));
 
     return { jobs: mappedJobs.slice(offset, offset + limit), total: filteredJobs.length };
@@ -386,6 +420,25 @@ export async function getRecentJobs(options: {
   if (options.jobTypes?.length) {
     conditions.push(inArray(jobs.jobType, options.jobTypes as Array<"full-time" | "part-time" | "contract" | "temporary">));
   }
+  if (options.experienceLevels?.length) {
+    const levels = options.experienceLevels
+      .map((value) => value.toLowerCase().trim())
+      .filter((value): value is DiscoveryExperienceLevel =>
+        DISCOVERY_EXPERIENCE_LEVELS.has(value as DiscoveryExperienceLevel)
+      );
+    const experienceTerms: Record<DiscoveryExperienceLevel, string[]> = {
+      entry: ["%intern%", "%graduate%", "%entry%", "%new grad%", "%0-1%", "%no experience%"],
+      junior: ["%junior%", "%jr%", "%1-2%", "%1-3%"],
+      mid: ["%mid%", "%intermediate%", "%3-5%", "%2-4%"],
+      senior: ["%senior%", "%sr%", "%5+%", "%5-7%", "%experienced%"],
+      lead: ["%lead%", "%principal%", "%staff%", "%architect%", "%7+%", "%8+%"],
+      executive: ["%executive%", "%director%", "%vice president%", "%vp%", "%chief%", "%c-level%"],
+    };
+    const experienceCondition = or(...levels.flatMap((level) =>
+      experienceTerms[level].flatMap((term) => [like(jobs.title, term), like(jobs.requirements, term)])
+    ));
+    if (experienceCondition) conditions.push(experienceCondition);
+  }
 
   const jobList = await db
     .select({
@@ -398,6 +451,7 @@ export async function getRecentJobs(options: {
       jobType: jobs.jobType,
       platformId: jobs.platformId,
       postedDate: jobs.postedDate,
+      requirements: jobs.requirements,
     })
     .from(jobs)
     .where(and(...conditions))

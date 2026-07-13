@@ -5,6 +5,10 @@ const mocks = vi.hoisted(() => ({
   getActiveResume: vi.fn(),
 }));
 
+// This is an integration test. Other suites replace ./db with narrow mocks,
+// so explicitly retain the real ledger implementation in shared test workers.
+vi.unmock("./db");
+
 vi.mock("./resumeStorage", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./resumeStorage")>()),
   getActiveResume: mocks.getActiveResume,

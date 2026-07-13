@@ -74,6 +74,38 @@ describe("real-time discovery filtering", () => {
     })).toEqual([remoteTypeScriptJob]);
   });
 
+  it("applies requested experience levels to discovery subscriptions", () => {
+    const entryJob = {
+      ...remoteTypeScriptJob,
+      id: 93,
+      title: "Software Engineering Internship",
+      requirements: "0-1 years of experience",
+    };
+    const seniorJob = {
+      ...remoteTypeScriptJob,
+      requirements: "5+ years of TypeScript experience",
+    };
+
+    expect(filterDiscoveryJobs([entryJob, seniorJob], {
+      experienceLevels: ["entry"],
+    })).toEqual([entryJob]);
+    expect(filterDiscoveryJobs([entryJob, seniorJob], {
+      experienceLevels: ["senior"],
+    })).toEqual([seniorJob]);
+  });
+
+  it("applies experience levels to recent-job discovery queries", async () => {
+    const result = await getRecentJobs({ experienceLevels: ["senior"] });
+
+    expect(result.total).toBeGreaterThan(0);
+    expect(result.jobs).toEqual(expect.arrayContaining([
+      expect.objectContaining({ title: expect.stringContaining("Senior") }),
+    ]));
+    expect(result.jobs.every((job) => /senior|sr\.?|5\+|5-7|experienced/i.test(
+      `${job.title} ${job.requirements || ""}`
+    ))).toBe(true);
+  });
+
   it("uses the shared alert policy for keyword, platform, salary, and job type criteria", () => {
     expect(jobMatchesAlert(remoteTypeScriptJob, {
       id: 501,

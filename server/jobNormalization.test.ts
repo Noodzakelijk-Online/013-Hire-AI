@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeLocation, normalizeSalary } from "./jobNormalization";
+import { normalizeExperienceLevel, normalizeLocation, normalizeSalary } from "./jobNormalization";
 
 describe("job normalization", () => {
   it("keeps explicit CAD and AUD compensation distinct from generic dollar salaries", () => {
@@ -32,5 +32,10 @@ describe("job normalization", () => {
       region: "Global",
       isRemote: true,
     });
+  });
+
+  it("classifies internships and new-graduate roles as entry-level", () => {
+    expect(normalizeExperienceLevel("Software Engineering Internship")).toBe("entry");
+    expect(normalizeExperienceLevel("New Grad Product Designer")).toBe("entry");
   });
 });
