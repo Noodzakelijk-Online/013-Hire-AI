@@ -141,6 +141,21 @@ describe("connector account tRPC procedures", () => {
     )).toBe(false);
   });
 
+  it("fails closed when a deployment has not provisioned OAuth credentials", async () => {
+    const userId = 99656;
+    const caller = appRouter.createCaller(createContext(userId));
+
+    await expect(caller.connectors.startOAuth({ provider: "gmail" })).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: "gmail OAuth is not configured for this deployment.",
+    });
+
+    expect(await listUserConnectorAccounts(userId)).toHaveLength(0);
+    expect((await getAuditEventsForUser(userId, 10)).some((event) =>
+      event.action === "connector_oauth_started"
+    )).toBe(false);
+  });
+
   it("requires renewed connector verification before stale inbox evidence is ingested", async () => {
     const userId = 99654;
     const application = await createApplication({

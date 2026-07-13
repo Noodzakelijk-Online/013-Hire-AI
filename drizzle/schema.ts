@@ -155,6 +155,25 @@ export const userConnectorAccounts = mysqlTable("user_connector_accounts", {
 ]);
 
 /**
+ * Encrypted OAuth grants for external profile and inbox connectors. Tokens are
+ * intentionally separate from the user-visible connector account state.
+ */
+export const connectorAuthorizations = mysqlTable("connector_authorizations", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  provider: mysqlEnum("provider", ["gmail", "google_drive", "dropbox", "outlook", "linkedin", "github"]).notNull(),
+  encryptedAccessToken: text("encrypted_access_token").notNull(),
+  encryptedRefreshToken: text("encrypted_refresh_token"),
+  accessTokenExpiresAt: timestamp("access_token_expires_at"),
+  tokenType: varchar("token_type", { length: 64 }),
+  grantedScopes: text("granted_scopes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("connector_authorizations_user_provider_unique").on(table.userId, table.provider),
+]);
+
+/**
  * Applications
  * Tracks job applications submitted through the platform
  */
@@ -699,6 +718,7 @@ export type JobDuplicate = typeof jobDuplicates.$inferSelect;
 export type UserProfile = typeof userProfiles.$inferSelect;
 export type SocialMediaProfile = typeof socialMediaProfiles.$inferSelect;
 export type UserConnectorAccount = typeof userConnectorAccounts.$inferSelect;
+export type ConnectorAuthorization = typeof connectorAuthorizations.$inferSelect;
 export type Application = typeof applications.$inferSelect;
 export type ApplicationDecision = typeof applicationDecisions.$inferSelect;
 export type ApplicationMaterial = typeof applicationMaterials.$inferSelect;

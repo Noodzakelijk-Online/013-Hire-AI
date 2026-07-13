@@ -162,6 +162,13 @@
       "when": 1783900800000,
       "tag": "0022_follow_up_delivery_confirmation",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "5",
+      "when": 1783987200000,
+      "tag": "0023_connector_authorizations",
+      "breakpoints": true
     }
   ]
 }

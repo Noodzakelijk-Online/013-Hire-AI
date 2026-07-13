@@ -217,6 +217,73 @@ export const appRouter = router({
       const { listUserConnectorAccounts } = await import("./db");
       return await listUserConnectorAccounts(ctx.user.id);
     }),
+    getOAuthAvailability: protectedProcedure.query(async () => {
+      const { getConnectorOAuthAvailability, isOAuthConnectorProvider } = await import("./connectorOAuth");
+      return connectorProvider.options.map((provider) => ({
+        provider,
+        available: isOAuthConnectorProvider(provider)
+          ? getConnectorOAuthAvailability(provider).available
+          : false,
+      }));
+    }),
+    startOAuth: protectedProcedure
+      .input(z.object({ provider: connectorProvider }))
+      .mutation(async ({ ctx, input }) => {
+        const {
+          buildConnectorAuthorizationUrl,
+          createConnectorOAuthState,
+          getConnectorOAuthAvailability,
+          getConnectorOAuthConfig,
+          isOAuthConnectorProvider,
+        } = await import("./connectorOAuth");
+        if (!isOAuthConnectorProvider(input.provider)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "This evidence source is verified manually and does not support OAuth authorization.",
+          });
+        }
+        if (!getConnectorOAuthAvailability(input.provider).available) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `${input.provider} OAuth is not configured for this deployment.`,
+          });
+        }
+        const config = getConnectorOAuthConfig(input.provider);
+        if (!config) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `${input.provider} OAuth is not configured for this deployment.`,
+          });
+        }
+
+        const { requestUserConnectorConnection, createAuditEvent } = await import("./db");
+        const consentScopes = resolveConnectorScopes(input.provider);
+        const account = await requestUserConnectorConnection({
+          userId: ctx.user.id,
+          provider: input.provider,
+          consentScopes,
+        });
+        const state = createConnectorOAuthState({ provider: input.provider, userId: ctx.user.id });
+        await createAuditEvent({
+          userId: ctx.user.id,
+          entityType: "user",
+          entityId: ctx.user.id,
+          action: "connector_oauth_started",
+          actor: "user",
+          source: "connectors.startOAuth",
+          afterState: JSON.stringify({
+            provider: input.provider,
+            status: "connection_requested",
+            consentScopes,
+          }),
+          riskLevel: "medium",
+        });
+        return {
+          success: true,
+          account,
+          authorizationUrl: buildConnectorAuthorizationUrl(config, state),
+        };
+      }),
     requestConnection: protectedProcedure
       .input(z.object({
         provider: connectorProvider,

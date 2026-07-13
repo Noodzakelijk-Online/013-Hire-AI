@@ -107,12 +107,11 @@ export default function Profile() {
     },
     onError: (error) => toast.error(error.message || "Failed to save profile evidence"),
   });
-  const requestConnectorConnection = trpc.connectors.requestConnection.useMutation({
+  const startConnectorOAuth = trpc.connectors.startOAuth.useMutation({
     onSuccess: (result) => {
-      toast.success(result.message);
-      evidenceReadinessQuery.refetch();
+      window.location.assign(result.authorizationUrl);
     },
-    onError: (error) => toast.error(error.message || "Failed to record connector request"),
+    onError: (error) => toast.error(error.message || "Unable to start connector authorization"),
   });
   const disconnectConnector = trpc.connectors.disconnect.useMutation({
     onSuccess: async () => {
@@ -226,6 +225,23 @@ export default function Profile() {
     profileQuery.data?.needsVisaSponsorship,
   ]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const provider = params.get("connector");
+    const status = params.get("connectorStatus");
+    if (!provider || !status) return;
+
+    if (status === "connected") {
+      toast.success(`${provider} authorization completed`);
+      void evidenceReadinessQuery.refetch();
+    } else if (status === "denied") {
+      toast.error(`${provider} authorization was not granted`);
+    } else {
+      toast.error(`${provider} authorization could not be completed`);
+    }
+    window.history.replaceState({}, "", window.location.pathname);
+  }, [evidenceReadinessQuery]);
+
   const scrollToProfileSection = (section: string) => {
     document
       .getElementById(`profile-section-${section}`)
@@ -262,7 +278,7 @@ export default function Profile() {
   };
 
   const handleRequestConnectorConnection = (provider: ConnectorProviderId) => {
-    requestConnectorConnection.mutate({ provider });
+    startConnectorOAuth.mutate({ provider });
   };
 
   const handleDisconnectConnector = (provider: ConnectorProviderId) => {
@@ -374,7 +390,7 @@ export default function Profile() {
                 <EvidenceProviderRow
                   key={provider.id}
                   provider={provider}
-                  isRequesting={requestConnectorConnection.isPending}
+                  isRequesting={startConnectorOAuth.isPending}
                   isDisconnecting={disconnectConnector.isPending}
                   onRequestConnection={
                     canRequestProviderConnector(provider)
@@ -393,7 +409,7 @@ export default function Profile() {
             <div className="flex items-start gap-2 rounded-md border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-100">
               <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0" />
               <p>
-                External inbox and cloud access requires explicit consent. Hire.AI should not read Gmail, Drive, Dropbox, or Outlook data until a real connector is approved.
+                External inbox and cloud access requires explicit consent. Available providers open their OAuth approval flow; Hire.AI cannot read data until authorization succeeds.
               </p>
             </div>
           </CardContent>
@@ -416,7 +432,7 @@ export default function Profile() {
                 variant="outline"
                 className="h-24 flex-col gap-2 border-slate-700 hover:border-cyan-500 hover:bg-cyan-500/10"
                 onClick={handleLinkedInConnect}
-                disabled={requestConnectorConnection.isPending}
+                disabled={startConnectorOAuth.isPending}
               >
                 <Linkedin className="w-6 h-6 text-blue-500" />
                 <span className="text-white">Connect LinkedIn</span>
@@ -426,7 +442,7 @@ export default function Profile() {
                 variant="outline"
                 className="h-24 flex-col gap-2 border-slate-700 hover:border-cyan-500 hover:bg-cyan-500/10"
                 onClick={handleGitHubConnect}
-                disabled={requestConnectorConnection.isPending}
+                disabled={startConnectorOAuth.isPending}
               >
                 <Github className="w-6 h-6 text-white" />
                 <span className="text-white">Connect GitHub</span>

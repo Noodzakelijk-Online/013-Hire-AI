@@ -5,6 +5,7 @@ import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerDevAuthRoutes } from "./devAuth";
 import { registerOAuthRoutes } from "./oauth";
+import { registerConnectorOAuthRoutes } from "../connectorOAuthRoutes";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -44,6 +45,8 @@ async function startServer() {
   registerDevAuthRoutes(app);
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
+  // External connector callbacks use encrypted grants and a signed, short-lived state.
+  registerConnectorOAuthRoutes(app);
   // tRPC API
   app.use(
     "/api/trpc",

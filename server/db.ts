@@ -8,6 +8,7 @@ import {
   jobDuplicates,
   userProfiles,
   userConnectorAccounts,
+  connectorAuthorizations,
   applications,
   applicationDecisions,
   applicationMaterials,
@@ -30,6 +31,7 @@ import {
   type Job,
   type UserProfile,
   type UserConnectorAccount,
+  type ConnectorAuthorization,
   type Application,
   type ApplicationDecision,
   type ApplicationMaterial,
@@ -67,6 +69,7 @@ import { isOfferEligibleApplicationStatus } from "@shared/offerEligibility";
 type InsertJob = InferInsertModel<typeof jobs>;
 type InsertUserProfile = InferInsertModel<typeof userProfiles>;
 type InsertUserConnectorAccount = InferInsertModel<typeof userConnectorAccounts>;
+type InsertConnectorAuthorization = InferInsertModel<typeof connectorAuthorizations>;
 type InsertApplication = InferInsertModel<typeof applications>;
 type InsertApplicationDecision = InferInsertModel<typeof applicationDecisions>;
 type InsertApplicationMaterial = InferInsertModel<typeof applicationMaterials>;
@@ -99,6 +102,7 @@ const memoryUsers: (InsertUser & {
 })[] = [];
 const memoryProfiles = new Map<number, UserProfile>();
 const memoryConnectorAccounts: (InsertUserConnectorAccount & { id: number; createdAt: Date; updatedAt: Date })[] = [];
+const memoryConnectorAuthorizations: (InsertConnectorAuthorization & { id: number; createdAt: Date; updatedAt: Date })[] = [];
 const memoryApplications: (InsertApplication & { id: number; createdAt: Date; updatedAt: Date })[] = [];
 const memoryApplicationDecisions: (InsertApplicationDecision & { id: number; createdAt: Date; updatedAt: Date })[] = [];
 const memoryApplicationMaterials: (InsertApplicationMaterial & { id: number; createdAt: Date; updatedAt: Date })[] = [];
@@ -1022,12 +1026,90 @@ export async function requestUserConnectorConnection(input: {
 }
 
 export async function disconnectUserConnectorAccount(userId: number, provider: InsertUserConnectorAccount["provider"]) {
+  await deleteConnectorAuthorization(userId, provider);
   return await upsertUserConnectorAccount({
     userId,
     provider,
     status: "disabled",
     disconnectedAt: new Date(),
   });
+}
+
+export async function upsertConnectorAuthorization(authorization: InsertConnectorAuthorization) {
+  const db = await getDb();
+  const now = new Date();
+  if (!db) {
+    const existing = memoryConnectorAuthorizations.find((item) =>
+      item.userId === authorization.userId && item.provider === authorization.provider
+    );
+    if (existing) {
+      existing.encryptedAccessToken = authorization.encryptedAccessToken;
+      existing.encryptedRefreshToken = authorization.encryptedRefreshToken ?? existing.encryptedRefreshToken ?? null;
+      existing.accessTokenExpiresAt = authorization.accessTokenExpiresAt ?? null;
+      existing.tokenType = authorization.tokenType ?? null;
+      existing.grantedScopes = authorization.grantedScopes ?? null;
+      existing.updatedAt = now;
+      return existing as ConnectorAuthorization;
+    }
+
+    const created = {
+      id: memoryConnectorAuthorizations.length + 1,
+      userId: authorization.userId,
+      provider: authorization.provider,
+      encryptedAccessToken: authorization.encryptedAccessToken,
+      encryptedRefreshToken: authorization.encryptedRefreshToken ?? null,
+      accessTokenExpiresAt: authorization.accessTokenExpiresAt ?? null,
+      tokenType: authorization.tokenType ?? null,
+      grantedScopes: authorization.grantedScopes ?? null,
+      createdAt: now,
+      updatedAt: now,
+    } satisfies InsertConnectorAuthorization & { id: number; createdAt: Date; updatedAt: Date };
+    memoryConnectorAuthorizations.push(created);
+    return created as ConnectorAuthorization;
+  }
+
+  await db
+    .insert(connectorAuthorizations)
+    .values(authorization)
+    .onDuplicateKeyUpdate({
+      set: {
+        encryptedAccessToken: authorization.encryptedAccessToken,
+        encryptedRefreshToken: authorization.encryptedRefreshToken ?? sql`COALESCE(${connectorAuthorizations.encryptedRefreshToken}, NULL)`,
+        accessTokenExpiresAt: authorization.accessTokenExpiresAt ?? null,
+        tokenType: authorization.tokenType ?? null,
+        grantedScopes: authorization.grantedScopes ?? null,
+        updatedAt: now,
+      },
+    });
+
+  const records = await db
+    .select()
+    .from(connectorAuthorizations)
+    .where(and(
+      eq(connectorAuthorizations.userId, authorization.userId),
+      eq(connectorAuthorizations.provider, authorization.provider)
+    ))
+    .limit(1);
+  return records[0];
+}
+
+export async function deleteConnectorAuthorization(
+  userId: number,
+  provider: InsertConnectorAuthorization["provider"] | "portfolio"
+) {
+  if (provider === "portfolio") return;
+  const db = await getDb();
+  if (!db) {
+    const index = memoryConnectorAuthorizations.findIndex((item) =>
+      item.userId === userId && item.provider === provider
+    );
+    if (index >= 0) memoryConnectorAuthorizations.splice(index, 1);
+    return;
+  }
+  await db.delete(connectorAuthorizations).where(and(
+    eq(connectorAuthorizations.userId, userId),
+    eq(connectorAuthorizations.provider, provider)
+  ));
 }
 
 // Applications
