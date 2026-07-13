@@ -29,4 +29,17 @@ describe("base scraper application-link normalization", () => {
     expect(scraper.normalize({ title: "Engineer", applicationUrl: "javascript:alert(1)" }))
       .toMatchObject({ applicationUrl: undefined });
   });
+
+  it("preserves locale-formatted compensation for downstream match and filter decisions", () => {
+    expect(scraper.normalize({
+      title: "European Engineer",
+      salaryMin: "EUR 60.000",
+      salaryMax: "EUR 75 000",
+      salaryCurrency: "eur",
+    })).toMatchObject({
+      salaryMin: 60000,
+      salaryMax: 75000,
+      salaryCurrency: "EUR",
+    });
+  });
 });

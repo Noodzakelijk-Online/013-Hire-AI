@@ -1,4 +1,5 @@
 import type { Job } from "../../drizzle/schema";
+import { normalizeSalary } from "../jobNormalization";
 
 /**
  * Base scraper class for job platforms
@@ -90,7 +91,7 @@ export abstract class BaseScraper {
       jobType: this.normalizeJobType(rawJob.jobType),
       salaryMin: this.parseSalary(rawJob.salaryMin),
       salaryMax: this.parseSalary(rawJob.salaryMax),
-      salaryCurrency: rawJob.salaryCurrency || "USD",
+      salaryCurrency: this.normalizeSalaryCurrency(rawJob.salaryCurrency),
       applicationUrl: this.normalizeApplicationUrl(rawJob.applicationUrl),
       externalId: rawJob.externalId || rawJob.id,
       postedDate: this.parseDate(rawJob.postedDate),
@@ -131,12 +132,18 @@ export abstract class BaseScraper {
    */
   protected parseSalary(salary: any): number | undefined {
     if (!salary) return undefined;
-    if (typeof salary === "number") return salary;
+    if (typeof salary === "number") return Number.isFinite(salary) ? salary : undefined;
 
-    const str = String(salary).replace(/[^0-9.]/g, "");
-    const num = parseFloat(str);
+    return normalizeSalary(String(salary)).min ?? undefined;
+  }
 
-    return isNaN(num) ? undefined : num;
+  protected normalizeSalaryCurrency(currency: unknown): string {
+    if (typeof currency !== "string" || !currency.trim()) return "USD";
+
+    const code = currency.trim().toUpperCase();
+    if (/^[A-Z]{3}$/.test(code)) return code;
+
+    return normalizeSalary(currency).currency;
   }
 
   /** Resolve provider-relative job links and exclude non-web destinations. */
