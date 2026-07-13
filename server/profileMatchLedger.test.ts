@@ -39,7 +39,7 @@ describe("profile match ledger reconciliation", () => {
     });
     mocks.getUserSkills.mockResolvedValue([{ skillName: "TypeScript" }]);
     mocks.getWorkExperiences.mockResolvedValue([
-      { jobTitle: "Platform Engineer", company: "Example Co" },
+      { jobTitle: "Platform Engineer", company: "Example Co", skills: "TypeScript, Kubernetes" },
     ]);
     mocks.getActiveJobs.mockResolvedValue([
       {
@@ -92,7 +92,7 @@ describe("profile match ledger reconciliation", () => {
     expect(mocks.createJobMatch).toHaveBeenCalledWith(expect.objectContaining({
       userId: 44,
       jobId: 11,
-      skillsMatch: 50,
+      skillsMatch: 100,
       experienceMatch: 50,
       matchReasons: expect.stringContaining("Current candidate evidence was reconciled"),
     }));

@@ -5,6 +5,7 @@ export interface ProfileSkillEvidence {
 export interface ProfileWorkHistoryEvidence {
   jobTitle?: string | null;
   company?: string | null;
+  skills?: string | null;
 }
 
 type ProfileWithCandidateEvidence = {
@@ -48,22 +49,14 @@ export function mergeProfileSkillEvidence(
   return merged.length > 0 ? merged.join(", ") : null;
 }
 
-export function resolveProfileSkillEvidence<T extends ProfileWithCandidateEvidence>(
+export function resolveProfileSkillEvidence<T extends ProfileWithCandidateEvidence | null | undefined>(
   profile: T,
-  structuredSkills?: ProfileSkillEvidence[]
-): T;
-export function resolveProfileSkillEvidence(
-  profile: null | undefined,
-  structuredSkills?: ProfileSkillEvidence[]
-): null | undefined;
-export function resolveProfileSkillEvidence<T extends ProfileWithCandidateEvidence>(
-  profile: T | null | undefined,
   structuredSkills: ProfileSkillEvidence[] = []
-): T | null | undefined {
+): T {
   if (!profile) return profile;
 
   const skills = mergeProfileSkillEvidence(profile.skills, structuredSkills);
-  return skills === profile.skills ? profile : { ...profile, skills };
+  return (skills === profile.skills ? profile : { ...profile, skills }) as T;
 }
 
 /**
@@ -93,26 +86,22 @@ export function summarizeProfileWorkHistory(
   return records.length > 0 ? `Recorded work history: ${records.join("; ")}.` : null;
 }
 
-export function resolveProfileCandidateEvidence<T extends ProfileWithCandidateEvidence>(
+export function resolveProfileCandidateEvidence<T extends ProfileWithCandidateEvidence | null | undefined>(
   profile: T,
-  structuredSkills?: ProfileSkillEvidence[],
-  structuredWorkHistory?: ProfileWorkHistoryEvidence[]
-): T;
-export function resolveProfileCandidateEvidence(
-  profile: null | undefined,
-  structuredSkills?: ProfileSkillEvidence[],
-  structuredWorkHistory?: ProfileWorkHistoryEvidence[]
-): null | undefined;
-export function resolveProfileCandidateEvidence<T extends ProfileWithCandidateEvidence>(
-  profile: T | null | undefined,
   structuredSkills: ProfileSkillEvidence[] = [],
   structuredWorkHistory: ProfileWorkHistoryEvidence[] = []
-): T | null | undefined {
-  const profileWithSkills = resolveProfileSkillEvidence(profile, structuredSkills);
+): T {
+  const workHistorySkills = structuredWorkHistory.map((entry) => ({
+    skillName: entry.skills,
+  }));
+  const profileWithSkills = resolveProfileSkillEvidence(profile, [
+    ...structuredSkills,
+    ...workHistorySkills,
+  ]);
   if (!profileWithSkills || compactEvidenceText(profileWithSkills.experience)) {
     return profileWithSkills;
   }
 
   const experience = summarizeProfileWorkHistory(structuredWorkHistory);
-  return experience ? { ...profileWithSkills, experience } : profileWithSkills;
+  return (experience ? { ...profileWithSkills, experience } : profileWithSkills) as T;
 }

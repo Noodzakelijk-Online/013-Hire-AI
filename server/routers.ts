@@ -866,7 +866,7 @@ export const appRouter = router({
           userId: ctx.user.id,
           source: "profile.addWorkExperience",
         });
-        return { ...workExperience, matchRefresh };
+        return { workExperience, matchRefresh };
       }),
     updateWorkExperience: protectedProcedure
       .input(z.object({
@@ -889,7 +889,7 @@ export const appRouter = router({
           userId: ctx.user.id,
           source: "profile.updateWorkExperience",
         });
-        return { ...workExperience, matchRefresh };
+        return { workExperience, matchRefresh };
       }),
     deleteWorkExperience: protectedProcedure
       .input(z.object({ id: z.number() }))
@@ -900,7 +900,7 @@ export const appRouter = router({
           userId: ctx.user.id,
           source: "profile.deleteWorkExperience",
         });
-        return { ...workExperience, matchRefresh };
+        return { workExperience, matchRefresh };
       }),
 
     // Education

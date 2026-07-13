@@ -16,6 +16,7 @@ import { getCommandCenterSummary } from "@/lib/commandCenterSummary";
 import { formatDashboardActivityTarget } from "@/lib/dashboardActivity";
 import { getSuccessFeeComplianceAction, getSuccessFeeComplianceSummary } from "@/lib/successFeeCompliance";
 import { getApplicationPerformanceSummary } from "@/lib/applicationPerformance";
+import { shouldShowProfileOnboarding } from "@/lib/profileOnboarding";
 import {
   formatApplicationDecision,
   formatApprovalType,
@@ -142,15 +143,15 @@ export default function Dashboard() {
     }
   }, [loading, isAuthenticated, user]);
 
-  // Check if user needs onboarding (no profile or resume)
+  // Show onboarding only when readiness confirms that no candidate evidence exists.
   useEffect(() => {
-    if (!loading && isAuthenticated && profile && (user as any)?.tosAcceptedAt) {
-      const hasProfile = profile.skills || profile.experience || profile.education;
-      if (!hasProfile) {
-        setShowOnboarding(true);
-      }
-    }
-  }, [loading, isAuthenticated, profile, user]);
+    setShowOnboarding(shouldShowProfileOnboarding({
+      loading,
+      isAuthenticated,
+      tosAccepted: Boolean((user as any)?.tosAcceptedAt),
+      readiness: profileReadiness,
+    }));
+  }, [loading, isAuthenticated, profileReadiness, user]);
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {

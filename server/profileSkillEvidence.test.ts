@@ -25,35 +25,38 @@ describe("profile skill evidence", () => {
     expect(profile.skills).toBeNull();
   });
 
-  it("uses structured work history only when the profile has no experience summary", () => {
+  it("uses structured work history when profile skills and experience summaries are missing", () => {
     const profile = { skills: null, experience: null };
     const resolved = resolveProfileCandidateEvidence(profile, [], [
-      { jobTitle: "  Platform Engineer ", company: " Example Co " },
-      { jobTitle: "Platform Engineer", company: "Example Co" },
-      { jobTitle: "Developer", company: "Remote Team" },
+      { jobTitle: "  Platform Engineer ", company: " Example Co ", skills: "TypeScript, AWS" },
+      { jobTitle: "Platform Engineer", company: "Example Co", skills: "typescript, Kubernetes" },
+      { jobTitle: "Developer", company: "Remote Team", skills: "React" },
     ]);
 
     expect(resolved.experience).toBe(
       "Recorded work history: Platform Engineer at Example Co; Developer at Remote Team."
     );
+    expect(resolved.skills).toBe("TypeScript, AWS, Kubernetes, React");
     expect(profile.experience).toBeNull();
+    expect(profile.skills).toBeNull();
     expect(summarizeProfileWorkHistory([{ jobTitle: "Engineer", company: "Acme" }]))
       .toBe("Recorded work history: Engineer at Acme.");
     expect(resolveProfileCandidateEvidence(
       { skills: null, experience: "Existing candidate summary" },
       [],
-      [{ jobTitle: "Ignored", company: "Example Co" }]
-    ).experience).toBe("Existing candidate summary");
+      [{ jobTitle: "Ignored", company: "Example Co", skills: "Go" }]
+    )).toMatchObject({ experience: "Existing candidate summary", skills: "Go" });
   });
 
   it("keeps structured-only skills consistent across planning and review material", () => {
-    const profile = resolveProfileSkillEvidence({
+    const profile = resolveProfileCandidateEvidence({
       skills: null,
+      experience: null,
       desiredJobTypes: "Platform Engineer",
       desiredLocations: "Remote",
       salaryExpectationMin: null,
       needsVisaSponsorship: 0,
-    }, [{ skillName: "TypeScript" }]);
+    }, [], [{ jobTitle: "Engineer", company: "Example Co", skills: "TypeScript" }]);
     const job = {
       id: 1,
       title: "Platform Engineer",
