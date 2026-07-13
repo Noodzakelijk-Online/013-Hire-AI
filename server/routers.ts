@@ -532,9 +532,9 @@ export const appRouter = router({
           salaryExpectationMax: z.number().int().min(0).max(10_000_000).nullable().optional(),
           resumeUrl: safeHttpUrl.optional(),
           resumeFileKey: z.string().trim().max(500).optional(),
-          linkedinUrl: safeHttpUrl.optional(),
-          githubUrl: safeHttpUrl.optional(),
-          portfolioUrl: safeHttpUrl.optional(),
+          linkedinUrl: safeHttpUrl.nullable().optional(),
+          githubUrl: safeHttpUrl.nullable().optional(),
+          portfolioUrl: safeHttpUrl.nullable().optional(),
           diversityGroup: z.string().optional(),
           needsVisaSponsorship: z.number().int().min(0).max(1).optional(),
         }).superRefine((value, context) => {

@@ -442,9 +442,9 @@ export default function Profile() {
 
   const handleSaveSocialLinks = () => {
     updateProfile.mutate({
-      linkedinUrl: linkedinUrl.trim() || undefined,
-      githubUrl: githubUrl.trim() || undefined,
-      portfolioUrl: portfolioUrl.trim() || undefined,
+      linkedinUrl: linkedinUrl.trim() || null,
+      githubUrl: githubUrl.trim() || null,
+      portfolioUrl: portfolioUrl.trim() || null,
     });
   };
 
