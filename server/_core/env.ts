@@ -1,4 +1,11 @@
-const isProduction = process.env.NODE_ENV === "production";
+export function resolveProductionRuntime(nodeEnv: string | undefined, moduleUrl: string): boolean {
+  if (nodeEnv === "production") return true;
+  if (nodeEnv === "development" || nodeEnv === "test") return false;
+
+  return /\/dist\/index\.js(?:$|[?#])/.test(moduleUrl.replace(/\\/g, "/"));
+}
+
+const isProduction = resolveProductionRuntime(process.env.NODE_ENV, import.meta.url);
 const readEnv = (name: string) => process.env[name] ?? "";
 const readBoundedInteger = (name: string, fallback: number, minimum: number, maximum: number) => {
   const value = Number.parseInt(readEnv(name), 10);

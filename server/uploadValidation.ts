@@ -1,3 +1,5 @@
+import { ENV } from "./_core/env";
+
 const DEFAULT_MAX_BYTES = 10 * 1024 * 1024;
 
 export interface SensitiveUploadScanResult {
@@ -74,7 +76,7 @@ export async function scanSensitiveUpload(input: {
 }): Promise<SensitiveUploadScanResult> {
   const endpoint = process.env.FILE_MALWARE_SCAN_URL?.trim();
   if (!endpoint) {
-    if (process.env.NODE_ENV === "production") {
+    if (ENV.isProduction) {
       throw new Error("Sensitive uploads require FILE_MALWARE_SCAN_URL in production");
     }
     return { scanned: false, provider: "not_configured" };

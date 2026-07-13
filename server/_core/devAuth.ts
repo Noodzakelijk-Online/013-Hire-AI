@@ -19,7 +19,7 @@ function ensureDevSessionConfig() {
 }
 
 export function registerDevAuthRoutes(app: Express) {
-  if (process.env.NODE_ENV !== "development") {
+  if (ENV.isProduction) {
     return;
   }
 
