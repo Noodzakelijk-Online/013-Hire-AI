@@ -1,3 +1,5 @@
+import { normalizeSalaryCurrency } from "./salaryCurrency";
+
 export type JobExperienceLevel = "all" | "entry" | "junior" | "mid" | "senior" | "lead" | "executive";
 export type JobApplicationProcessFilter = "all" | "greenhouse" | "lever" | "workday" | "email" | "other";
 export type JobPostedWithin = "all" | "1" | "3" | "7" | "30";
@@ -8,6 +10,7 @@ export interface JobSearchFilterState {
   jobType: JobTypeFilter;
   platformId: string;
   salaryRange: [number, number];
+  salaryCurrency: string;
   remoteOnly: boolean;
   experienceLevel: JobExperienceLevel;
   applicationProcess: JobApplicationProcessFilter;
@@ -31,6 +34,7 @@ export interface JobSearchFilterJob {
   platformId?: number | null;
   salaryMin?: number | null;
   salaryMax?: number | null;
+  salaryCurrency?: string | null;
   applicationProcess?: string | null;
   visaSponsorshipAvailable?: number | boolean | null;
   openHiringSupport?: number | boolean | null;
@@ -44,6 +48,7 @@ export const defaultJobSearchFilters: JobSearchFilterState = {
   jobType: "all",
   platformId: "all",
   salaryRange: [0, 300000],
+  salaryCurrency: "all",
   remoteOnly: true,
   experienceLevel: "all",
   applicationProcess: "all",
@@ -140,9 +145,15 @@ export function filterJobListings<T extends JobSearchFilterJob>(jobs: T[], filte
       if (!processMatches) return false;
     }
 
-    const salaryOverlap = hasSalaryOverlap(job, filters.salaryRange);
-    if (filters.salaryDisclosedOnly && salaryOverlap === null) return false;
-    return salaryOverlap !== false;
+    const shouldCompareSalary = filters.salaryCurrency !== "all";
+    const salaryCurrencyMatches = !shouldCompareSalary ||
+      normalizeSalaryCurrency(job.salaryCurrency) === normalizeSalaryCurrency(filters.salaryCurrency);
+    if (!salaryCurrencyMatches) return false;
+
+    const salaryOverlap = shouldCompareSalary ? hasSalaryOverlap(job, filters.salaryRange) : null;
+    const hasSalary = typeof job.salaryMin === "number" || typeof job.salaryMax === "number";
+    if (filters.salaryDisclosedOnly && !hasSalary) return false;
+    return salaryOverlap !== false || !shouldCompareSalary;
   });
 }
 
@@ -151,6 +162,7 @@ export function countActiveJobSearchFilters(filters: JobSearchFilterState) {
     filters.query.trim().length > 0,
     filters.jobType !== "all",
     filters.platformId !== "all",
+    filters.salaryCurrency !== "all",
     filters.salaryRange[0] !== defaultJobSearchFilters.salaryRange[0] || filters.salaryRange[1] !== defaultJobSearchFilters.salaryRange[1],
     filters.remoteOnly !== defaultJobSearchFilters.remoteOnly,
     filters.experienceLevel !== "all",

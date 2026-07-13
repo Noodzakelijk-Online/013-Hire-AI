@@ -124,6 +124,7 @@ export default function Profile() {
   const [targetLocations, setTargetLocations] = useState("");
   const [salaryMinimum, setSalaryMinimum] = useState("");
   const [salaryMaximum, setSalaryMaximum] = useState("");
+  const [salaryCurrency, setSalaryCurrency] = useState("USD");
   const [needsVisaSponsorship, setNeedsVisaSponsorship] = useState(false);
   const [cloudResumeDocuments, setCloudResumeDocuments] = useState<CloudResumeDocument[]>([]);
   const [inboxResponseTypeOverrides, setInboxResponseTypeOverrides] = useState<Record<number, InboxResponseType>>({});
@@ -406,12 +407,14 @@ export default function Profile() {
     setTargetLocations(profileQuery.data?.desiredLocations || "");
     setSalaryMinimum(profileQuery.data?.salaryExpectationMin?.toString() || "");
     setSalaryMaximum(profileQuery.data?.salaryExpectationMax?.toString() || "");
+    setSalaryCurrency(profileQuery.data?.salaryExpectationCurrency || "USD");
     setNeedsVisaSponsorship(Boolean(profileQuery.data?.needsVisaSponsorship));
   }, [
     profileQuery.data?.desiredJobTypes,
     profileQuery.data?.desiredLocations,
     profileQuery.data?.salaryExpectationMin,
     profileQuery.data?.salaryExpectationMax,
+    profileQuery.data?.salaryExpectationCurrency,
     profileQuery.data?.needsVisaSponsorship,
   ]);
 
@@ -558,12 +561,17 @@ export default function Profile() {
       toast.error("Maximum salary must be at least the minimum salary.");
       return;
     }
+    if (!/^[A-Za-z]{3}$/.test(salaryCurrency.trim())) {
+      toast.error("Use a three-letter ISO salary currency code.");
+      return;
+    }
 
     updateProfile.mutate({
       desiredJobTypes: targetRoles.trim() || null,
       desiredLocations: targetLocations.trim() || null,
       salaryExpectationMin: minimum,
       salaryExpectationMax: maximum,
+      salaryExpectationCurrency: salaryCurrency.trim().toUpperCase(),
       needsVisaSponsorship: needsVisaSponsorship ? 1 : 0,
     });
   };
@@ -1126,6 +1134,20 @@ export default function Profile() {
                   className="bg-slate-800 border-slate-700 text-white"
                 />
                 <p className="mt-1 text-xs text-slate-500">Use commas to list acceptable remote, country, or regional locations.</p>
+              </div>
+              <div>
+                <label htmlFor="profile-salary-currency" className="mb-2 block text-sm font-medium text-slate-300">
+                  Salary currency
+                </label>
+                <Input
+                  id="profile-salary-currency"
+                  data-testid="profile-salary-currency"
+                  value={salaryCurrency}
+                  onChange={(event) => setSalaryCurrency(event.target.value.toUpperCase())}
+                  placeholder="USD"
+                  maxLength={3}
+                  className="bg-slate-800 border-slate-700 text-white"
+                />
               </div>
               <div>
                 <label htmlFor="profile-salary-minimum" className="mb-2 block text-sm font-medium text-slate-300">

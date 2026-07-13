@@ -1,3 +1,5 @@
+import { areSalaryCurrenciesComparable, normalizeSalaryCurrency } from "@shared/salaryCurrency";
+
 export interface JobMatchJobLike {
   title?: string | null;
   company?: string | null;
@@ -6,6 +8,7 @@ export interface JobMatchJobLike {
   jobType?: string | null;
   salaryMin?: number | null;
   salaryMax?: number | null;
+  salaryCurrency?: string | null;
   applicationUrl?: string | null;
   applicationEmail?: string | null;
   matchScore?: number | null;
@@ -17,6 +20,7 @@ export interface JobMatchProfileLike {
   desiredJobTypes?: string | null;
   salaryExpectationMin?: number | null;
   salaryExpectationMax?: number | null;
+  salaryExpectationCurrency?: string | null;
   resumeUrl?: string | null;
   resumeFileKey?: string | null;
 }
@@ -120,6 +124,7 @@ function getSalaryFit(job: JobMatchJobLike, profile?: JobMatchProfileLike | null
   const hasJobSalary = Boolean(job.salaryMin || job.salaryMax);
   const hasPreference = Boolean(profile?.salaryExpectationMin || profile?.salaryExpectationMax);
   if (!hasJobSalary || !hasPreference) return "unknown";
+  if (!areSalaryCurrenciesComparable(job.salaryCurrency, profile?.salaryExpectationCurrency)) return "unknown";
 
   if (profile?.salaryExpectationMin && job.salaryMax && job.salaryMax < profile.salaryExpectationMin) {
     return "gap";
@@ -236,6 +241,11 @@ export function getJobMatchDecisionSummary(
   const salaryFit = getSalaryFit(job, profile);
   const locationFit = getLocationFit(job, profile);
   const remoteFit = (job.location || "").toLowerCase().includes("remote");
+  const salaryCurrencyRequiresReview = Boolean(
+    (job.salaryMin || job.salaryMax) &&
+    (profile?.salaryExpectationMin || profile?.salaryExpectationMax) &&
+    !areSalaryCurrenciesComparable(job.salaryCurrency, profile?.salaryExpectationCurrency)
+  );
   const autonomousBlockers = autonomousDecision?.blockers || [];
   const hasAutonomousBlocker = (needle: string) =>
     autonomousBlockers.some((blocker) => blocker.toLowerCase().includes(needle));
@@ -250,6 +260,9 @@ export function getJobMatchDecisionSummary(
       : "",
     salaryFit === "gap" && !hasAutonomousBlocker("salary")
       ? "Salary range is below stated expectations"
+      : "",
+    salaryCurrencyRequiresReview
+      ? `Salary is listed in ${normalizeSalaryCurrency(job.salaryCurrency)} and needs review against the ${normalizeSalaryCurrency(profile?.salaryExpectationCurrency)} expectation`
       : "",
     locationFit === "gap" && !hasAutonomousBlocker("location")
       ? "Location does not match stated preferences"

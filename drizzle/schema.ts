@@ -113,6 +113,7 @@ export const userProfiles = mysqlTable("user_profiles", {
   desiredLocations: text("desired_locations"),
   salaryExpectationMin: int("salary_expectation_min"),
   salaryExpectationMax: int("salary_expectation_max"),
+  salaryExpectationCurrency: varchar("salary_expectation_currency", { length: 10 }).default("USD").notNull(),
   resumeUrl: varchar("resume_url", { length: 1000 }),
   resumeFileKey: varchar("resume_file_key", { length: 500 }),
   linkedinUrl: varchar("linkedin_url", { length: 500 }),

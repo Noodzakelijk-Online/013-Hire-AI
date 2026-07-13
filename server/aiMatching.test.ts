@@ -81,6 +81,50 @@ describe("job matching resilience", () => {
     expect(result.matchReasons).toContain("Deterministic profile-based analysis");
   });
 
+  it("keeps salary scoring neutral when source compensation uses another currency", async () => {
+    mocks.invokeLLM.mockRejectedValueOnce(new Error("LLM unavailable"));
+
+    const result = await calculateJobMatch({
+      ...profile,
+      salaryExpectationCurrency: "USD",
+    }, {
+      ...job,
+      salaryCurrency: "EUR",
+    });
+
+    expect(result.analysisSource).toBe("deterministic_fallback");
+    expect(result.salaryMatch).toBe(50);
+  });
+
+  it("overrides an LLM salary verdict when it compares different currencies", async () => {
+    mocks.invokeLLM.mockResolvedValueOnce({
+      choices: [{
+        message: {
+          content: JSON.stringify({
+            matchScore: 90,
+            skillsMatch: 100,
+            experienceMatch: 80,
+            locationMatch: 100,
+            salaryMatch: 100,
+            matchReasons: "Strong technical match.",
+          }),
+        },
+      }],
+    });
+
+    const result = await calculateJobMatch({
+      ...profile,
+      salaryExpectationCurrency: "USD",
+    }, {
+      ...job,
+      salaryCurrency: "EUR",
+    });
+
+    expect(result.analysisSource).toBe("llm");
+    expect(result.salaryMatch).toBe(50);
+    expect(result.matchReasons).toContain("requires review");
+  });
+
   it("keeps valid LLM analysis and identifies its source", async () => {
     mocks.invokeLLM.mockResolvedValueOnce({
       choices: [{

@@ -65,6 +65,7 @@ describe("job search filters", () => {
       ...defaultJobSearchFilters,
       remoteOnly: false,
       salaryRange: [100000, 140000],
+      salaryCurrency: "USD",
     }, new Date("2026-07-10T12:00:00.000Z"));
 
     expect(result.map((job) => job.id)).toEqual([1, 3]);
@@ -132,11 +133,13 @@ describe("job search filters", () => {
       ...defaultJobSearchFilters,
       remoteOnly: false,
       salaryRange: [100000, 140000],
+      salaryCurrency: "USD",
     }, new Date("2026-07-10T12:00:00.000Z"));
     const disclosedOnly = filterJobListings(jobs, {
       ...defaultJobSearchFilters,
       remoteOnly: false,
       salaryRange: [100000, 140000],
+      salaryCurrency: "USD",
       salaryDisclosedOnly: true,
     }, new Date("2026-07-10T12:00:00.000Z"));
 
@@ -151,5 +154,25 @@ describe("job search filters", () => {
       remoteOnly: false,
       postedWithin: "7",
     })).toBe(2);
+  });
+
+  it("only applies a numeric range to roles in the selected currency", () => {
+    const result = filterJobListings([
+      ...jobs,
+      {
+        ...jobs[0],
+        id: 4,
+        salaryMin: 70000,
+        salaryMax: 90000,
+        salaryCurrency: "EUR",
+      },
+    ], {
+      ...defaultJobSearchFilters,
+      remoteOnly: false,
+      salaryCurrency: "EUR",
+      salaryRange: [65000, 80000],
+    });
+
+    expect(result.map((job) => job.id)).toEqual([4]);
   });
 });

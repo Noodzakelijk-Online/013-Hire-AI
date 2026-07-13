@@ -61,6 +61,7 @@ const jobSearchFiltersInput = z.object({
   jobType: z.enum(["all", "full-time", "part-time", "contract", "temporary"]).optional(),
   platformId: z.string().trim().max(20).optional(),
   salaryRange: z.tuple([z.number().min(0).max(10_000_000), z.number().min(0).max(10_000_000)]).optional(),
+  salaryCurrency: z.union([z.literal("all"), z.string().trim().regex(/^[A-Za-z]{3}$/).transform((value) => value.toUpperCase())]).optional(),
   remoteOnly: z.boolean().optional(),
   experienceLevel: z.enum(["all", "entry", "junior", "mid", "senior", "lead", "executive"]).optional(),
   applicationProcess: z.enum(["all", "greenhouse", "lever", "workday", "email", "other"]).optional(),
@@ -92,6 +93,7 @@ const profileMatchEvidenceFields = [
   "desiredLocations",
   "salaryExpectationMin",
   "salaryExpectationMax",
+  "salaryExpectationCurrency",
   "needsVisaSponsorship",
 ] as const;
 
@@ -131,6 +133,7 @@ function profileSnapshotForApplication(
     desiredLocations?: string | null;
     salaryExpectationMin?: number | null;
     salaryExpectationMax?: number | null;
+    salaryExpectationCurrency?: string | null;
     resumeUrl?: string | null;
     resumeFileKey?: string | null;
     linkedinUrl?: string | null;
@@ -152,6 +155,7 @@ function profileSnapshotForApplication(
       desiredLocations: profile.desiredLocations || null,
       salaryExpectationMin: profile.salaryExpectationMin ?? null,
       salaryExpectationMax: profile.salaryExpectationMax ?? null,
+      salaryExpectationCurrency: profile.salaryExpectationCurrency || "USD",
       resumeUrl: profile.resumeUrl || null,
       resumeFileKey: profile.resumeFileKey || null,
       linkedinUrl: profile.linkedinUrl || null,
@@ -577,6 +581,7 @@ export const appRouter = router({
           desiredLocations: z.string().trim().max(500).nullable().optional(),
           salaryExpectationMin: z.number().int().min(0).max(10_000_000).nullable().optional(),
           salaryExpectationMax: z.number().int().min(0).max(10_000_000).nullable().optional(),
+          salaryExpectationCurrency: z.string().trim().regex(/^[A-Za-z]{3}$/).transform((value) => value.toUpperCase()).optional(),
           resumeUrl: safeHttpUrl.optional(),
           resumeFileKey: z.string().trim().max(500).optional(),
           linkedinUrl: safeHttpUrl.nullable().optional(),

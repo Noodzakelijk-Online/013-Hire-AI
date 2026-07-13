@@ -17,6 +17,7 @@ import { formatDashboardActivityTarget } from "@/lib/dashboardActivity";
 import { getSuccessFeeComplianceAction, getSuccessFeeComplianceSummary } from "@/lib/successFeeCompliance";
 import { getApplicationPerformanceSummary } from "@/lib/applicationPerformance";
 import { shouldShowNewUserDashboard, shouldShowProfileOnboarding } from "@/lib/profileOnboarding";
+import { formatJobSalary } from "@/lib/jobSalary";
 import {
   formatApplicationDecision,
   formatApprovalType,
@@ -1730,10 +1731,10 @@ export default function Dashboard() {
                         {selectedApplication.status === "pending" ? "Queued" : "Applied"}{" "}
                         {new Date(selectedApplication.appliedDate || selectedApplication.createdAt).toLocaleDateString()}
                       </Badge>
-                      {selectedApplication.job?.salaryMin && (
+                      {(selectedApplication.job?.salaryMin || selectedApplication.job?.salaryMax) && (
                         <Badge variant="secondary" className="bg-slate-800">
                           <DollarSign className="w-3 h-3 mr-1" />
-                          ${(selectedApplication.job.salaryMin / 1000).toFixed(0)}k - ${(selectedApplication.job.salaryMax / 1000).toFixed(0)}k
+                          {formatJobSalary(selectedApplication.job.salaryMin, selectedApplication.job.salaryMax, selectedApplication.job.salaryCurrency)}
                         </Badge>
                       )}
                     </div>

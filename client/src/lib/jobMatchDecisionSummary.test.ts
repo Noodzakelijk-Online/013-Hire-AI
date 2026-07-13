@@ -112,6 +112,30 @@ describe("job match decision summary", () => {
     expect(summary.blockers).toContain("Location does not match stated preferences");
   });
 
+  it("requires salary review instead of comparing different currencies as equivalent", () => {
+    const summary = getJobMatchDecisionSummary(
+      {
+        skills: "React",
+        location: "Remote",
+        salaryMin: 70000,
+        salaryMax: 90000,
+        salaryCurrency: "EUR",
+        applicationUrl: "https://example.com/apply",
+      },
+      {
+        skills: "React",
+        salaryExpectationMin: 100000,
+        salaryExpectationCurrency: "USD",
+        resumeFileKey: "resume.pdf",
+      }
+    );
+
+    expect(summary.salaryFit).toBe("unknown");
+    expect(summary.blockers.join(" ")).toContain("EUR");
+    expect(summary.blockers.join(" ")).toContain("USD");
+    expect(summary.recommendedDecision).toBe("review");
+  });
+
   it("uses persisted operating-ledger decisions after refresh", () => {
     const summary = getJobMatchDecisionSummary(
       {

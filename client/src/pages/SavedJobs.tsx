@@ -5,6 +5,7 @@ import { getApplicationEvidenceGateSummary } from "@/lib/applicationEvidenceGate
 import { buildJobPreparationDecisionInput } from "@/lib/jobDecisionActions";
 import { getSafeExternalUrl, openExternalUrl } from "@/lib/externalUrl";
 import { getJobMatchDecisionSummary } from "@/lib/jobMatchDecisionSummary";
+import { formatJobSalary } from "@/lib/jobSalary";
 import AppHeader from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -89,14 +90,6 @@ export default function SavedJobs() {
     decideMutation.mutate(buildJobPreparationDecisionInput(job, summary, "Saved Jobs"));
   };
 
-  const formatSalary = (min?: number, max?: number) => {
-    if (!min && !max) return null;
-    if (min && max) return `$${(min / 1000).toFixed(0)}k - $${(max / 1000).toFixed(0)}k`;
-    if (min) return `$${(min / 1000).toFixed(0)}k+`;
-    if (max) return `Up to $${(max / 1000).toFixed(0)}k`;
-    return null;
-  };
-
   const formatDate = (date: Date | string) => {
     const d = new Date(date);
     const now = new Date();
@@ -178,10 +171,10 @@ export default function SavedJobs() {
                               {job.location}
                             </span>
                           )}
-                          {formatSalary(job.salaryMin, job.salaryMax) && (
+                          {(job.salaryMin || job.salaryMax) && (
                             <span className="flex items-center gap-1 text-green-400">
                               <DollarSign className="w-4 h-4" />
-                              {formatSalary(job.salaryMin, job.salaryMax)}
+                              {formatJobSalary(job.salaryMin, job.salaryMax, job.salaryCurrency)}
                             </span>
                           )}
                           {job.postedDate && (

@@ -664,17 +664,32 @@ function addJobSearchFilterConditions(conditions: SQL[], filters: JobSearchFilte
     if (experienceCondition) conditions.push(experienceCondition);
   }
 
-  const salaryOverlap = and(
-    or(isNull(jobs.salaryMin), lte(jobs.salaryMin, filters.salaryRange[1])),
-    or(isNull(jobs.salaryMax), gte(jobs.salaryMax, filters.salaryRange[0]))
-  );
+  const selectedSalaryCurrency = filters.salaryCurrency === "all"
+    ? null
+    : filters.salaryCurrency.toUpperCase();
+  const salaryCurrencyMatches = selectedSalaryCurrency
+    ? selectedSalaryCurrency === "USD"
+      ? or(eq(jobs.salaryCurrency, selectedSalaryCurrency), isNull(jobs.salaryCurrency))
+      : eq(jobs.salaryCurrency, selectedSalaryCurrency)
+    : null;
+  const salaryOverlap = selectedSalaryCurrency
+    ? and(
+        or(isNull(jobs.salaryMin), lte(jobs.salaryMin, filters.salaryRange[1])),
+        or(isNull(jobs.salaryMax), gte(jobs.salaryMax, filters.salaryRange[0]))
+      )
+    : null;
   if (filters.salaryDisclosedOnly) {
     const hasSalary = or(isNotNull(jobs.salaryMin), isNotNull(jobs.salaryMax));
     if (hasSalary) conditions.push(hasSalary);
-    if (salaryOverlap) conditions.push(salaryOverlap);
-  } else {
+  }
+  if (salaryCurrencyMatches) conditions.push(salaryCurrencyMatches);
+  if (salaryOverlap) {
+    if (filters.salaryDisclosedOnly) {
+      conditions.push(salaryOverlap);
+    } else {
     const salaryCondition = or(and(isNull(jobs.salaryMin), isNull(jobs.salaryMax)), salaryOverlap);
     if (salaryCondition) conditions.push(salaryCondition);
+    }
   }
 }
 
@@ -1147,6 +1162,7 @@ export async function upsertUserProfile(profile: InsertUserProfile) {
       desiredLocations: profile.desiredLocations !== undefined ? profile.desiredLocations : existing?.desiredLocations ?? null,
       salaryExpectationMin: profile.salaryExpectationMin !== undefined ? profile.salaryExpectationMin : existing?.salaryExpectationMin ?? null,
       salaryExpectationMax: profile.salaryExpectationMax !== undefined ? profile.salaryExpectationMax : existing?.salaryExpectationMax ?? null,
+      salaryExpectationCurrency: profile.salaryExpectationCurrency ?? existing?.salaryExpectationCurrency ?? "USD",
       resumeUrl: profile.resumeUrl !== undefined ? profile.resumeUrl : existing?.resumeUrl ?? null,
       resumeFileKey: profile.resumeFileKey !== undefined ? profile.resumeFileKey : existing?.resumeFileKey ?? null,
       linkedinUrl: profile.linkedinUrl !== undefined ? profile.linkedinUrl : existing?.linkedinUrl ?? null,
@@ -1612,6 +1628,7 @@ export async function getUserApplications(userId: number) {
         location: jobs.location,
         salaryMin: jobs.salaryMin,
         salaryMax: jobs.salaryMax,
+        salaryCurrency: jobs.salaryCurrency,
         jobType: jobs.jobType,
         platformId: jobs.platformId,
         platformName: sql<string | null>`(

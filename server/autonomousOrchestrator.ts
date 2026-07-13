@@ -3,6 +3,7 @@ import { detectATSType, isAutomationSupported } from "./applicationAutomation";
 import { normalizeExperienceLevel, normalizeLocation } from "./jobNormalization";
 import { getLocationPreferenceFit } from "../shared/locationEligibility";
 import { isJobListingCurrent } from "../shared/jobListingFreshness";
+import { areSalaryCurrenciesComparable, normalizeSalaryCurrency } from "../shared/salaryCurrency";
 
 export type AutonomousMode = "review_first" | "auto_apply";
 
@@ -205,7 +206,17 @@ export function scoreJobForProfile(job: Job, profile?: Partial<UserProfile> | nu
     score -= 20;
   }
 
-  if (profile?.salaryExpectationMin && job.salaryMax && job.salaryMax < profile.salaryExpectationMin) {
+  const hasSalaryExpectation = Boolean(profile?.salaryExpectationMin || profile?.salaryExpectationMax);
+  const hasJobSalary = Boolean(job.salaryMin || job.salaryMax);
+  const salaryCurrenciesComparable = areSalaryCurrenciesComparable(
+    job.salaryCurrency,
+    profile?.salaryExpectationCurrency
+  );
+  if (hasSalaryExpectation && hasJobSalary && !salaryCurrenciesComparable) {
+    blockers.push(
+      `Salary is listed in ${normalizeSalaryCurrency(job.salaryCurrency)} and needs review against the ${normalizeSalaryCurrency(profile?.salaryExpectationCurrency)} expectation`
+    );
+  } else if (profile?.salaryExpectationMin && job.salaryMax && job.salaryMax < profile.salaryExpectationMin) {
     blockers.push("Salary range is below the user's minimum expectation");
     score -= 25;
   } else if (profile?.salaryExpectationMin && job.salaryMin && job.salaryMin >= profile.salaryExpectationMin) {
@@ -368,14 +379,16 @@ export function buildAutonomousPlan(
       let action: AutonomousJobDecision["action"] = "skip";
       const resumeMissing = blockers.includes("Resume is required before autonomous submission");
       const hardBlockers = blockers.filter((blocker) =>
-        blocker !== "Resume is required before autonomous submission"
+        blocker !== "Resume is required before autonomous submission" &&
+        !blocker.startsWith("Salary is listed in ")
       );
+      const salaryCurrencyReviewRequired = blockers.some((blocker) => blocker.startsWith("Salary is listed in "));
 
       if (score >= minMatchScore && hardBlockers.length === 0) {
         if (resumeMissing) {
           action = "blocked";
           automationNotes.push("An active versioned resume is required before Hire.AI can prepare application materials for this role.");
-        } else if (remoteEligibilityUnknown) {
+        } else if (remoteEligibilityUnknown || salaryCurrencyReviewRequired) {
           action = "queue_for_review";
         } else if (!support.supported && allowUnsupportedATS) {
           action = "manual_apply";

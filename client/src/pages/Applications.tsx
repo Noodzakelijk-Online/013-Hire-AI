@@ -14,6 +14,7 @@ import { getOfferOperatingSummary } from "@/lib/offerOperatingSummary";
 import { getApplicationNextActions, type ApplicationNextActionId } from "@/lib/applicationNextActions";
 import { getApplicationEvidenceGateSummary } from "@/lib/applicationEvidenceGates";
 import { getSafeExternalUrl, openExternalUrl } from "@/lib/externalUrl";
+import { formatJobSalary } from "@/lib/jobSalary";
 import { useLocation } from "wouter";
 import AppHeader from "@/components/AppHeader";
 import { ReportHireDialog } from "@/components/ReportHireDialog";
@@ -493,14 +494,6 @@ export default function Applications() {
 
   const getStatusLabel = (status: ApplicationStatus) =>
     status === "pending" ? "Queued" : status.charAt(0).toUpperCase() + status.slice(1);
-
-  const formatSalary = (min?: number, max?: number) => {
-    if (!min && !max) return "Not specified";
-    if (min && max) return `$${(min / 1000).toFixed(0)}k - $${(max / 1000).toFixed(0)}k`;
-    if (min) return `$${(min / 1000).toFixed(0)}k+`;
-    if (max) return `Up to $${(max / 1000).toFixed(0)}k`;
-    return "Not specified";
-  };
 
   const getApplicationDateLabel = (application: any) => {
     const date = application.appliedDate || application.createdAt;
@@ -1238,7 +1231,7 @@ export default function Applications() {
                       {selectedApplication.job?.salaryMin && (
                         <Badge variant="secondary" className="bg-slate-800">
                           <DollarSign className="w-3 h-3 mr-1" />
-                          {formatSalary(selectedApplication.job.salaryMin, selectedApplication.job.salaryMax)}
+                          {formatJobSalary(selectedApplication.job.salaryMin, selectedApplication.job.salaryMax, selectedApplication.job.salaryCurrency)}
                         </Badge>
                       )}
                       {selectedApplication.job?.platformName && (

@@ -3,6 +3,7 @@ import type { Job, UserProfile } from "../drizzle/schema";
 import { buildEvidenceBoundApplicationDraft } from "./applicationMaterialDraft";
 import { scoreJobForProfile } from "./autonomousOrchestrator";
 import { getLocationPreferenceFit } from "../shared/locationEligibility";
+import { areSalaryCurrenciesComparable, normalizeSalaryCurrency } from "../shared/salaryCurrency";
 import { logOperationalFailure } from "./operationalFailureLog";
 
 /**
@@ -68,6 +69,7 @@ function matchSalaryScore(profile: UserProfile, job: Job): number {
   const hasProfileExpectation = Boolean(profile.salaryExpectationMin || profile.salaryExpectationMax);
   const hasJobSalary = Boolean(job.salaryMin || job.salaryMax);
   if (!hasProfileExpectation || !hasJobSalary) return 50;
+  if (!areSalaryCurrenciesComparable(job.salaryCurrency, profile.salaryExpectationCurrency)) return 50;
 
   if (profile.salaryExpectationMin && job.salaryMax && job.salaryMax < profile.salaryExpectationMin) {
     return 0;
@@ -120,6 +122,11 @@ export async function calculateJobMatch(
   job: Job
 ): Promise<JobMatchResult> {
   try {
+    const salaryCurrencyRequiresReview = Boolean(
+      (userProfile.salaryExpectationMin || userProfile.salaryExpectationMax) &&
+      (job.salaryMin || job.salaryMax) &&
+      !areSalaryCurrenciesComparable(job.salaryCurrency, userProfile.salaryExpectationCurrency)
+    );
     const prompt = `You are an expert job matching AI. Analyze the following user profile and job posting to determine how well they match.
 
 User Profile:
@@ -128,7 +135,7 @@ User Profile:
 - Education: ${userProfile.education || "Not specified"}
 - Desired Job Types: ${userProfile.desiredJobTypes || "Any"}
 - Desired Locations: ${userProfile.desiredLocations || "Any"}
-- Salary Expectation: $${userProfile.salaryExpectationMin || 0} - $${userProfile.salaryExpectationMax || 0}
+- Salary Expectation: ${normalizeSalaryCurrency(userProfile.salaryExpectationCurrency)} ${userProfile.salaryExpectationMin || 0} - ${userProfile.salaryExpectationMax || 0}
 - Needs Visa Sponsorship: ${userProfile.needsVisaSponsorship ? "Yes" : "No"}
 - Diversity Group: ${userProfile.diversityGroup || "Not specified"}
 
@@ -139,9 +146,11 @@ Job Posting:
 - Job Type: ${job.jobType || "Not specified"}
 - Skills Required: ${job.skills || "Not specified"}
 - Requirements: ${job.requirements || "Not specified"}
-- Salary Range: $${job.salaryMin || 0} - $${job.salaryMax || 0} ${job.salaryCurrency || "USD"}
+- Salary Range: ${normalizeSalaryCurrency(job.salaryCurrency)} ${job.salaryMin || 0} - ${job.salaryMax || 0}
 - Visa Sponsorship: ${job.visaSponsorshipAvailable ? "Available" : "Not available"}
 - Diversity Friendly: ${job.diversityFriendly ? "Yes" : "No"}
+
+If the profile and job salary currencies differ, do not convert or compare amounts. Set salary match to 50 and state that salary requires human review.
 
 Provide a detailed match analysis with:
 1. Overall match score (0-100)
@@ -224,11 +233,13 @@ Return the analysis in JSON format.`;
     return {
       jobId: job.id,
       matchScore: clampScore(analysis.matchScore),
-      matchReasons: analysis.matchReasons.trim(),
+      matchReasons: salaryCurrencyRequiresReview
+        ? `${analysis.matchReasons.trim()} Salary uses ${normalizeSalaryCurrency(job.salaryCurrency)} and requires review against the ${normalizeSalaryCurrency(userProfile.salaryExpectationCurrency)} expectation.`
+        : analysis.matchReasons.trim(),
       skillsMatch: clampScore(analysis.skillsMatch),
       experienceMatch: clampScore(analysis.experienceMatch),
       locationMatch: clampScore(analysis.locationMatch),
-      salaryMatch: clampScore(analysis.salaryMatch),
+      salaryMatch: salaryCurrencyRequiresReview ? 50 : clampScore(analysis.salaryMatch),
       analysisSource: "llm",
     };
   } catch {

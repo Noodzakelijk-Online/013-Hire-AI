@@ -112,6 +112,26 @@ describe("autonomous orchestrator", () => {
     expect(plan.decisions[0].blockers).toContain("Location does not match the user's stated preferences");
   });
 
+  it("queues a currency mismatch for review instead of treating it as a salary match", () => {
+    const internationalJob: Job = {
+      ...baseJob,
+      salaryMin: 70000,
+      salaryMax: 90000,
+      salaryCurrency: "EUR",
+    };
+    const plan = buildAutonomousPlan([internationalJob], {
+      ...profile,
+      salaryExpectationCurrency: "USD",
+    }, [], {
+      minMatchScore: 0,
+      dailyApplicationLimit: 2,
+    });
+
+    expect(plan.decisions[0].action).toBe("queue_for_review");
+    expect(plan.decisions[0].blockers.join(" ")).toContain("EUR");
+    expect(plan.decisions[0].blockers.join(" ")).toContain("USD");
+  });
+
   it("keeps hybrid and on-site roles out of the remote-only campaign by default", () => {
     const hybridJob: Job = {
       ...baseJob,

@@ -18,6 +18,7 @@ import { getJobMatchDecisionSummary } from "@/lib/jobMatchDecisionSummary";
 import { getJobSourcingControlSummary } from "@/lib/jobSourcingControl";
 import { getJobDiscoveryStatusSummary } from "@/lib/jobDiscoveryStatus";
 import { getJobListingDate } from "@/lib/jobListingDate";
+import { formatJobSalary } from "@/lib/jobSalary";
 import {
   getJobSearchAutonomousPolicy,
   isJobSearchAutonomousPolicyDirty,
@@ -76,6 +77,8 @@ export default function JobSearch() {
   const [selectedJobType, setSelectedJobType] = useState<JobTypeFilter>("all");
   const [selectedPlatform, setSelectedPlatform] = useState<string>("all");
   const [salaryRange, setSalaryRange] = useState<[number, number]>([0, 300000]);
+  const [salaryCurrency, setSalaryCurrency] = useState("");
+  const selectedSalaryCurrency = /^[A-Z]{3}$/.test(salaryCurrency) ? salaryCurrency : "all";
   const [showRemoteOnly, setShowRemoteOnly] = useState(true);
   const [selectedExperienceLevel, setSelectedExperienceLevel] = useState<JobExperienceLevel>("all");
   const [selectedApplicationProcess, setSelectedApplicationProcess] = useState<JobApplicationProcessFilter>("all");
@@ -96,6 +99,7 @@ export default function JobSearch() {
     jobType: selectedJobType,
     platformId: selectedPlatform,
     salaryRange,
+    salaryCurrency: selectedSalaryCurrency,
     remoteOnly: showRemoteOnly,
     experienceLevel: selectedExperienceLevel,
     applicationProcess: selectedApplicationProcess,
@@ -110,6 +114,7 @@ export default function JobSearch() {
     postedWithin,
     salaryDisclosedOnly,
     salaryRange,
+    selectedSalaryCurrency,
     searchQuery,
     selectedApplicationProcess,
     selectedExperienceLevel,
@@ -321,6 +326,7 @@ export default function JobSearch() {
     setSelectedJobType(defaultJobSearchFilters.jobType);
     setSelectedPlatform(defaultJobSearchFilters.platformId);
     setSalaryRange(defaultJobSearchFilters.salaryRange);
+    setSalaryCurrency("");
     setShowRemoteOnly(defaultJobSearchFilters.remoteOnly);
     setSelectedExperienceLevel(defaultJobSearchFilters.experienceLevel);
     setSelectedApplicationProcess(defaultJobSearchFilters.applicationProcess);
@@ -488,14 +494,6 @@ export default function JobSearch() {
     });
   };
 
-  const formatSalary = (min?: number | null, max?: number | null) => {
-    if (!min && !max) return "Not specified";
-    if (min && max) return `$${(min / 1000).toFixed(0)}k - $${(max / 1000).toFixed(0)}k`;
-    if (min) return `$${(min / 1000).toFixed(0)}k+`;
-    if (max) return `Up to $${(max / 1000).toFixed(0)}k`;
-    return "Not specified";
-  };
-
   const getMatchBadgeColor = (score: number) => {
     if (score >= 80) return "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
     if (score >= 60) return "bg-amber-500/20 text-amber-400 border-amber-500/30";
@@ -581,7 +579,7 @@ export default function JobSearch() {
               {(job.salaryMin || job.salaryMax) && (
                 <Badge variant="secondary" className="text-xs bg-slate-800 text-slate-300">
                   <DollarSign className="w-3 h-3 mr-1" />
-                  {formatSalary(job.salaryMin, job.salaryMax)}
+                  {formatJobSalary(job.salaryMin, job.salaryMax, job.salaryCurrency)}
                 </Badge>
               )}
               {listingDate && (
@@ -1013,7 +1011,9 @@ export default function JobSearch() {
                 <span className="text-sm text-slate-400">Salary Range</span>
                 <div className="flex items-center gap-3">
                   <span className="text-sm text-slate-300">
-                    ${(salaryRange[0] / 1000).toFixed(0)}k - ${(salaryRange[1] / 1000).toFixed(0)}k
+                    {selectedSalaryCurrency === "all"
+                      ? "Choose a currency"
+                      : formatJobSalary(salaryRange[0], salaryRange[1], selectedSalaryCurrency)}
                   </span>
                   {activeFilterCount > 0 && (
                     <Button data-testid="job-filter-clear" type="button" size="sm" variant="ghost" className="h-7 px-2 text-slate-300" onClick={resetFilters}>
@@ -1023,6 +1023,17 @@ export default function JobSearch() {
                   )}
                 </div>
               </div>
+              <Input
+                data-testid="job-filter-salary-currency"
+                value={salaryCurrency}
+                onChange={(event) => {
+                  const value = event.target.value.trim().toUpperCase();
+                  setSalaryCurrency(value);
+                }}
+                placeholder="Currency code, e.g. EUR"
+                maxLength={3}
+                className="mb-3 bg-slate-800 border-slate-700 text-white"
+              />
               <Slider
                 value={salaryRange}
                 onValueChange={(value) => setSalaryRange(value as [number, number])}
@@ -1030,6 +1041,7 @@ export default function JobSearch() {
                 max={300000}
                 step={10000}
                 className="w-full"
+                disabled={selectedSalaryCurrency === "all"}
               />
               <div className="mt-4 flex flex-wrap gap-x-5 gap-y-3">
                 {[
@@ -1363,7 +1375,7 @@ export default function JobSearch() {
                       {(selectedJob.salaryMin || selectedJob.salaryMax) && (
                         <Badge variant="secondary" className="bg-slate-800">
                           <DollarSign className="w-3 h-3 mr-1" />
-                          {formatSalary(selectedJob.salaryMin, selectedJob.salaryMax)}
+                  {formatJobSalary(selectedJob.salaryMin, selectedJob.salaryMax, selectedJob.salaryCurrency)}
                         </Badge>
                       )}
                     </div>
