@@ -43,6 +43,10 @@ function hasAnyStructuredSkill(skills: Pick<UserSkill, "skillName">[]): boolean 
   return skills.some((skill) => hasText(skill.skillName));
 }
 
+function hasAnyWorkHistorySkill(workExperiences: Pick<WorkExperience, "skills">[]): boolean {
+  return workExperiences.some((experience) => hasText(experience.skills));
+}
+
 export function calculateProfileReadiness(input: {
   profile?: Pick<
     UserProfile,
@@ -59,7 +63,7 @@ export function calculateProfileReadiness(input: {
     | "githubUrl"
     | "portfolioUrl"
   >;
-  workExperiences?: Pick<WorkExperience, "jobTitle" | "company" | "description">[];
+  workExperiences?: Pick<WorkExperience, "jobTitle" | "company" | "description" | "skills">[];
   educationEntries?: Pick<EducationEntry, "degree" | "institution">[];
   skills?: Pick<UserSkill, "skillName">[];
   /**
@@ -79,7 +83,11 @@ export function calculateProfileReadiness(input: {
     hasResume: input.hasActiveResumeArtifact ?? Boolean(
       hasText(profile?.resumeUrl) && hasText(profile?.resumeFileKey)
     ),
-    hasSkills: Boolean(hasText(profile?.skills) || hasAnyStructuredSkill(skills)),
+    hasSkills: Boolean(
+      hasText(profile?.skills) ||
+      hasAnyStructuredSkill(skills) ||
+      hasAnyWorkHistorySkill(workExperiences)
+    ),
     hasExperience: Boolean(hasText(profile?.experience)),
     hasWorkHistory: workExperiences.some((item) => hasText(item.jobTitle) && hasText(item.company)),
     hasEducation: Boolean(hasText(profile?.education) || educationEntries.some((item) => hasText(item.degree) && hasText(item.institution))),

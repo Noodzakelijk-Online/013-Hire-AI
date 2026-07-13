@@ -50,6 +50,37 @@ describe("profile readiness", () => {
     expect(readiness.level).toBe("strong");
   });
 
+  it("uses explicitly recorded work-history skills without bypassing other readiness gates", () => {
+    const readiness = calculateProfileReadiness({
+      profile: {
+        skills: null,
+        experience: null,
+        education: null,
+        desiredJobTypes: "Platform Engineer",
+        desiredLocations: "Remote",
+        salaryExpectationMin: 90000,
+        salaryExpectationMax: 120000,
+        resumeUrl: "https://example.com/resume.pdf",
+        resumeFileKey: "resumes/user/resume.pdf",
+        linkedinUrl: null,
+        githubUrl: null,
+        portfolioUrl: null,
+      },
+      workExperiences: [{
+        jobTitle: "Platform Engineer",
+        company: "Example Co",
+        description: null,
+        skills: "TypeScript, Kubernetes",
+      }],
+      hasActiveResumeArtifact: true,
+    });
+
+    expect(readiness.signals.hasSkills).toBe(true);
+    expect(readiness.signals.hasWorkHistory).toBe(true);
+    expect(readiness.blockers.map((gap) => gap.key)).not.toContain("skills");
+    expect(readiness.autoApplyEligible).toBe(true);
+  });
+
   it("does not treat a standalone resume URL as an application-ready artifact", () => {
     const readiness = calculateProfileReadiness({
       profile: {
