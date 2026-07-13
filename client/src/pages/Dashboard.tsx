@@ -15,6 +15,7 @@ import { getAutonomousPolicyControlAction } from "@/lib/autonomousPolicyControl"
 import { getCommandCenterSummary } from "@/lib/commandCenterSummary";
 import { formatDashboardActivityTarget } from "@/lib/dashboardActivity";
 import { getSuccessFeeComplianceAction, getSuccessFeeComplianceSummary } from "@/lib/successFeeCompliance";
+import { getApplicationPerformanceSummary } from "@/lib/applicationPerformance";
 import {
   formatApplicationDecision,
   formatApprovalType,
@@ -125,21 +126,12 @@ export default function Dashboard() {
     a.status === 'applied' || a.status === 'viewed' || a.status === 'interview'
   ).length || 0;
   const interviewInvites = applications?.filter(a => a.status === 'interview').length || 0;
-  const offeredCount = applications?.filter(a => a.status === 'offer').length || 0;
   
-  // Calculate rates
-  const responseRate = submittedApplications.length > 0
-    ? Math.round(submittedApplications.filter(a => !["applied", "pending"].includes(a.status || "")).length / submittedApplications.length * 100)
-    : 0;
-  const interviewRate = submittedApplications.length > 0
-    ? Math.round(interviewInvites / submittedApplications.length * 100)
-    : 0;
-  const offerRate = interviewInvites > 0 
-    ? Math.round(offeredCount / interviewInvites * 100) 
-    : 0;
-
-  // Calculate health score
-  const healthScore = Math.round((responseRate * 0.3 + interviewRate * 0.4 + offerRate * 0.3));
+  const applicationPerformance = getApplicationPerformanceSummary({
+    confirmedSubmissions: operatingLedger?.metrics.submittedApplications ?? submittedApplications.length,
+    recordedResponseSignals: operatingLedger?.metrics.employerResponses,
+    recordedInterviews: operatingLedger?.metrics.interviews ?? interviewInvites,
+  });
 
   // Check if user needs ToS acceptance
   useEffect(() => {
@@ -1437,7 +1429,7 @@ export default function Dashboard() {
                 {interviewInvites > 0 ? (
                   <span className="text-purple-400 flex items-center gap-1">
                     <TrendingUp className="h-3 w-3" />
-                    Great progress!
+                    {interviewInvites} application{interviewInvites === 1 ? "" : "s"} in interview stage
                   </span>
                 ) : "Apply to get interviews"}
               </p>
@@ -1473,8 +1465,8 @@ export default function Dashboard() {
                 Job Search Vital Signs
               </CardTitle>
               <CardDescription className="text-slate-400">
-                {totalApplications > 0 
-                  ? "Real-time monitoring of your application performance"
+                {applicationPerformance.confirmedSubmissions > 0
+                  ? "Ledger-derived rates from confirmed submissions"
                   : "Start applying to see your performance metrics"
                 }
               </CardDescription>
@@ -1499,32 +1491,32 @@ export default function Dashboard() {
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-300">Response Rate</span>
-                  <span className="text-green-400 font-semibold">{responseRate}%</span>
+                  <span className="text-green-400 font-semibold">{applicationPerformance.responseRate}%</span>
                 </div>
                 <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
                   <div 
                     className="h-full bg-gradient-to-r from-green-500 to-emerald-500 rounded-full transition-all duration-500" 
-                    style={{ width: `${responseRate}%` }}
+                    style={{ width: `${applicationPerformance.responseRate}%` }}
                   />
                 </div>
                 <p className="text-xs text-slate-500">
-                  {responseRate > 50 ? "Above average employer engagement" : "Responses will come as you apply more"}
+                  {applicationPerformance.responseDetail}
                 </p>
               </div>
 
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-300">Interview Conversion</span>
-                  <span className="text-purple-400 font-semibold">{interviewRate}%</span>
+                  <span className="text-purple-400 font-semibold">{applicationPerformance.interviewRate}%</span>
                 </div>
                 <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
                   <div 
                     className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full transition-all duration-500" 
-                    style={{ width: `${interviewRate}%` }}
+                    style={{ width: `${applicationPerformance.interviewRate}%` }}
                   />
                 </div>
                 <p className="text-xs text-slate-500">
-                  {interviewRate > 30 ? "Strong interview invitation rate" : "Interviews will come with more applications"}
+                  {applicationPerformance.interviewDetail}
                 </p>
               </div>
 
