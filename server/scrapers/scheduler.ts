@@ -209,11 +209,12 @@ export class JobScrapingScheduler {
 // Singleton instance
 let schedulerInstance: JobScrapingScheduler | null = null;
 
-export function getScheduler(config?: SchedulerConfig): JobScrapingScheduler {
+export function getScheduler(config?: Partial<SchedulerConfig>): JobScrapingScheduler {
   if (!schedulerInstance) {
-    schedulerInstance = new JobScrapingScheduler(config || {
-      intervalMinutes: 60, // Default: every hour
-      maxJobsPerRun: 100,
+    schedulerInstance = new JobScrapingScheduler({
+      intervalMinutes: config?.intervalMinutes ?? 60,
+      maxJobsPerRun: config?.maxJobsPerRun ?? 100,
+      enabledPlatforms: config?.enabledPlatforms,
     });
   } else if (config) {
     schedulerInstance.updateConfig(config);

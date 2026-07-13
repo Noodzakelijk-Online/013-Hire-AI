@@ -2611,11 +2611,9 @@ export const appRouter = router({
             message: `No configured, ready scraper is available for: ${unsupportedPlatforms.join(", ")}`,
           });
         }
-        const scheduler = input ? getScheduler({
-          intervalMinutes: input.intervalMinutes || 60,
-          maxJobsPerRun: input.maxJobsPerRun || 100,
-          enabledPlatforms: input.enabledPlatforms ?? null,
-        }) : currentScheduler;
+        // The scheduler merges partial updates. Omitting a field must retain the
+        // current operator-approved configuration, especially the source allowlist.
+        const scheduler = input ? getScheduler(input) : currentScheduler;
         
         scheduler.start();
         return { success: true, message: "Scheduler started", scheduler: scheduler.getStatus() };

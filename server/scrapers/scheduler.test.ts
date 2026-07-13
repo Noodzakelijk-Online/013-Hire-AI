@@ -136,10 +136,18 @@ describe("job scraping scheduler", () => {
   });
 
   it("updates an existing scheduler singleton with operator configuration", () => {
-    const initial = getScheduler({ intervalMinutes: 30, maxJobsPerRun: 40 });
-    const updated = getScheduler({ intervalMinutes: 90, maxJobsPerRun: 75 });
+    const initial = getScheduler({
+      intervalMinutes: 30,
+      maxJobsPerRun: 40,
+      enabledPlatforms: ["RemoteOK"],
+    });
+    const updated = getScheduler({ maxJobsPerRun: 75 });
 
     expect(updated).toBe(initial);
-    expect(updated.getStatus()).toMatchObject({ intervalMinutes: 90, maxJobsPerRun: 75 });
+    expect(updated.getStatus()).toMatchObject({
+      intervalMinutes: 30,
+      maxJobsPerRun: 75,
+      enabledPlatforms: ["RemoteOK"],
+    });
   });
 });
