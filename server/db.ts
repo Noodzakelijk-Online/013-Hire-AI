@@ -7,6 +7,7 @@ import {
   jobs,
   jobDuplicates,
   userProfiles,
+  socialMediaProfiles,
   userConnectorAccounts,
   connectorAuthorizations,
   applications,
@@ -31,6 +32,7 @@ import {
   successFees,
   type Job,
   type UserProfile,
+  type SocialMediaProfile,
   type UserConnectorAccount,
   type ConnectorAuthorization,
   type Application,
@@ -77,6 +79,7 @@ import {
 
 type InsertJob = InferInsertModel<typeof jobs>;
 type InsertUserProfile = InferInsertModel<typeof userProfiles>;
+type InsertSocialMediaProfile = InferInsertModel<typeof socialMediaProfiles>;
 type InsertUserConnectorAccount = InferInsertModel<typeof userConnectorAccounts>;
 type InsertConnectorAuthorization = InferInsertModel<typeof connectorAuthorizations>;
 type InsertApplication = InferInsertModel<typeof applications>;
@@ -111,6 +114,7 @@ const memoryUsers: (InsertUser & {
   lastSignedIn: Date;
 })[] = [];
 const memoryProfiles = new Map<number, UserProfile>();
+const memorySocialMediaProfiles: (InsertSocialMediaProfile & { id: number; createdAt: Date; updatedAt: Date })[] = [];
 const memoryConnectorAccounts: (InsertUserConnectorAccount & { id: number; createdAt: Date; updatedAt: Date })[] = [];
 const memoryConnectorAuthorizations: (InsertConnectorAuthorization & { id: number; createdAt: Date; updatedAt: Date })[] = [];
 const memoryApplications: (InsertApplication & { id: number; createdAt: Date; updatedAt: Date })[] = [];
@@ -1137,6 +1141,130 @@ export async function upsertUserProfile(profile: InsertUserProfile) {
   } else {
     await db.insert(userProfiles).values(profile);
   }
+}
+
+export const PUBLIC_SOCIAL_PLATFORMS = ["facebook", "twitter"] as const;
+export type PublicSocialPlatform = typeof PUBLIC_SOCIAL_PLATFORMS[number];
+
+function latestPublicSocialProfiles<T extends { platform: string }>(profiles: T[]) {
+  const seen = new Set<string>();
+  return profiles.filter((profile) => {
+    if (seen.has(profile.platform)) return false;
+    seen.add(profile.platform);
+    return true;
+  });
+}
+
+/**
+ * Public social links are user-provided references only. They remain separate
+ * from connector grants so no credentials or unconsented profile data enters
+ * the operating ledger.
+ */
+export async function listPublicSocialProfiles(userId: number): Promise<SocialMediaProfile[]> {
+  const db = await getDb();
+  if (!db) {
+    const profiles = memorySocialMediaProfiles
+      .filter((profile) =>
+        profile.userId === userId &&
+        profile.isActive === 1 &&
+        (profile.platform === "facebook" || profile.platform === "twitter")
+      )
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+    return latestPublicSocialProfiles(profiles) as SocialMediaProfile[];
+  }
+
+  const profiles = await db
+    .select()
+    .from(socialMediaProfiles)
+    .where(and(
+      eq(socialMediaProfiles.userId, userId),
+      eq(socialMediaProfiles.isActive, 1),
+      inArray(socialMediaProfiles.platform, PUBLIC_SOCIAL_PLATFORMS)
+    ))
+    .orderBy(desc(socialMediaProfiles.updatedAt));
+  return latestPublicSocialProfiles(profiles);
+}
+
+export async function setPublicSocialProfile(input: {
+  userId: number;
+  platform: PublicSocialPlatform;
+  profileUrl: string | null;
+}): Promise<SocialMediaProfile | null> {
+  const db = await getDb();
+  const now = new Date();
+  if (!db) {
+    const matches = memorySocialMediaProfiles.filter((profile) =>
+      profile.userId === input.userId && profile.platform === input.platform
+    );
+    if (input.profileUrl === null) {
+      matches.forEach((profile) => {
+        profile.isActive = 0;
+        profile.updatedAt = now;
+      });
+      return null;
+    }
+
+    const existing = matches.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0];
+    if (existing) {
+      matches.forEach((profile) => {
+        profile.profileUrl = input.profileUrl!;
+        profile.isActive = 1;
+        profile.updatedAt = now;
+      });
+      return existing as SocialMediaProfile;
+    }
+
+    const created = {
+      id: memorySocialMediaProfiles.length + 1,
+      userId: input.userId,
+      platform: input.platform,
+      profileUrl: input.profileUrl,
+      isActive: 1,
+      createdAt: now,
+      updatedAt: now,
+    } satisfies InsertSocialMediaProfile & { id: number; createdAt: Date; updatedAt: Date };
+    memorySocialMediaProfiles.push(created);
+    return created as SocialMediaProfile;
+  }
+
+  await db
+    .update(socialMediaProfiles)
+    .set({
+      profileUrl: input.profileUrl,
+      isActive: input.profileUrl === null ? 0 : 1,
+      updatedAt: now,
+    })
+    .where(and(
+      eq(socialMediaProfiles.userId, input.userId),
+      eq(socialMediaProfiles.platform, input.platform)
+    ));
+
+  if (input.profileUrl === null) return null;
+
+  const existing = await db
+    .select()
+    .from(socialMediaProfiles)
+    .where(and(
+      eq(socialMediaProfiles.userId, input.userId),
+      eq(socialMediaProfiles.platform, input.platform)
+    ))
+    .orderBy(desc(socialMediaProfiles.updatedAt))
+    .limit(1);
+  if (existing[0]) return existing[0];
+
+  const created = await db.insert(socialMediaProfiles).values({
+    userId: input.userId,
+    platform: input.platform,
+    profileUrl: input.profileUrl,
+    isActive: 1,
+  });
+  const id = Number(created[0].insertId);
+  const profiles = await db
+    .select()
+    .from(socialMediaProfiles)
+    .where(eq(socialMediaProfiles.id, id))
+    .limit(1);
+  return profiles[0] ?? null;
 }
 
 export async function listUserConnectorAccounts(userId: number): Promise<UserConnectorAccount[]> {

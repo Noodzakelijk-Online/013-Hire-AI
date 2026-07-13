@@ -88,6 +88,27 @@ export function validatePortfolioUrl(url: string): boolean {
   }
 }
 
+function validatesNamedPublicProfileUrl(url: string, hosts: string[]): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return false;
+    const hostname = parsed.hostname.toLowerCase().replace(/^(www|m)\./, "");
+    return hosts.includes(hostname) && parsed.pathname !== "/";
+  } catch {
+    return false;
+  }
+}
+
+/** Validate a user-provided Facebook profile, page, or group URL without fetching it. */
+export function validateFacebookUrl(url: string): boolean {
+  return validatesNamedPublicProfileUrl(url, ["facebook.com", "fb.com"]);
+}
+
+/** Validate a user-provided X/Twitter profile URL without fetching it. */
+export function validateTwitterUrl(url: string): boolean {
+  return validatesNamedPublicProfileUrl(url, ["twitter.com", "x.com"]);
+}
+
 /**
  * Extract username from LinkedIn URL
  */

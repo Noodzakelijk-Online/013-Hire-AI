@@ -118,6 +118,8 @@ export default function Profile() {
   const [linkedinUrl, setLinkedinUrl] = useState("");
   const [githubUrl, setGithubUrl] = useState("");
   const [portfolioUrl, setPortfolioUrl] = useState("");
+  const [facebookUrl, setFacebookUrl] = useState("");
+  const [twitterUrl, setTwitterUrl] = useState("");
   const [targetRoles, setTargetRoles] = useState("");
   const [targetLocations, setTargetLocations] = useState("");
   const [salaryMinimum, setSalaryMinimum] = useState("");
@@ -134,6 +136,9 @@ export default function Profile() {
     enabled: isAuthenticated,
   });
   const evidenceReadinessQuery = trpc.profile.getEvidenceReadiness.useQuery(undefined, {
+    enabled: isAuthenticated,
+  });
+  const publicSocialProfilesQuery = trpc.social.getPublicProfiles.useQuery(undefined, {
     enabled: isAuthenticated,
   });
   const connectorOAuthAvailabilityQuery = trpc.connectors.getOAuthAvailability.useQuery(undefined, {
@@ -178,6 +183,13 @@ export default function Profile() {
       evidenceReadinessQuery.refetch();
     },
     onError: (error) => toast.error(error.message || "Failed to save profile evidence"),
+  });
+  const updatePublicSocialProfiles = trpc.social.updatePublicProfiles.useMutation({
+    onSuccess: async () => {
+      toast.success("Public social links saved");
+      await publicSocialProfilesQuery.refetch();
+    },
+    onError: (error) => toast.error(error.message || "Failed to save public social links"),
   });
   const startConnectorOAuth = trpc.connectors.startOAuth.useMutation({
     onSuccess: (result) => {
@@ -385,6 +397,11 @@ export default function Profile() {
   }, [profileQuery.data?.linkedinUrl, profileQuery.data?.githubUrl, profileQuery.data?.portfolioUrl]);
 
   useEffect(() => {
+    setFacebookUrl(publicSocialProfilesQuery.data?.find((profile) => profile.platform === "facebook")?.profileUrl || "");
+    setTwitterUrl(publicSocialProfilesQuery.data?.find((profile) => profile.platform === "twitter")?.profileUrl || "");
+  }, [publicSocialProfilesQuery.data]);
+
+  useEffect(() => {
     setTargetRoles(profileQuery.data?.desiredJobTypes || "");
     setTargetLocations(profileQuery.data?.desiredLocations || "");
     setSalaryMinimum(profileQuery.data?.salaryExpectationMin?.toString() || "");
@@ -524,6 +541,13 @@ export default function Profile() {
       linkedinUrl: linkedinUrl.trim() || null,
       githubUrl: githubUrl.trim() || null,
       portfolioUrl: portfolioUrl.trim() || null,
+    });
+  };
+
+  const handleSavePublicSocialLinks = () => {
+    updatePublicSocialProfiles.mutate({
+      facebookUrl: facebookUrl.trim() || null,
+      twitterUrl: twitterUrl.trim() || null,
     });
   };
 
@@ -1008,12 +1032,6 @@ export default function Profile() {
                   className="bg-slate-800 border-slate-700 text-white"
                 />
               </div>
-              <div className="rounded-md border border-slate-700/60 bg-slate-950/40 p-3">
-                <p className="text-sm font-medium text-slate-300">Additional social connectors</p>
-                <p className="mt-2 text-sm text-slate-400">
-                  Other social media sources should be added through explicit consent-based connectors before Hire.AI imports or analyzes them.
-                </p>
-              </div>
             </div>
             <div className="mt-4 flex justify-end">
               <Button
@@ -1024,6 +1042,51 @@ export default function Profile() {
                 {updateProfile.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Save Links
               </Button>
+            </div>
+            <div className="mt-6 border-t border-slate-800 pt-5">
+              <div className="mb-4">
+                <p className="text-sm font-medium text-slate-300">Public social profiles</p>
+                <p className="mt-1 text-sm text-slate-400">
+                  Keep public Facebook and X/Twitter links on file. Hire.AI will not import or analyze them without a separate explicit consent flow.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label htmlFor="profile-facebook-url" className="mb-2 block text-sm font-medium text-slate-300">
+                    Facebook URL
+                  </label>
+                  <Input
+                    id="profile-facebook-url"
+                    value={facebookUrl}
+                    onChange={(event) => setFacebookUrl(event.target.value)}
+                    placeholder="https://facebook.com/yourprofile"
+                    className="bg-slate-800 border-slate-700 text-white"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="profile-twitter-url" className="mb-2 block text-sm font-medium text-slate-300">
+                    X / Twitter URL
+                  </label>
+                  <Input
+                    id="profile-twitter-url"
+                    value={twitterUrl}
+                    onChange={(event) => setTwitterUrl(event.target.value)}
+                    placeholder="https://x.com/yourprofile"
+                    className="bg-slate-800 border-slate-700 text-white"
+                  />
+                </div>
+              </div>
+              <div className="mt-4 flex justify-end">
+                <Button
+                  onClick={handleSavePublicSocialLinks}
+                  disabled={updatePublicSocialProfiles.isPending}
+                  variant="outline"
+                  className="border-cyan-700 text-cyan-200 hover:bg-cyan-500/10"
+                >
+                  {updatePublicSocialProfiles.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Save Public Links
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>

@@ -2903,10 +2903,16 @@ export const appRouter = router({
     validateUrl: publicProcedure
       .input(z.object({
         url: z.string().trim().min(1).max(1000),
-        type: z.enum(["linkedin", "github", "portfolio"]),
+        type: z.enum(["linkedin", "github", "portfolio", "facebook", "twitter"]),
       }))
       .query(async ({ input }) => {
-        const { validateLinkedInUrl, validateGitHubUrl, validatePortfolioUrl } = await import("./socialConnections");
+        const {
+          validateFacebookUrl,
+          validateGitHubUrl,
+          validateLinkedInUrl,
+          validatePortfolioUrl,
+          validateTwitterUrl,
+        } = await import("./socialConnections");
         
         let isValid = false;
         switch (input.type) {
@@ -2918,6 +2924,12 @@ export const appRouter = router({
             break;
           case "portfolio":
             isValid = validatePortfolioUrl(input.url);
+            break;
+          case "facebook":
+            isValid = validateFacebookUrl(input.url);
+            break;
+          case "twitter":
+            isValid = validateTwitterUrl(input.url);
             break;
         }
         
@@ -2970,14 +2982,69 @@ export const appRouter = router({
         return { success: true };
       }),
     getConnections: protectedProcedure.query(async ({ ctx }) => {
-      const { getUserProfile } = await import("./db");
+      const { getUserProfile, listPublicSocialProfiles } = await import("./db");
       const profile = await getUserProfile(ctx.user.id);
+      const publicProfiles = await listPublicSocialProfiles(ctx.user.id);
+      const publicProfileUrl = (platform: "facebook" | "twitter") =>
+        publicProfiles.find((item) => item.platform === platform)?.profileUrl || null;
       return [
         { type: "linkedin", url: profile?.linkedinUrl || null, connected: Boolean(profile?.linkedinUrl) },
         { type: "github", url: profile?.githubUrl || null, connected: Boolean(profile?.githubUrl) },
         { type: "portfolio", url: profile?.portfolioUrl || null, connected: Boolean(profile?.portfolioUrl) },
+        { type: "facebook", url: publicProfileUrl("facebook"), connected: Boolean(publicProfileUrl("facebook")) },
+        { type: "twitter", url: publicProfileUrl("twitter"), connected: Boolean(publicProfileUrl("twitter")) },
       ];
     }),
+
+    getPublicProfiles: protectedProcedure.query(async ({ ctx }) => {
+      const { listPublicSocialProfiles } = await import("./db");
+      return await listPublicSocialProfiles(ctx.user.id);
+    }),
+
+    updatePublicProfiles: protectedProcedure
+      .input(z.object({
+        facebookUrl: safeHttpUrl.nullable().optional(),
+        twitterUrl: safeHttpUrl.nullable().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { validateFacebookUrl, validateTwitterUrl } = await import("./socialConnections");
+        const { createAuditEvent, listPublicSocialProfiles, setPublicSocialProfile } = await import("./db");
+        if (
+          (input.facebookUrl && !validateFacebookUrl(input.facebookUrl)) ||
+          (input.twitterUrl && !validateTwitterUrl(input.twitterUrl))
+        ) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Facebook and X/Twitter links must point to the named public platform.",
+          });
+        }
+
+        await Promise.all([
+          input.facebookUrl === undefined
+            ? Promise.resolve()
+            : setPublicSocialProfile({ userId: ctx.user.id, platform: "facebook", profileUrl: input.facebookUrl }),
+          input.twitterUrl === undefined
+            ? Promise.resolve()
+            : setPublicSocialProfile({ userId: ctx.user.id, platform: "twitter", profileUrl: input.twitterUrl }),
+        ]);
+        if (input.facebookUrl !== undefined || input.twitterUrl !== undefined) {
+          await createAuditEvent({
+            userId: ctx.user.id,
+            entityType: "user",
+            entityId: ctx.user.id,
+            action: "public_social_profiles_updated",
+            actor: "user",
+            source: "social.updatePublicProfiles",
+            afterState: JSON.stringify({
+              facebookConnected: input.facebookUrl === undefined ? undefined : Boolean(input.facebookUrl),
+              twitterConnected: input.twitterUrl === undefined ? undefined : Boolean(input.twitterUrl),
+              externalReadPerformed: false,
+            }),
+            riskLevel: "low",
+          });
+        }
+        return { success: true, profiles: await listPublicSocialProfiles(ctx.user.id) };
+      }),
 
     analyzeLinkedIn: protectedProcedure
       .input(z.object({ profileText: socialProfileText }))
