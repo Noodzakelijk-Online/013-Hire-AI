@@ -73,6 +73,9 @@ export interface AutonomousRunResult extends AutonomousPlan {
 
 const activeRuns = new AutonomousRunRegistry<AutonomousRunResult | null>();
 
+export const AUTONOMOUS_RUN_FAILURE =
+  "Autonomous work could not complete. Review the operating ledger before retrying.";
+
 function persistableRunSummary(result: AutonomousRunResult) {
   return {
     queuedApplicationRecords: result.queuedApplicationRecords,
@@ -443,8 +446,8 @@ async function executeAutonomousRun(
   let completedActions = 0;
   const actionErrors: string[] = [];
 
-  const recordFailure = (label: string, error: unknown) => {
-    console.error(`[AutonomousService] ${label} failed for user ${userId}:`, error);
+  const recordFailure = (label: string) => {
+    console.error(`[AutonomousService] ${label} failed for user ${userId}.`);
     actionErrors.push(`${label} failed`);
   };
 
@@ -460,8 +463,8 @@ async function executeAutonomousRun(
         matchScore: decision.matchScore,
         matchReasons: autonomousMatchReasons(decision),
       });
-    } catch (error) {
-      recordFailure(`Job ${decision.jobId} match persistence`, error);
+    } catch {
+      recordFailure(`Job ${decision.jobId} match persistence`);
     }
   }
 
@@ -473,8 +476,8 @@ async function executeAutonomousRun(
     assertLeaseActive();
     try {
       await recordAutonomousTerminalDecision(userId, decision);
-    } catch (error) {
-      recordFailure(`Job ${decision.jobId} terminal decision persistence`, error);
+    } catch {
+      recordFailure(`Job ${decision.jobId} terminal decision persistence`);
     }
   }
 
@@ -611,8 +614,8 @@ async function executeAutonomousRun(
       });
       completedActions += 1;
       if (wasNewApplication(result)) queuedApplicationRecords += 1;
-    } catch (error) {
-      recordFailure(`Job ${decision.jobId} preparation`, error);
+    } catch {
+      recordFailure(`Job ${decision.jobId} preparation`);
     }
   }
 
@@ -689,8 +692,8 @@ async function executeAutonomousRun(
       });
       completedActions += 1;
       if (wasNewApplication(result)) queuedReviewRecords += 1;
-    } catch (error) {
-      recordFailure(`Job ${decision.jobId} review queue`, error);
+    } catch {
+      recordFailure(`Job ${decision.jobId} review queue`);
     }
   }
 
@@ -762,8 +765,8 @@ async function executeAutonomousRun(
       });
       completedActions += 1;
       if (wasNewApplication(result)) queuedManualRecords += 1;
-    } catch (error) {
-      recordFailure(`Job ${decision.jobId} manual queue`, error);
+    } catch {
+      recordFailure(`Job ${decision.jobId} manual queue`);
     }
   }
 
@@ -817,8 +820,8 @@ async function executeAutonomousRun(
         }, userId);
         completedActions += 1;
         queuedFollowUps += 1;
-      } catch (error) {
-        recordFailure(`Application ${followUp.applicationId} follow-up`, error);
+      } catch {
+        recordFailure(`Application ${followUp.applicationId} follow-up`);
       }
     }
   }
@@ -951,17 +954,13 @@ async function runWithLease(
         );
         return null;
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+    } catch {
       try {
-        await completeAutonomousRunLease(userId, leaseToken, message);
-      } catch (completionError) {
-        console.error(
-          `[AutonomousService] Failed to release preflight lease for user ${userId}:`,
-          completionError
-        );
+        await completeAutonomousRunLease(userId, leaseToken, AUTONOMOUS_RUN_FAILURE);
+      } catch {
+        console.error(`[AutonomousService] Failed to release preflight lease for user ${userId}.`);
       }
-      throw error;
+      throw new Error(AUTONOMOUS_RUN_FAILURE);
     }
   }
 
@@ -974,11 +973,11 @@ async function runWithLease(
           console.error(`[AutonomousService] Lease ownership lost for user ${userId}.`);
         }
       })
-      .catch((error) => {
+      .catch(() => {
         executionGuard.markLeaseLost(
           "The autonomous run stopped because its execution lease could not be verified."
         );
-        console.error(`[AutonomousService] Failed to renew lease for user ${userId}:`, error);
+        console.error(`[AutonomousService] Failed to renew lease for user ${userId}.`);
       });
   }, 5 * 60 * 1000);
   leaseRenewal.unref();
@@ -992,14 +991,13 @@ async function runWithLease(
         () => executionGuard.assertLeaseActive()
       );
       executionGuard.assertLeaseActive();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+    } catch {
       try {
-        await completeAutonomousRunLease(userId, leaseToken, message);
-      } catch (completionError) {
-        console.error(`[AutonomousService] Failed to finalize failed run for user ${userId}:`, completionError);
+        await completeAutonomousRunLease(userId, leaseToken, AUTONOMOUS_RUN_FAILURE);
+      } catch {
+        console.error(`[AutonomousService] Failed to finalize failed run for user ${userId}.`);
       }
-      throw error;
+      throw new Error(AUTONOMOUS_RUN_FAILURE);
     }
 
     try {
@@ -1013,8 +1011,8 @@ async function runWithLease(
         throw new Error("The autonomous run lost its execution lease before completion.");
       }
       await getUserOperatingLedger(userId);
-    } catch (error) {
-      console.error(`[AutonomousService] Failed to finalize successful run for user ${userId}:`, error);
+    } catch {
+      console.error(`[AutonomousService] Failed to finalize successful run for user ${userId}.`);
       throw new Error("Autonomous actions completed, but the run state could not be finalized.");
     }
     return result;

@@ -10,6 +10,7 @@ vi.mock("./db", () => ({
 }));
 
 vi.mock("./autonomousService", () => ({
+  AUTONOMOUS_RUN_FAILURE: "Autonomous work could not complete. Review the operating ledger before retrying.",
   runScheduledAutonomousForUser: mocks.runScheduledAutonomousForUser,
 }));
 
@@ -109,5 +110,25 @@ describe("AutonomousScheduler", () => {
     expect(scheduler.getStatus().profileReadinessBlockedActions).toBe(0);
     expect(scheduler.getStatus().emptySourceActionsSkipped).toBe(0);
     expect(scheduler.getStatus().inboxReauthorizationRequired).toBe(0);
+  });
+
+  it("does not expose a worker exception through scheduler status", async () => {
+    mocks.getProfilesWithAutonomousPreferences.mockResolvedValue([
+      {
+        userId: 18,
+        preferences: JSON.stringify({ autonomousEnabled: true, scanFrequency: "daily" }),
+      },
+    ]);
+    mocks.runScheduledAutonomousForUser.mockRejectedValue(
+      new Error("Connector failed with Bearer autonomous-worker-secret")
+    );
+
+    const scheduler = new AutonomousScheduler();
+    await scheduler.runDueUsers();
+
+    expect(scheduler.getStatus().errors).toEqual([
+      "User 18: Autonomous work could not complete. Review the operating ledger before retrying.",
+    ]);
+    expect(JSON.stringify(scheduler.getStatus())).not.toContain("autonomous-worker-secret");
   });
 });

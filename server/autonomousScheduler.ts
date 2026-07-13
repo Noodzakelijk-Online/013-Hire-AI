@@ -1,6 +1,8 @@
 import { getProfilesWithAutonomousPreferences } from "./db";
 import { parseAutonomousPreferences } from "./autonomousOrchestrator";
-import { runScheduledAutonomousForUser } from "./autonomousService";
+import { AUTONOMOUS_RUN_FAILURE, runScheduledAutonomousForUser } from "./autonomousService";
+
+const AUTONOMOUS_SCHEDULER_FAILURE = "Autonomous scheduler cycle could not complete.";
 
 const FREQUENCY_MS = {
   continuous: 15 * 60 * 1000,
@@ -181,8 +183,7 @@ export class AutonomousScheduler {
               );
             }
           }
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
+        } catch {
           this.userRunStatuses.set(profile.userId, {
             lastRunAt: new Date(),
             jobsQueued: 0,
@@ -200,11 +201,11 @@ export class AutonomousScheduler {
             failedActions: 0,
             errorCount: 1,
           });
-          this.status.errors.push(`User ${profile.userId}: ${message}`);
+          this.status.errors.push(`User ${profile.userId}: ${AUTONOMOUS_RUN_FAILURE}`);
         }
       }
-    } catch (error) {
-      this.status.errors.push(error instanceof Error ? error.message : String(error));
+    } catch {
+      this.status.errors.push(AUTONOMOUS_SCHEDULER_FAILURE);
     } finally {
       this.status.isRunning = false;
       this.status.lastCycleAt = new Date();
