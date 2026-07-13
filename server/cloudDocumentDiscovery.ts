@@ -122,6 +122,7 @@ async function getCloudAccessToken(
 
   const authorization = await dependencies.getConnectorAuthorization(userId, provider);
   if (!authorization) {
+    await markCloudAccessNeedsReauth(userId, account, dependencies);
     throw new Error("The connector grant is unavailable. Reauthorize this provider before document discovery.");
   }
 
@@ -132,6 +133,7 @@ async function getCloudAccessToken(
   }
 
   if (!authorization.encryptedRefreshToken) {
+    await markCloudAccessNeedsReauth(userId, account, dependencies);
     throw new Error("The connector authorization has expired. Reauthorize this provider before document discovery.");
   }
   const config = dependencies.getConnectorOAuthConfig(provider as OAuthConnectorProvider);
@@ -147,7 +149,11 @@ async function getCloudAccessToken(
     userId,
     provider,
     encryptedAccessToken: dependencies.encryptConnectorToken(refreshed.accessToken),
-    encryptedRefreshToken: refreshed.refreshToken ? dependencies.encryptConnectorToken(refreshed.refreshToken) : null,
+    // Providers commonly omit an unchanged refresh token. Preserve the durable
+    // encrypted grant instead of making the next autonomous refresh impossible.
+    encryptedRefreshToken: refreshed.refreshToken
+      ? dependencies.encryptConnectorToken(refreshed.refreshToken)
+      : authorization.encryptedRefreshToken,
     accessTokenExpiresAt: refreshed.expiresAt,
     tokenType: refreshed.tokenType,
     grantedScopes: JSON.stringify(refreshed.grantedScopes),

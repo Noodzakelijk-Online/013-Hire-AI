@@ -83,4 +83,21 @@ describe("LinkedIn identity discovery", () => {
       lastVerifiedAt: now,
     }));
   });
+
+  it("does not treat a LinkedIn grant without expiry metadata as permanent access", async () => {
+    const deps = dependencies();
+    (deps.getConnectorAuthorization as ReturnType<typeof vi.fn>).mockResolvedValue({
+      encryptedAccessToken: "encrypted-linkedin-token",
+      accessTokenExpiresAt: null,
+    });
+    const fetcher = vi.fn();
+
+    await expect(discoverLinkedInIdentity(21, { fetcher, now, dependencies: deps }))
+      .rejects.toThrow("authorization has expired");
+    expect(deps.upsertUserConnectorAccount).toHaveBeenCalledWith(expect.objectContaining({
+      provider: "linkedin",
+      status: "needs_reauth",
+    }));
+    expect(fetcher).not.toHaveBeenCalled();
+  });
 });

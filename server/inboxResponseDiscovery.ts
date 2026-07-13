@@ -94,6 +94,7 @@ async function getInboxAccess(
   }
   const authorization = await dependencies.getConnectorAuthorization(userId, provider);
   if (!authorization) {
+    await markInboxAccessNeedsReauth(userId, account, dependencies);
     throw new Error(`${displayName(provider)} authorization is unavailable. Reauthorize before inbox discovery.`);
   }
   const accessToken = dependencies.decryptConnectorToken(authorization.encryptedAccessToken);
@@ -102,6 +103,7 @@ async function getInboxAccess(
     return { accessToken, account };
   }
   if (!authorization.encryptedRefreshToken) {
+    await markInboxAccessNeedsReauth(userId, account, dependencies);
     throw new Error(`${displayName(provider)} authorization has expired. Reauthorize before inbox discovery.`);
   }
   const config = dependencies.getConnectorOAuthConfig(provider as OAuthConnectorProvider);

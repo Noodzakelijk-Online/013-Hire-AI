@@ -110,14 +110,16 @@ async function getMailAccess(
   }
   const authorization = await dependencies.getConnectorAuthorization(userId, provider);
   if (!authorization) {
+    await markMailAccessNeedsReauth(userId, account, dependencies);
     throw new Error(`${providerLabel(provider)} authorization is unavailable. Reauthorize before sending a follow-up.`);
   }
   const accessToken = dependencies.decryptConnectorToken(authorization.encryptedAccessToken);
   const expiresAt = authorization.accessTokenExpiresAt?.getTime() ?? null;
-  if (expiresAt === null || expiresAt > now.getTime() + TOKEN_EXPIRY_SKEW_MS) {
+  if (expiresAt !== null && expiresAt > now.getTime() + TOKEN_EXPIRY_SKEW_MS) {
     return { accessToken, account };
   }
   if (!authorization.encryptedRefreshToken) {
+    await markMailAccessNeedsReauth(userId, account, dependencies);
     throw new Error(`${providerLabel(provider)} authorization has expired. Reauthorize before sending a follow-up.`);
   }
   const config = dependencies.getConnectorOAuthConfig(provider as OAuthConnectorProvider);

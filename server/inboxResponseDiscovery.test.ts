@@ -133,6 +133,24 @@ describe("inbox response discovery", () => {
     }));
   });
 
+  it("marks an expired inbox grant without a refresh token for reauthorization", async () => {
+    mocks.getConnectorAuthorization.mockResolvedValue({
+      encryptedAccessToken: "expired-access",
+      encryptedRefreshToken: null,
+      accessTokenExpiresAt: new Date("2026-07-13T11:59:00.000Z"),
+    });
+    const fetcher = vi.fn<typeof fetch>();
+
+    await expect(discoverInboxResponseCandidates(700, "gmail", options(fetcher))).rejects.toThrow(
+      "Gmail authorization has expired"
+    );
+    expect(mocks.upsertUserConnectorAccount).toHaveBeenCalledWith(expect.objectContaining({
+      provider: "gmail",
+      status: "needs_reauth",
+    }));
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
   it("reads Outlook metadata and only surfaces an unambiguous application match", async () => {
     mocks.listUserConnectorAccounts.mockResolvedValue([connectedInbox("outlook")]);
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({

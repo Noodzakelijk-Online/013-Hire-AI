@@ -11,7 +11,7 @@ function dependencies(): GitHubProfileDiscoveryDependencies {
   return {
     getConnectorAuthorization: vi.fn().mockResolvedValue({
       encryptedAccessToken: "encrypted-github-token",
-      accessTokenExpiresAt: null,
+      accessTokenExpiresAt: new Date("2026-07-13T13:00:00.000Z"),
     }),
     listUserConnectorAccounts: vi.fn().mockResolvedValue([{
       userId: 18,
@@ -119,6 +119,40 @@ describe("GitHub profile discovery", () => {
       provider: "github",
       encryptedAccessToken: "encrypted-renewed-github-token",
       encryptedRefreshToken: "encrypted-renewed-github-refresh-token",
+    }));
+    expect(fetcher.mock.calls[0][1].headers.Authorization).toBe("Bearer renewed-github-token");
+  });
+
+  it("does not treat a GitHub grant without expiry metadata as permanent access", async () => {
+    const deps = dependencies();
+    (deps.getConnectorAuthorization as ReturnType<typeof vi.fn>).mockResolvedValue({
+      encryptedAccessToken: "expired-access-token",
+      encryptedRefreshToken: "encrypted-refresh-token",
+      accessTokenExpiresAt: null,
+    });
+    (deps.decryptConnectorToken as ReturnType<typeof vi.fn>)
+      .mockReturnValueOnce("expired-access-token")
+      .mockReturnValueOnce("github-refresh-token");
+    (deps.refreshConnectorAccessToken as ReturnType<typeof vi.fn>).mockResolvedValue({
+      accessToken: "renewed-github-token",
+      refreshToken: null,
+      expiresAt: new Date("2026-07-13T13:00:00.000Z"),
+      tokenType: "Bearer",
+      grantedScopes: ["read:user"],
+    });
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        login: "octavia",
+        html_url: "https://github.com/octavia",
+        public_repos: 0,
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }));
+
+    await discoverGitHubProfile(18, { fetcher, now, dependencies: deps });
+
+    expect(deps.refreshConnectorAccessToken).toHaveBeenCalled();
+    expect(deps.upsertConnectorAuthorization).toHaveBeenCalledWith(expect.objectContaining({
+      encryptedRefreshToken: "encrypted-refresh-token",
     }));
     expect(fetcher.mock.calls[0][1].headers.Authorization).toBe("Bearer renewed-github-token");
   });

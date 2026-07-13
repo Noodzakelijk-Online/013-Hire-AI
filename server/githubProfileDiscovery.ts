@@ -111,14 +111,16 @@ async function getGitHubAccessToken(
 
   const authorization = await dependencies.getConnectorAuthorization(userId, "github");
   if (!authorization) {
+    await markGitHubAccessNeedsReauth(userId, account, dependencies);
     throw new Error("GitHub authorization is unavailable. Reauthorize before profile discovery.");
   }
   const accessToken = dependencies.decryptConnectorToken(authorization.encryptedAccessToken);
   const expiresAt = authorization.accessTokenExpiresAt?.getTime() ?? null;
-  if (expiresAt === null || expiresAt > now.getTime() + TOKEN_EXPIRY_SKEW_MS) {
+  if (expiresAt !== null && expiresAt > now.getTime() + TOKEN_EXPIRY_SKEW_MS) {
     return { account, accessToken };
   }
   if (!authorization.encryptedRefreshToken) {
+    await markGitHubAccessNeedsReauth(userId, account, dependencies);
     throw new Error("GitHub authorization has expired. Reauthorize before profile discovery.");
   }
   const config = dependencies.getConnectorOAuthConfig("github" as OAuthConnectorProvider);
@@ -134,7 +136,9 @@ async function getGitHubAccessToken(
     userId,
     provider: "github",
     encryptedAccessToken: dependencies.encryptConnectorToken(refreshed.accessToken),
-    encryptedRefreshToken: refreshed.refreshToken ? dependencies.encryptConnectorToken(refreshed.refreshToken) : null,
+    encryptedRefreshToken: refreshed.refreshToken
+      ? dependencies.encryptConnectorToken(refreshed.refreshToken)
+      : authorization.encryptedRefreshToken,
     accessTokenExpiresAt: refreshed.expiresAt,
     tokenType: refreshed.tokenType,
     grantedScopes: JSON.stringify(refreshed.grantedScopes),

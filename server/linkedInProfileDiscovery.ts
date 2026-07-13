@@ -63,8 +63,10 @@ async function getLinkedInAccessToken(
   const authorization = await dependencies.getConnectorAuthorization(userId, "linkedin");
   if (
     !authorization ||
-    (authorization.accessTokenExpiresAt && authorization.accessTokenExpiresAt.getTime() <= now.getTime() + 60_000)
+    !authorization.accessTokenExpiresAt ||
+    authorization.accessTokenExpiresAt.getTime() <= now.getTime() + 60_000
   ) {
+    await markLinkedInAccessNeedsReauth(userId, account, dependencies);
     throw new Error("LinkedIn authorization has expired. Reauthorize before identity discovery.");
   }
 

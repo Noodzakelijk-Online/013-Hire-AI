@@ -185,6 +185,9 @@ describe("cloud resume discovery", () => {
     await expect(discoverCloudResumeDocuments(501, "google_drive", discoveryOptions(fetcher))).resolves.toEqual([]);
 
     expect(mocks.refreshConnectorAccessToken).toHaveBeenCalled();
+    expect(mocks.upsertConnectorAuthorization).toHaveBeenCalledWith(expect.objectContaining({
+      encryptedRefreshToken: "encrypted-refresh",
+    }));
     expect(fetcher).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ headers: { Authorization: "Bearer renewed-access-token" } })
