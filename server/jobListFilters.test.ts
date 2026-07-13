@@ -54,4 +54,26 @@ describe("canonical job list filters", () => {
 
     expect(jobs.some((job) => job.id === staleJob.id)).toBe(false);
   });
+
+  it("keeps a recently discovered listing without a provider posting date in a posted window", async () => {
+    const recentlyDiscoveredJob = {
+      ...sampleJobs[0],
+      id: 989904,
+      externalId: "undated-list-regression",
+      title: "Undated List Regression Engineer",
+      company: "Undated List Co",
+      postedDate: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    sampleJobs.push(recentlyDiscoveredJob);
+    injectedJobIds.push(recentlyDiscoveredJob.id);
+
+    const jobs = await getActiveJobs(250, 0, {
+      query: "Undated List Regression",
+      postedWithin: "1",
+    });
+
+    expect(jobs.some((job) => job.id === recentlyDiscoveredJob.id)).toBe(true);
+  });
 });

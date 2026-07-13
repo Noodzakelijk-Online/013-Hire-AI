@@ -455,7 +455,11 @@ function addJobSearchFilterConditions(conditions: SQL[], filters: JobSearchFilte
   if (filters.openHiringSupportOnly) conditions.push(eq(jobs.openHiringSupport, 1));
   if (filters.diversityFriendlyOnly) conditions.push(eq(jobs.diversityFriendly, 1));
   if (filters.postedWithin !== "all") {
-    conditions.push(gte(jobs.postedDate, new Date(now.getTime() - Number(filters.postedWithin) * 86400000)));
+    const postedAfter = new Date(now.getTime() - Number(filters.postedWithin) * 86400000);
+    conditions.push(or(
+      gte(jobs.postedDate, postedAfter),
+      and(isNull(jobs.postedDate), gte(jobs.createdAt, postedAfter))
+    )!);
   }
 
   if (filters.applicationProcess !== "all") {
