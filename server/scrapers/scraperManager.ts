@@ -21,6 +21,23 @@ export interface ScraperManagerOptions {
 
 const DEFAULT_SCRAPE_TIMEOUT_MS = 90_000;
 const DEFAULT_MAX_CONCURRENT_SCRAPES = 3;
+export const SCRAPER_FAILURE_MESSAGE = "Source scan could not complete.";
+export const SCRAPER_INITIALIZATION_FAILURE_MESSAGE = "Source initialization could not complete.";
+
+function sanitizeScrapeError(error: unknown): string {
+  const message = error instanceof Error ? error.message.trim() : "";
+
+  // This is generated locally, contains no provider-controlled detail, and gives
+  // operators useful context when a source exceeds its configured deadline.
+  return /^Scrape timed out after \d+ms$/.test(message)
+    ? message
+    : SCRAPER_FAILURE_MESSAGE;
+}
+
+function sanitizeScrapeErrors(errors: unknown): string[] {
+  if (!Array.isArray(errors)) return [];
+  return Array.from(new Set(errors.map((error) => sanitizeScrapeError(error))));
+}
 
 function isCurrentListing(job: { isActive?: number | null; expiryDate?: Date | null; updatedAt?: Date | null; createdAt?: Date | null }, now: Date) {
   return isJobListingCurrent(job, now);
@@ -91,10 +108,9 @@ export class ScraperManager {
           this.scrapers.set(platform.name, scraper);
           console.log(`[ScraperManager] Initialized scraper for ${platform.name}`);
         }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.initializationErrors.set(platform.name, message);
-        console.error(`[ScraperManager] Failed to initialize scraper for ${platform.name}:`, error);
+      } catch {
+        this.initializationErrors.set(platform.name, SCRAPER_INITIALIZATION_FAILURE_MESSAGE);
+        console.error(`[ScraperManager] Failed to initialize scraper for ${platform.name}.`);
       }
     }
 
@@ -151,12 +167,15 @@ export class ScraperManager {
           );
         }),
       ]);
-      await this.recordScrapeOutcome(platformName, scraper.getPlatformId(), result);
-      return result;
+      const sanitizedResult = {
+        ...result,
+        errors: sanitizeScrapeErrors(result.errors),
+      };
+      await this.recordScrapeOutcome(platformName, scraper.getPlatformId(), sanitizedResult);
+      return sanitizedResult;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(`[ScraperManager] Failed to scrape ${platformName}:`, error);
-      const result = { jobs: [], errors: [message], scrapedAt: new Date() };
+      const result = { jobs: [], errors: [sanitizeScrapeError(error)], scrapedAt: new Date() };
+      console.error(`[ScraperManager] Failed to scrape ${platformName}.`);
       await this.recordScrapeOutcome(platformName, scraper.getPlatformId(), result);
       return result;
     } finally {
@@ -170,9 +189,9 @@ export class ScraperManager {
         jobCount: result.jobs.length,
         errors: result.errors,
       });
-    } catch (error) {
+    } catch {
       // A metadata write must not convert a completed external scan into a failed one.
-      console.error(`[ScraperManager] Failed to record scrape outcome for ${platformName}:`, error);
+      console.error(`[ScraperManager] Failed to record scrape outcome for ${platformName}.`);
     }
   }
 
@@ -363,8 +382,8 @@ export class ScraperManager {
         // Insert new job
         await db.insert(jobs).values(job);
         saved++;
-      } catch (error) {
-        console.error(`[ScraperManager] Failed to save job:`, error);
+      } catch {
+        console.error("[ScraperManager] Failed to save job.");
         errors++;
       }
     }

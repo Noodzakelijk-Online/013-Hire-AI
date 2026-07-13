@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BaseScraper } from "./baseScraper";
-import { ScraperManager } from "./scraperManager";
+import { SCRAPER_FAILURE_MESSAGE, ScraperManager } from "./scraperManager";
 
 const mocks = vi.hoisted(() => ({
   ensureScraperPlatformCatalog: vi.fn(),
@@ -116,8 +116,29 @@ describe("scraper manager platform restrictions", () => {
 
     expect(mocks.recordPlatformScrapeOutcome).toHaveBeenCalledWith(3, {
       jobCount: 1,
-      errors: ["One feed page was unavailable"],
+      errors: [SCRAPER_FAILURE_MESSAGE],
     });
+  });
+
+  it("does not expose a provider failure from a source adapter", async () => {
+    const manager = new ScraperManager();
+    const failed = {
+      getPlatformId: () => 4,
+      scrape: vi.fn().mockRejectedValue(new Error("Bearer provider-secret")),
+    } as unknown as BaseScraper;
+    const scrapers = (manager as unknown as { scrapers: Map<string, BaseScraper> }).scrapers;
+    scrapers.set("Protected source", failed);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const result = await manager.scrapePlatform("Protected source");
+
+    expect(result.errors).toEqual([SCRAPER_FAILURE_MESSAGE]);
+    expect(mocks.recordPlatformScrapeOutcome).toHaveBeenCalledWith(4, {
+      jobCount: 0,
+      errors: [SCRAPER_FAILURE_MESSAGE],
+    });
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain("provider-secret");
+    errorSpy.mockRestore();
   });
 
   it("refreshes a re-observed source listing instead of leaving an expired record unavailable", async () => {

@@ -49,7 +49,7 @@ describe("job scraping scheduler", () => {
       lastRunOutcome: "partial",
       lastJobAlertsProcessed: 0,
       jobAlertRefreshFailed: false,
-      errors: ["We Work Remotely: Rate limited"],
+      errors: ["We Work Remotely: Source scan could not complete."],
     });
     expect(mocks.processJobAlerts).toHaveBeenCalledTimes(1);
   });
@@ -124,6 +124,29 @@ describe("job scraping scheduler", () => {
       totalFailedRuns: 1,
       lastRunOutcome: "failed",
     });
+  });
+
+  it("does not expose source or worker failure text in scheduler status", async () => {
+    mocks.runScrapingCycle.mockResolvedValueOnce({
+      totalSaved: 0,
+      platformResults: {
+        RemoteOK: { errors: ["Bearer provider-secret"] },
+      },
+    });
+    const scheduler = new JobScrapingScheduler({ intervalMinutes: 60, maxJobsPerRun: 25 });
+
+    await scheduler.runScraping();
+
+    expect(scheduler.getStatus().errors).toEqual([
+      "RemoteOK: Source scan could not complete.",
+    ]);
+    expect(JSON.stringify(scheduler.getStatus())).not.toContain("provider-secret");
+
+    mocks.runScrapingCycle.mockRejectedValueOnce(new Error("Bearer worker-secret"));
+    await scheduler.runScraping();
+
+    expect(scheduler.getStatus().errors).toEqual(["Scraping run could not complete."]);
+    expect(JSON.stringify(scheduler.getStatus())).not.toContain("worker-secret");
   });
 
   it("passes an explicit platform allowlist to a discovery run", async () => {

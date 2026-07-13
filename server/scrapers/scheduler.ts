@@ -1,6 +1,20 @@
 import { getScraperManager } from "./scraperManager";
 import { processJobAlerts } from "../applicationFeatures";
 
+const SCRAPER_FAILURE_MESSAGE = "Source scan could not complete.";
+const SCRAPE_CYCLE_FAILURE_MESSAGE = "Scraping run could not complete.";
+
+function sanitizePlatformErrors(errors: unknown): string[] {
+  if (!Array.isArray(errors)) return [];
+
+  return Array.from(new Set(errors.map((error) => {
+    const message = typeof error === "string" ? error.trim() : "";
+    return /^Scrape timed out after \d+ms$/.test(message)
+      ? message
+      : SCRAPER_FAILURE_MESSAGE;
+  })));
+}
+
 /**
  * Job Scraping Scheduler
  * Manages automated job scraping on a schedule
@@ -163,18 +177,18 @@ export class JobScrapingScheduler {
 
       // Collect errors from platform results
       for (const [platform, platformResult] of Object.entries(result.platformResults)) {
-        if (platformResult.errors.length > 0) {
-          this.status.errors.push(`${platform}: ${platformResult.errors.join(", ")}`);
+        const errors = sanitizePlatformErrors(platformResult.errors);
+        if (errors.length > 0) {
+          this.status.errors.push(`${platform}: ${errors.join(", ")}`);
         }
       }
 
       const duration = (Date.now() - startTime) / 1000;
       console.log(`[Scheduler] Scraping complete in ${duration.toFixed(1)}s. Saved ${result.totalSaved} jobs.`);
 
-    } catch (error) {
-      const errorMsg = `Scraping run failed: ${error}`;
-      console.error(`[Scheduler] ${errorMsg}`);
-      this.status.errors.push(errorMsg);
+    } catch {
+      console.error(`[Scheduler] ${SCRAPE_CYCLE_FAILURE_MESSAGE}`);
+      this.status.errors.push(SCRAPE_CYCLE_FAILURE_MESSAGE);
       this.status.totalFailedRuns++;
       this.status.lastRunOutcome = "failed";
       this.status.lastRunAt = new Date();
