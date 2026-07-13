@@ -3037,7 +3037,10 @@ export const appRouter = router({
         } = await import("./db");
         const { buildAutonomousPlan, parseAutonomousPreferences } = await import("./autonomousOrchestrator");
         const { getAutonomousEvidenceContext } = await import("./autonomousEvidence");
-        const { getAutonomousFollowUpReadiness } = await import("./applicationCampaigns");
+        const {
+          getActionReadyFollowUpNextActions,
+          getAutonomousFollowUpReadiness,
+        } = await import("./applicationCampaigns");
         const [jobList, profile, applications, decisions, approvals] = await Promise.all([
           getActiveJobs(250, 0),
           getUserProfile(ctx.user.id),
@@ -3070,14 +3073,7 @@ export const appRouter = router({
           plan,
           userId: ctx.user.id,
         });
-        const nextActions = plan.summary.followUpsDue > 0
-          ? [
-            ...plan.nextActions.filter((action) => !action.startsWith("Draft ")),
-            followUpReadiness.actionReadyCount > 0
-              ? `Draft ${followUpReadiness.actionReadyCount} timely follow-up message${followUpReadiness.actionReadyCount === 1 ? "" : "s"}.`
-              : `${followUpReadiness.blockedCount} follow-up candidate${followUpReadiness.blockedCount === 1 ? " is" : "s are"} held by an existing draft, response, or interview workflow.`,
-          ]
-          : plan.nextActions;
+        const nextActions = getActionReadyFollowUpNextActions(plan, followUpReadiness);
 
         return {
           ...plan,

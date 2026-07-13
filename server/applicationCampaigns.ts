@@ -364,6 +364,24 @@ export async function getAutonomousFollowUpReadiness({
   };
 }
 
+export function getActionReadyFollowUpNextActions(
+  plan: ReturnType<typeof buildAutonomousPlan>,
+  readiness: Pick<Awaited<ReturnType<typeof getAutonomousFollowUpReadiness>>, "actionReadyCount" | "blockedCount">
+): string[] {
+  if (plan.summary.followUpsDue === 0) return plan.nextActions;
+
+  const followUpAction = readiness.actionReadyCount > 0
+    ? `Draft ${readiness.actionReadyCount} timely follow-up message${readiness.actionReadyCount === 1 ? "" : "s"}.`
+    : readiness.blockedCount > 0
+      ? `${readiness.blockedCount} follow-up candidate${readiness.blockedCount === 1 ? " is" : "s are"} held by an existing draft, response, or interview workflow.`
+      : "";
+
+  return unique([
+    ...plan.nextActions.filter((action) => !action.startsWith("Draft ")),
+    followUpAction,
+  ]);
+}
+
 async function getInterviewPreparationQueue(userId: number) {
   const upcomingInterviews = await getUpcomingInterviews(userId);
   const items = await Promise.all(upcomingInterviews.map(async (item) => {
@@ -624,6 +642,11 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
   const successFeeComplianceQueue = getSuccessFeeComplianceQueue(successFees, offerAttributionReviews);
   const followUpDueQueue = followUpReadiness.actionReadyQueue;
   const approvedFollowUpsReadyToSend = followUpSuppressionState.approvedFollowUpsReadyToSend;
+  const actionReadyPlanSummary = {
+    ...plan.summary,
+    followUpsActionReady: followUpReadiness.actionReadyCount,
+    followUpsBlocked: followUpReadiness.blockedCount,
+  };
   const connectorReadinessQueue = getConnectorReadinessQueue({
     profile,
     applications,
@@ -652,7 +675,7 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
       ? "Resume the paused campaign before autonomous work can run."
       : "",
     ...readiness.nextActions,
-    ...plan.nextActions,
+    ...getActionReadyFollowUpNextActions(plan, followUpReadiness),
     approvals.length > 0 ? `Resolve ${approvals.length} pending user approval${approvals.length === 1 ? "" : "s"}.` : "",
     userAdminReviews.length > 0
       ? `${userAdminReviews.length} item${userAdminReviews.length === 1 ? " needs" : "s need"} admin operating review.`
@@ -719,7 +742,7 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
     autoApplyEligible: readiness.autoApplyEligible ? 1 : 0,
     blockers: JSON.stringify(blockers),
     nextActions: JSON.stringify(nextActions),
-    lastPlanSummary: JSON.stringify(plan.summary),
+    lastPlanSummary: JSON.stringify(actionReadyPlanSummary),
     lastSyncedAt: new Date(),
   }, { preserveStatus: true });
   const campaign = await getApplicationCampaign(userId);
@@ -742,13 +765,13 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
       autoApplyEligible: readiness.autoApplyEligible ? 1 : 0,
       blockers: JSON.stringify(blockers),
       nextActions: JSON.stringify(nextActions),
-      lastPlanSummary: JSON.stringify(plan.summary),
+      lastPlanSummary: JSON.stringify(actionReadyPlanSummary),
       lastSyncedAt: new Date(),
       createdAt: new Date(),
       updatedAt: new Date(),
     },
     readiness,
-    planSummary: plan.summary,
+    planSummary: actionReadyPlanSummary,
     followUpReadiness: {
       candidateCount: followUpReadiness.candidateCount,
       actionReadyCount: followUpReadiness.actionReadyCount,

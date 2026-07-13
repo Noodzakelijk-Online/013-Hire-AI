@@ -8,7 +8,7 @@ vi.mock("./resumeStorage", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./resumeStorage")>()),
   getActiveResume: mocks.getActiveResume,
 }));
-import { getUserOperatingLedger } from "./applicationCampaigns";
+import { getActionReadyFollowUpNextActions, getUserOperatingLedger } from "./applicationCampaigns";
 import { createFollowUp, markFollowUpSent, recordEmployerResponse, recordInterviewOutcome, scheduleInterview, updateInterviewStatus } from "./applicationFeatures";
 import {
   createAdminReviewItem,
@@ -205,11 +205,36 @@ describe("application campaign operating ledger", () => {
     expect(ledger.readiness.autoApplyEligible).toBe(true);
     expect(syncedCampaign?.readinessScore).toBe(ledger.readiness.score);
     expect(syncedCampaign?.autoApplyEligible).toBe(1);
+    expect(JSON.parse(syncedCampaign?.lastPlanSummary || "{}")).toMatchObject({
+      followUpsDue: 2,
+      followUpsActionReady: 1,
+      followUpsBlocked: 1,
+    });
     expect(ledger.nextActions.some((action) => action.includes("pending user approval"))).toBe(true);
+    expect(ledger.nextActions).toContain("Draft 1 timely follow-up message.");
+    expect(ledger.nextActions).not.toContain("Draft 2 timely follow-up messages.");
     expect(ledger.nextActions.some((action) => action.includes("Reply to 1 employer question"))).toBe(true);
     expect(ledger.nextActions.some((action) => action.includes("connector setup"))).toBe(true);
     expect(ledger.nextActions.some((action) => action.includes("autonomous evidence gate"))).toBe(true);
     expect(ledgerAfterResync.campaign.id).toBe(ledger.campaign.id);
+  });
+
+  it("replaces raw follow-up action counts with action-ready ledger state", () => {
+    const plan = {
+      summary: { followUpsDue: 3 },
+      nextActions: [
+        "Review 1 high-fit job before submission.",
+        "Draft 3 timely follow-up messages.",
+      ],
+    } as any;
+
+    expect(getActionReadyFollowUpNextActions(plan, {
+      actionReadyCount: 0,
+      blockedCount: 3,
+    })).toEqual([
+      "Review 1 high-fit job before submission.",
+      "3 follow-up candidates are held by an existing draft, response, or interview workflow.",
+    ]);
   });
 
   it("surfaces requested connector OAuth completion without claiming external access", async () => {
