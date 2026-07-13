@@ -346,6 +346,7 @@ const sampleDuplicateJobIds = new Set(sampleJobDuplicateLinks.map((link) => link
  */
 export async function getJobDiscoveryStatus() {
   const now = new Date();
+  const freshAfter = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const db = await getDb();
   if (!db) {
     const activePlatforms = samplePlatforms.filter((platform) => platform.isActive === 1);
@@ -357,10 +358,14 @@ export async function getJobDiscoveryStatus() {
     const successfulScrapes = activePlatforms
       .map((platform) => platform.lastScraped)
       .filter((lastScraped): lastScraped is Date => lastScraped instanceof Date);
+    const freshScrapes = successfulScrapes.filter((lastScraped) => lastScraped >= freshAfter);
 
     return {
       activeSources: activePlatforms.length,
       sourcesWithSuccessfulScrape: successfulScrapes.length,
+      sourcesWithFreshScrape: freshScrapes.length,
+      sourcesAwaitingFirstScrape: activePlatforms.length - successfulScrapes.length,
+      sourcesWithStaleScrape: successfulScrapes.length - freshScrapes.length,
       latestSuccessfulScrapeAt: successfulScrapes.length > 0
         ? new Date(Math.max(...successfulScrapes.map((lastScraped) => lastScraped.getTime())))
         : null,
@@ -385,10 +390,14 @@ export async function getJobDiscoveryStatus() {
   const successfulScrapes = activePlatforms
     .map((platform) => platform.lastScraped)
     .filter((lastScraped): lastScraped is Date => lastScraped instanceof Date);
+  const freshScrapes = successfulScrapes.filter((lastScraped) => lastScraped >= freshAfter);
 
   return {
     activeSources: activePlatforms.length,
     sourcesWithSuccessfulScrape: successfulScrapes.length,
+    sourcesWithFreshScrape: freshScrapes.length,
+    sourcesAwaitingFirstScrape: activePlatforms.length - successfulScrapes.length,
+    sourcesWithStaleScrape: successfulScrapes.length - freshScrapes.length,
     latestSuccessfulScrapeAt: successfulScrapes.length > 0
       ? new Date(Math.max(...successfulScrapes.map((lastScraped) => lastScraped.getTime())))
       : null,

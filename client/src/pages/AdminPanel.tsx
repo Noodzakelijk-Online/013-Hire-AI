@@ -497,6 +497,7 @@ export default function AdminPanel() {
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                     {[
                       ["Ready sources", scrapingStatus?.coverage.readySources ?? 0],
+                      ["Fresh sources", scrapingStatus?.coverage.freshReadySources ?? 0],
                       ["Registry sources", scrapingStatus?.coverage.registeredSources ?? 0],
                       ["Successful runs", scrapingStatus?.scheduler.totalRunsCompleted ?? 0],
                       ["Jobs saved", scrapingStatus?.scheduler.totalJobsScraped ?? 0],
@@ -675,6 +676,7 @@ export default function AdminPanel() {
                       <tr className="border-b border-slate-800 text-slate-400">
                         <th className="py-2 pr-4 text-left">Source</th>
                         <th className="py-2 pr-4 text-left">Readiness</th>
+                        <th className="py-2 pr-4 text-left">Freshness</th>
                         <th className="py-2 pr-4 text-left">Tier</th>
                         <th className="py-2 pr-4 text-left">Category</th>
                         <th className="py-2 text-left">Last successful scrape</th>
@@ -689,6 +691,19 @@ export default function AdminPanel() {
                               {platform.readiness === "ready" ? "Ready" : "Unavailable"}
                             </Badge>
                           </td>
+                          <td className="py-3 pr-4">
+                            <Badge variant="outline" className={platform.freshness === "fresh"
+                              ? "border-emerald-500/30 text-emerald-300"
+                              : platform.freshness === "stale"
+                                ? "border-amber-500/30 text-amber-300"
+                                : "border-slate-600 text-slate-400"}>
+                              {platform.freshness === "fresh"
+                                ? "Fresh"
+                                : platform.freshness === "stale"
+                                  ? "Stale"
+                                  : "Awaiting scan"}
+                            </Badge>
+                          </td>
                           <td className="py-3 pr-4 text-slate-400">{platform.tier}</td>
                           <td className="py-3 pr-4 text-slate-400">{platform.category || "General"}</td>
                           <td className="py-3 text-slate-300">
@@ -698,7 +713,7 @@ export default function AdminPanel() {
                       ))}
                       {(!scrapingStatus || scrapingStatus.platforms.length === 0) && (
                         <tr>
-                          <td colSpan={5} className="py-8 text-center text-slate-500">No active configured scraper sources.</td>
+                          <td colSpan={6} className="py-8 text-center text-slate-500">No active configured scraper sources.</td>
                         </tr>
                       )}
                     </tbody>

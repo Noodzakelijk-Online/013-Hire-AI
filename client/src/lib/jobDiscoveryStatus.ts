@@ -2,11 +2,15 @@ export type JobDiscoveryStatus =
   | "no_active_sources"
   | "awaiting_first_scan"
   | "stale"
+  | "partial"
   | "current";
 
 export interface JobDiscoveryStatusInput {
   activeSources?: number | null;
   sourcesWithSuccessfulScrape?: number | null;
+  sourcesWithFreshScrape?: number | null;
+  sourcesAwaitingFirstScrape?: number | null;
+  sourcesWithStaleScrape?: number | null;
   latestSuccessfulScrapeAt?: Date | string | null;
   canonicalJobs?: number | null;
 }
@@ -16,6 +20,9 @@ export interface JobDiscoveryStatusSummary {
   label: string;
   detail: string;
   activeSources: number;
+  sourcesWithFreshScrape: number;
+  sourcesAwaitingFirstScrape: number;
+  sourcesWithStaleScrape: number;
   canonicalJobs: number;
   latestSuccessfulScrapeAt: Date | null;
 }
@@ -43,8 +50,18 @@ export function getJobDiscoveryStatusSummary(
   const activeSources = positiveInteger(input?.activeSources);
   const canonicalJobs = positiveInteger(input?.canonicalJobs);
   const sourcesWithSuccessfulScrape = positiveInteger(input?.sourcesWithSuccessfulScrape);
+  const sourcesWithFreshScrape = positiveInteger(input?.sourcesWithFreshScrape);
+  const sourcesAwaitingFirstScrape = positiveInteger(input?.sourcesAwaitingFirstScrape);
+  const sourcesWithStaleScrape = positiveInteger(input?.sourcesWithStaleScrape);
   const latestSuccessfulScrapeAt = parseDate(input?.latestSuccessfulScrapeAt);
-  const base = { activeSources, canonicalJobs, latestSuccessfulScrapeAt };
+  const base = {
+    activeSources,
+    sourcesWithFreshScrape,
+    sourcesAwaitingFirstScrape,
+    sourcesWithStaleScrape,
+    canonicalJobs,
+    latestSuccessfulScrapeAt,
+  };
 
   if (activeSources === 0) {
     return {
@@ -64,7 +81,7 @@ export function getJobDiscoveryStatusSummary(
     };
   }
 
-  if (now.getTime() - latestSuccessfulScrapeAt.getTime() > STALE_AFTER_MS) {
+  if (sourcesWithFreshScrape === 0 || now.getTime() - latestSuccessfulScrapeAt.getTime() > STALE_AFTER_MS) {
     return {
       ...base,
       status: "stale",
@@ -73,10 +90,20 @@ export function getJobDiscoveryStatusSummary(
     };
   }
 
+  if (sourcesWithFreshScrape < activeSources) {
+    const sourcesNeedingAttention = activeSources - sourcesWithFreshScrape;
+    return {
+      ...base,
+      status: "partial",
+      label: "Discovery coverage partial",
+      detail: `${plural(sourcesWithFreshScrape, "source")} reported a successful scan in the last 24 hours. ${plural(sourcesNeedingAttention, "source")} ${sourcesNeedingAttention === 1 ? "needs" : "need"} a fresh scan before Hire.AI can represent discovery coverage as complete. ${plural(canonicalJobs, "canonical job")} remain available after deduplication.`,
+    };
+  }
+
   return {
     ...base,
     status: "current",
     label: "Discovery current",
-    detail: `${plural(sourcesWithSuccessfulScrape, "source")} reported a successful scan in the last 24 hours. ${plural(canonicalJobs, "canonical job")} are available after deduplication.`,
+    detail: `${plural(sourcesWithFreshScrape, "source")} reported a successful scan in the last 24 hours. ${plural(canonicalJobs, "canonical job")} are available after deduplication.`,
   };
 }

@@ -183,6 +183,9 @@ describe("Scraping API", () => {
         registeredSources: expect.any(Number),
         configuredActiveSources: expect.any(Number),
         readySources: expect.any(Number),
+        freshReadySources: expect.any(Number),
+        staleReadySources: expect.any(Number),
+        awaitingFirstScanReadySources: expect.any(Number),
         unconfiguredSources: expect.any(Number),
       });
       expect(result.coverage.readySources).toBe(result.availableScrapers);

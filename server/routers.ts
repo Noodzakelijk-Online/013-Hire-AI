@@ -2371,6 +2371,7 @@ export const appRouter = router({
       const { getAllJobPlatforms } = await import("./db");
       const manager = await getScraperManager();
       const supportedPlatforms = getSupportedPlatforms();
+      const freshAfter = new Date(Date.now() - 24 * 60 * 60 * 1000);
       const scheduler = getScheduler();
       const schedulerStatus = scheduler.getStatus();
       const configuredPlatforms = await getAllJobPlatforms();
@@ -2387,6 +2388,11 @@ export const appRouter = router({
           isActive: platform.isActive === 1,
           lastScraped: platform.lastScraped,
           readiness: initializedPlatformNames.has(platform.name) ? "ready" : "unavailable",
+          freshness: !platform.lastScraped
+            ? "awaiting_first_scan"
+            : platform.lastScraped >= freshAfter
+              ? "fresh"
+              : "stale",
           initializationError: manager.getInitializationError(platform.name),
         }));
       const inactiveConfiguredSources = configuredSupportedPlatforms.filter((platform) => platform.isActive !== 1);
@@ -2397,6 +2403,7 @@ export const appRouter = router({
         .filter((platform) => !supportedPlatforms.includes(platform.name))
         .map((platform) => platform.name);
       const readySources = platforms.filter((platform) => platform.readiness === "ready");
+      const freshReadySources = readySources.filter((platform) => platform.freshness === "fresh");
 
       return {
         initialized: true,
@@ -2408,6 +2415,9 @@ export const appRouter = router({
           registeredSources: supportedPlatforms.length,
           configuredActiveSources: platforms.length,
           readySources: readySources.length,
+          freshReadySources: freshReadySources.length,
+          staleReadySources: readySources.filter((platform) => platform.freshness === "stale").length,
+          awaitingFirstScanReadySources: readySources.filter((platform) => platform.freshness === "awaiting_first_scan").length,
           unavailableConfiguredSources: platforms.filter((platform) => platform.readiness === "unavailable").length,
           unconfiguredSources: unconfiguredSources.length,
           inactiveConfiguredSources: inactiveConfiguredSources.length,

@@ -39,12 +39,29 @@ describe("job discovery status summary", () => {
   it("reports current when a successful scan is within 24 hours", () => {
     const summary = getJobDiscoveryStatusSummary({
       activeSources: 2,
-      sourcesWithSuccessfulScrape: 1,
+      sourcesWithSuccessfulScrape: 2,
+      sourcesWithFreshScrape: 2,
       canonicalJobs: 11,
       latestSuccessfulScrapeAt: "2026-07-12T06:00:00.000Z",
     }, now);
 
     expect(summary.status).toBe("current");
     expect(summary.detail).toContain("successful scan in the last 24 hours");
+  });
+
+  it("does not represent one fresh source as complete multi-source coverage", () => {
+    const summary = getJobDiscoveryStatusSummary({
+      activeSources: 3,
+      sourcesWithSuccessfulScrape: 2,
+      sourcesWithFreshScrape: 1,
+      sourcesAwaitingFirstScrape: 1,
+      sourcesWithStaleScrape: 1,
+      canonicalJobs: 11,
+      latestSuccessfulScrapeAt: "2026-07-12T06:00:00.000Z",
+    }, now);
+
+    expect(summary.status).toBe("partial");
+    expect(summary.label).toBe("Discovery coverage partial");
+    expect(summary.detail).toContain("2 sources need a fresh scan");
   });
 });

@@ -488,6 +488,7 @@ export default function JobSearch() {
     no_active_sources: "border-red-500/40 bg-red-500/10 text-red-100",
     awaiting_first_scan: "border-amber-500/40 bg-amber-500/10 text-amber-100",
     stale: "border-orange-500/40 bg-orange-500/10 text-orange-100",
+    partial: "border-amber-500/40 bg-amber-500/10 text-amber-100",
     current: "border-emerald-500/40 bg-emerald-500/10 text-emerald-100",
   }[discoveryControl.status];
 
@@ -814,6 +815,9 @@ export default function JobSearch() {
                     </Badge>
                     <span className="text-xs font-medium">
                       {discoveryControl.activeSources} active source{discoveryControl.activeSources === 1 ? "" : "s"}
+                    </span>
+                    <span className="text-xs">
+                      {discoveryControl.sourcesWithFreshScrape} fresh in 24h
                     </span>
                     <span className="text-xs">
                       {discoveryControl.canonicalJobs} canonical job{discoveryControl.canonicalJobs === 1 ? "" : "s"}
