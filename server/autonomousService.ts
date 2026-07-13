@@ -27,6 +27,7 @@ import {
   getUserApplicationDecisions,
   getUserApplications,
   getUserProfile,
+  getUserSkills,
   renewAutonomousRunLease,
 } from "./db";
 import {
@@ -48,6 +49,7 @@ import { getActiveResume } from "./resumeStorage";
 import { buildEvidenceBoundApplicationDraft, type EvidenceBoundApplicationDraft } from "./applicationMaterialDraft";
 import { monitorInboxResponses } from "./inboxResponseMonitoring";
 import type { AutonomousJobSourceEligibility } from "./autonomousSourceEligibility";
+import { resolveProfileSkillEvidence } from "@shared/profileSkillEvidence";
 
 export interface AutonomousRunResult extends AutonomousPlan {
   queuedApplicationRecords: number;
@@ -389,13 +391,15 @@ async function executeAutonomousRun(
   overrides: AutonomousPreferences = {},
   assertLeaseActive: () => void = () => {}
 ): Promise<AutonomousRunResult> {
-  const [jobList, profile, applications, activeResume, existingDecisions] = await Promise.all([
+  const [jobList, profile, applications, activeResume, existingDecisions, skills] = await Promise.all([
     getActiveJobs(250, 0),
     getUserProfile(userId),
     getUserApplications(userId),
     getActiveResume(userId),
     getUserApplicationDecisions(userId),
+    getUserSkills(userId),
   ]);
+  const profileForMatching = resolveProfileSkillEvidence(profile, skills);
   const resolvedPreferences = {
     ...parseAutonomousPreferences(profile?.preferences),
     ...overrides,
@@ -407,7 +411,7 @@ async function executeAutonomousRun(
   );
   const plan = buildAutonomousPlan(
     jobList,
-    profile,
+    profileForMatching,
     applications as any,
     resolvedPreferences,
     Boolean(activeResume),
@@ -556,7 +560,7 @@ async function executeAutonomousRun(
         continue;
       }
       const job = currentJob.job;
-      const draft = buildEvidenceBoundApplicationDraft(profile, job);
+      const draft = buildEvidenceBoundApplicationDraft(profileForMatching, job);
       const result = await createApplication({
         userId,
         jobId: decision.jobId,
@@ -605,7 +609,7 @@ async function executeAutonomousRun(
         userId,
         applicationId,
         decision,
-        profile,
+        profile: profileForMatching,
         draft,
         resume: activeResume!,
         platformId: job.platformId,
@@ -634,7 +638,7 @@ async function executeAutonomousRun(
         continue;
       }
       const job = currentJob.job;
-      const draft = buildEvidenceBoundApplicationDraft(profile, job);
+      const draft = buildEvidenceBoundApplicationDraft(profileForMatching, job);
       const result = await createApplication({
         userId,
         jobId: decision.jobId,
@@ -683,7 +687,7 @@ async function executeAutonomousRun(
         userId,
         applicationId,
         decision,
-        profile,
+        profile: profileForMatching,
         draft,
         resume: activeResume!,
         platformId: job.platformId,
@@ -712,7 +716,7 @@ async function executeAutonomousRun(
         continue;
       }
       const job = currentJob.job;
-      const draft = buildEvidenceBoundApplicationDraft(profile, job);
+      const draft = buildEvidenceBoundApplicationDraft(profileForMatching, job);
       const result = await createApplication({
         userId,
         jobId: decision.jobId,
@@ -756,7 +760,7 @@ async function executeAutonomousRun(
         userId,
         applicationId,
         decision,
-        profile,
+        profile: profileForMatching,
         draft,
         resume: activeResume!,
         platformId: job.platformId,

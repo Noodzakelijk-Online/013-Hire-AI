@@ -10,6 +10,7 @@ import { eq } from "drizzle-orm";
 import { normalizeSalary, normalizeLocation, normalizeJobType, normalizeExperienceLevel, extractSkills, extractBenefits, getDeduplicator } from "./jobNormalization";
 import { isJobCurrentForAutonomousProcessing } from "./autonomousOrchestrator";
 import { isConnectorAuthorizationStale } from "@shared/profileEvidence";
+import { resolveProfileSkillEvidence } from "@shared/profileSkillEvidence";
 import { getRecentJobs, searchJobs, getDiscoveryStats, getSubscriptionManager } from "./realTimeDiscovery";
 import { successFeesRouter } from "./routers/successFees";
 import { adminRouter } from "./routers/admin";
@@ -1006,6 +1007,7 @@ export const appRouter = router({
           getJobById,
           getCanonicalJobId,
           getUserProfile,
+          getUserSkills,
           getUserApplications,
         } = await import("./db");
         const canonicalJobId = await getCanonicalJobId(input.jobId);
@@ -1036,7 +1038,11 @@ export const appRouter = router({
             message: applicationPreparationBlockMessage(preparationSafety),
           });
         }
-        const profile = await getUserProfile(ctx.user.id);
+        const [profile, skills] = await Promise.all([
+          getUserProfile(ctx.user.id),
+          getUserSkills(ctx.user.id),
+        ]);
+        const profileForMaterial = resolveProfileSkillEvidence(profile, skills);
         const { buildReviewApplicationMaterial } = await import("./applicationMaterialDraft");
         const existingApplication = (await getUserApplications(ctx.user.id)).find((application) =>
           application.jobId === input.jobId && (application.status || "pending") === "pending"
@@ -1046,7 +1052,7 @@ export const appRouter = router({
           : null;
         const material = existingArtifacts?.material
           ? null
-          : buildReviewApplicationMaterial(profile, job, input.coverLetter);
+          : buildReviewApplicationMaterial(profileForMaterial, job, input.coverLetter);
         const application = await createApplication({
           userId: ctx.user.id,
           jobId: input.jobId,
@@ -1074,7 +1080,7 @@ export const appRouter = router({
             customResume: input.customResume,
             customAnswers: material.customAnswers,
             claimsMade: material.claimsMade,
-            sourceProfileSnapshot: profileSnapshotForApplication(ctx.user, profile),
+            sourceProfileSnapshot: profileSnapshotForApplication(ctx.user, profileForMaterial),
           });
         }
         await createApplicationAttempt({
@@ -1161,6 +1167,7 @@ export const appRouter = router({
           getCanonicalJobId,
           getUserApplications,
           getUserProfile,
+          getUserSkills,
           listUserApplicationApprovals,
           resolveApplicationApproval,
           updateApplicationStatus,
@@ -1259,6 +1266,9 @@ export const appRouter = router({
         const profile = createsPreparedApplication
           ? await getUserProfile(ctx.user.id)
           : null;
+        const profileForMaterial = profile
+          ? resolveProfileSkillEvidence(profile, await getUserSkills(ctx.user.id))
+          : null;
         const { buildReviewApplicationMaterial } = await import("./applicationMaterialDraft");
         const existingPreparedApplication = createsPreparedApplication
           ? (await getUserApplications(ctx.user.id)).find((application) =>
@@ -1269,7 +1279,7 @@ export const appRouter = router({
           ? await getApplicationLedgerArtifacts(existingPreparedApplication.id, ctx.user.id).catch(() => null)
           : null;
         const material = createsPreparedApplication && !existingPreparedArtifacts?.material
-          ? buildReviewApplicationMaterial(profile, job)
+          ? buildReviewApplicationMaterial(profileForMaterial, job)
           : null;
 
         let applicationRecordId: number | null = null;
@@ -1303,7 +1313,7 @@ export const appRouter = router({
               coverLetter: material.coverLetter,
               customAnswers: material.customAnswers,
               claimsMade: material.claimsMade,
-              sourceProfileSnapshot: profileSnapshotForApplication(ctx.user, profile),
+              sourceProfileSnapshot: profileSnapshotForApplication(ctx.user, profileForMaterial),
             });
           }
           if (shouldCreateQueuedArtifacts) {
@@ -2365,14 +2375,18 @@ export const appRouter = router({
     calculateMatch: protectedProcedure
       .input(z.object({ jobId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        const { getUserProfile, getJobById, getCanonicalJobId } = await import("./db");
+        const { getUserProfile, getUserSkills, getJobById, getCanonicalJobId } = await import("./db");
         const { calculateJobMatch } = await import("./aiMatching");
         const { createJobMatch } = await import("./db");
 
-        const profile = await getUserProfile(ctx.user.id);
+        const [profile, skills] = await Promise.all([
+          getUserProfile(ctx.user.id),
+          getUserSkills(ctx.user.id),
+        ]);
         if (!profile) {
           throw new Error("User profile not found. Please complete your profile first.");
         }
+        const profileForMatching = resolveProfileSkillEvidence(profile, skills);
 
         const canonicalJobId = await getCanonicalJobId(input.jobId);
         if (canonicalJobId === null) throw new Error("Job not found");
@@ -2383,7 +2397,7 @@ export const appRouter = router({
         }
         assertJobCurrentForPreparation(job);
 
-        const match = await calculateJobMatch(profile, job);
+        const match = await calculateJobMatch(profileForMatching, job);
 
         // Save the match to database
         await createJobMatch({
@@ -2412,10 +2426,13 @@ export const appRouter = router({
     generateCoverLetter: protectedProcedure
       .input(z.object({ jobId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        const { getUserProfile, getJobById } = await import("./db");
+        const { getUserProfile, getUserSkills, getJobById } = await import("./db");
         const { generateCoverLetter } = await import("./aiMatching");
 
-        const profile = await getUserProfile(ctx.user.id);
+        const [profile, skills] = await Promise.all([
+          getUserProfile(ctx.user.id),
+          getUserSkills(ctx.user.id),
+        ]);
         if (!profile) {
           throw new Error("User profile not found");
         }
@@ -2425,7 +2442,7 @@ export const appRouter = router({
           throw new Error("Job not found");
         }
 
-        const coverLetter = await generateCoverLetter(profile, job);
+        const coverLetter = await generateCoverLetter(resolveProfileSkillEvidence(profile, skills), job);
         return { coverLetter };
       }),
     identifyDecisionMakers: protectedProcedure
@@ -3244,7 +3261,7 @@ export const appRouter = router({
         });
         const plan = buildAutonomousPlan(
           jobList,
-          profile,
+          evidenceContext.profileForMatching,
           applications as any,
           resolvedPreferences,
           evidenceContext.readiness.signals.hasResume,
@@ -3343,6 +3360,7 @@ export const appRouter = router({
         const {
           getJobById,
           getUserProfile,
+          getUserSkills,
           createApplication,
           createApplicationMaterial,
           createApplicationAttempt,
@@ -3378,7 +3396,10 @@ export const appRouter = router({
         }
 
         // Get user profile
-        const profile = await getUserProfile(ctx.user.id);
+        const [profile, skills] = await Promise.all([
+          getUserProfile(ctx.user.id),
+          getUserSkills(ctx.user.id),
+        ]);
         if (!profile) {
           throw new Error("User profile not found. Please complete your profile first.");
         }
@@ -3398,7 +3419,7 @@ export const appRouter = router({
           throw new Error(applicationPreparationBlockMessage(preparationSafety));
         }
         const profileForApplication = {
-          ...profile,
+          ...resolveProfileSkillEvidence(profile, skills),
           resumeUrl: activeResume.fileUrl,
           resumeFileKey: activeResume.fileKey,
         };
