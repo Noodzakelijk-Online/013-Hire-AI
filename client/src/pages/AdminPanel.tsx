@@ -5,6 +5,10 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { getAdminOperatingControlAction } from "@/lib/adminOperatingControl";
 import { getAdminOperatingSummary } from "@/lib/adminOperatingSummary";
 import { getAdminReviewEvidenceSummary } from "@/lib/adminReviewEvidence";
+import {
+  getScraperSourceHealthSummary,
+  getScraperSourceOutcomeCounts,
+} from "@/lib/scraperSourceHealth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -141,6 +145,7 @@ export default function AdminPanel() {
     enabled: user?.role === "admin",
     refetchInterval: 30_000,
   });
+  const scraperSourceOutcomes = getScraperSourceOutcomeCounts(scrapingStatus?.platforms);
 
   useEffect(() => {
     if (!scrapingStatus?.scheduler || scrapingScheduleInitialized.current) return;
@@ -498,10 +503,12 @@ export default function AdminPanel() {
                     {[
                       ["Ready sources", scrapingStatus?.coverage.readySources ?? 0],
                       ["Fresh sources", scrapingStatus?.coverage.freshReadySources ?? 0],
+                      ["Failed sources", scraperSourceOutcomes.failed],
+                      ["Partial sources", scraperSourceOutcomes.partial],
                       ["Registry sources", scrapingStatus?.coverage.registeredSources ?? 0],
                       ["Successful runs", scrapingStatus?.scheduler.totalRunsCompleted ?? 0],
                       ["Jobs saved", scrapingStatus?.scheduler.totalJobsScraped ?? 0],
-                      ["Source issues", (scrapingStatus?.scheduler.errors.length ?? 0) + (scrapingStatus?.coverage.unavailableConfiguredSources ?? 0)],
+                      ["Attention signals", scraperSourceOutcomes.issues + (scrapingStatus?.scheduler.errors.length ?? 0) + (scrapingStatus?.coverage.unavailableConfiguredSources ?? 0)],
                     ].map(([label, value]) => (
                       <div key={String(label)} className="rounded-md border border-slate-800 bg-slate-950/50 p-3">
                         <div className="text-xs text-slate-500">{label}</div>
@@ -540,6 +547,14 @@ export default function AdminPanel() {
                       <div className="font-medium">Configured sources need attention</div>
                       <p className="mt-1 text-xs text-amber-200">
                         {scrapingStatus?.coverage.unavailableConfiguredSources} active source{scrapingStatus?.coverage.unavailableConfiguredSources === 1 ? " is" : "s are"} configured but not ready. They are excluded from scheduling until initialization succeeds.
+                      </p>
+                    </div>
+                  )}
+                  {scraperSourceOutcomes.issues > 0 && (
+                    <div data-testid="admin-scraping-outcome-issues" className="mt-4 rounded-md border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
+                      <div className="font-medium">Latest source outcomes need attention</div>
+                      <p className="mt-1 text-xs text-red-200">
+                        {scraperSourceOutcomes.failed} failed and {scraperSourceOutcomes.partial} partial source{scraperSourceOutcomes.issues === 1 ? " is" : "s are"} recorded in the latest scan results. Inspect the source health table before relying on full discovery coverage.
                       </p>
                     </div>
                   )}
@@ -676,20 +691,32 @@ export default function AdminPanel() {
                       <tr className="border-b border-slate-800 text-slate-400">
                         <th className="py-2 pr-4 text-left">Source</th>
                         <th className="py-2 pr-4 text-left">Readiness</th>
+                        <th className="py-2 pr-4 text-left">Latest outcome</th>
                         <th className="py-2 pr-4 text-left">Freshness</th>
-                        <th className="py-2 pr-4 text-left">Tier</th>
-                        <th className="py-2 pr-4 text-left">Category</th>
+                        <th className="py-2 pr-4 text-left">Listings</th>
+                        <th className="py-2 pr-4 text-left">Last attempt</th>
                         <th className="py-2 text-left">Last successful scrape</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {scrapingStatus?.platforms.map((platform) => (
+                      {scrapingStatus?.platforms.map((platform) => {
+                        const sourceHealth = getScraperSourceHealthSummary(platform);
+                        return (
                         <tr key={platform.id} className="border-b border-slate-800/50">
-                          <td className="py-3 pr-4 font-medium text-white">{platform.name}</td>
+                          <td className="py-3 pr-4">
+                            <div className="font-medium text-white">{platform.name}</div>
+                            <div className="mt-0.5 text-xs text-slate-500">{platform.tier} · {platform.category || "General"}</div>
+                          </td>
                           <td className="py-3 pr-4">
                             <Badge variant="outline" className={platform.readiness === "ready" ? "border-emerald-500/30 text-emerald-300" : "border-amber-500/30 text-amber-300"}>
                               {platform.readiness === "ready" ? "Ready" : "Unavailable"}
                             </Badge>
+                          </td>
+                          <td className="py-3 pr-4">
+                            <Badge variant="outline" className={sourceHealth.tone}>{sourceHealth.label}</Badge>
+                            {sourceHealth.error && (
+                              <p className="mt-1 max-w-sm text-xs leading-5 text-red-200">{sourceHealth.error}</p>
+                            )}
                           </td>
                           <td className="py-3 pr-4">
                             <Badge variant="outline" className={platform.freshness === "fresh"
@@ -704,16 +731,21 @@ export default function AdminPanel() {
                                   : "Awaiting scan"}
                             </Badge>
                           </td>
-                          <td className="py-3 pr-4 text-slate-400">{platform.tier}</td>
-                          <td className="py-3 pr-4 text-slate-400">{platform.category || "General"}</td>
+                          <td className="py-3 pr-4 text-slate-300">
+                            {sourceHealth.jobCount === null ? "No recorded run" : sourceHealth.jobCount}
+                          </td>
+                          <td className="py-3 pr-4 text-slate-300">
+                            {platform.lastScrapeAttemptedAt ? new Date(platform.lastScrapeAttemptedAt).toLocaleString() : "No recorded attempt"}
+                          </td>
                           <td className="py-3 text-slate-300">
                             {platform.lastScraped ? new Date(platform.lastScraped).toLocaleString() : "Awaiting first successful scrape"}
                           </td>
                         </tr>
-                      ))}
+                      );
+                      })}
                       {(!scrapingStatus || scrapingStatus.platforms.length === 0) && (
                         <tr>
-                          <td colSpan={6} className="py-8 text-center text-slate-500">No active configured scraper sources.</td>
+                          <td colSpan={7} className="py-8 text-center text-slate-500">No active configured scraper sources.</td>
                         </tr>
                       )}
                     </tbody>
