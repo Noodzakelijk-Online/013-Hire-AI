@@ -9,6 +9,11 @@ export interface EvidenceBoundApplicationDraft {
   claimsMade: string;
 }
 
+export interface ReviewApplicationMaterial extends EvidenceBoundApplicationDraft {
+  materialSource: "evidence_bound_application_draft" | "user_provided_cover_letter";
+  userProvidedCoverLetter: boolean;
+}
+
 function splitEvidence(value?: string | null) {
   return Array.from(new Set(
     (value || "")
@@ -73,6 +78,62 @@ export function buildEvidenceBoundApplicationDraft(
       supportedSkills: listedSkills,
       matchedSkills,
       note: "This review-only draft names only skills recorded in the candidate profile. It makes no claims about qualifications, credentials, work authorization, salary history, or employment status.",
+    }),
+  };
+}
+
+/**
+ * Keeps every review-ready application material record explicit about where
+ * its wording came from. Candidate-authored letters remain available, but
+ * Hire.AI does not represent their claims as automatically verified.
+ */
+export function buildReviewApplicationMaterial(
+  profile: ProfileEvidence,
+  job: JobEvidence,
+  userProvidedCoverLetter?: string | null
+): ReviewApplicationMaterial {
+  const evidenceBoundDraft = buildEvidenceBoundApplicationDraft(profile, job);
+  const coverLetter = userProvidedCoverLetter?.trim();
+
+  if (!coverLetter) {
+    return {
+      ...evidenceBoundDraft,
+      materialSource: "evidence_bound_application_draft",
+      userProvidedCoverLetter: false,
+    };
+  }
+
+  const customAnswers = JSON.parse(evidenceBoundDraft.customAnswers) as Record<string, unknown>;
+  const claimsMade = JSON.parse(evidenceBoundDraft.claimsMade) as Record<string, unknown>;
+  const existingNotes = Array.isArray(customAnswers.automationNotes)
+    ? customAnswers.automationNotes.filter((note): note is string => typeof note === "string")
+    : [];
+  const existingBlockers = Array.isArray(claimsMade.blockers)
+    ? claimsMade.blockers.filter((blocker): blocker is string => typeof blocker === "string")
+    : [];
+
+  return {
+    coverLetter,
+    materialSource: "user_provided_cover_letter",
+    userProvidedCoverLetter: true,
+    customAnswers: JSON.stringify({
+      ...customAnswers,
+      source: "user_provided_cover_letter",
+      draftType: "user_authored",
+      automationNotes: [
+        ...existingNotes,
+        "The candidate supplied this cover letter; Hire.AI did not automatically verify every claim in it.",
+        "User review is required before any external application submission.",
+      ],
+    }),
+    claimsMade: JSON.stringify({
+      ...claimsMade,
+      supportedClaimsOnly: false,
+      blockers: [
+        ...existingBlockers,
+        "Candidate-authored cover letter requires claim-by-claim review before external submission.",
+      ],
+      note: "This cover letter was supplied by the candidate. Hire.AI did not verify every claim; compare it with the profile and resume before external submission.",
     }),
   };
 }

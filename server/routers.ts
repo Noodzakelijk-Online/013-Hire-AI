@@ -929,6 +929,8 @@ export const appRouter = router({
           getApplicationLedgerArtifacts,
           getJobById,
           getCanonicalJobId,
+          getUserProfile,
+          getUserApplications,
         } = await import("./db");
         const canonicalJobId = await getCanonicalJobId(input.jobId);
         if (canonicalJobId === null) {
@@ -958,32 +960,47 @@ export const appRouter = router({
             message: applicationPreparationBlockMessage(preparationSafety),
           });
         }
+        const profile = await getUserProfile(ctx.user.id);
+        const { buildReviewApplicationMaterial } = await import("./applicationMaterialDraft");
+        const existingApplication = (await getUserApplications(ctx.user.id)).find((application) =>
+          application.jobId === input.jobId && (application.status || "pending") === "pending"
+        );
+        const existingArtifacts = existingApplication
+          ? await getApplicationLedgerArtifacts(existingApplication.id, ctx.user.id).catch(() => null)
+          : null;
+        const material = existingArtifacts?.material
+          ? null
+          : buildReviewApplicationMaterial(profile, job, input.coverLetter);
         const application = await createApplication({
           userId: ctx.user.id,
           jobId: input.jobId,
-          coverLetter: input.coverLetter,
+          coverLetter: material?.coverLetter,
           customResume: input.customResume,
           notes: input.notes || "Application prepared and queued for review.",
           status: "pending",
         });
         const applicationId = Number(application.insertId);
-        const existingArtifacts = application.existing === true
+        const artifacts = existingArtifacts ?? (application.existing === true
           ? await getApplicationLedgerArtifacts(applicationId, ctx.user.id).catch(() => null)
-          : null;
-        const hasPreparedApplication = existingArtifacts?.attempts.some((attempt) =>
+          : null);
+        const hasPreparedApplication = artifacts?.attempts.some((attempt) =>
           attempt.attemptType === "prepare" &&
           ["prepared", "review_required"].includes(attempt.status || "prepared")
         ) === true;
         if (application.existing === true && hasPreparedApplication) {
           return { success: true, applicationRecordId: applicationId, existing: true };
         }
-        await createApplicationMaterial({
-          applicationId,
-          resumeId: activeResume.id,
-          coverLetter: input.coverLetter,
-          customResume: input.customResume,
-          sourceProfileSnapshot: profileSnapshotForApplication(ctx.user),
-        });
+        if (material) {
+          await createApplicationMaterial({
+            applicationId,
+            resumeId: activeResume.id,
+            coverLetter: material.coverLetter,
+            customResume: input.customResume,
+            customAnswers: material.customAnswers,
+            claimsMade: material.claimsMade,
+            sourceProfileSnapshot: profileSnapshotForApplication(ctx.user, profile),
+          });
+        }
         await createApplicationAttempt({
           applicationId,
           userId: ctx.user.id,
@@ -1007,6 +1024,8 @@ export const appRouter = router({
             status: "pending",
             reviewRequired: true,
             resume: { id: activeResume.id, version: activeResume.version },
+            materialSource: material?.materialSource ?? "existing_application_material",
+            userProvidedCoverLetter: material?.userProvidedCoverLetter ?? null,
           }),
           riskLevel: "medium",
         });
@@ -1036,6 +1055,8 @@ export const appRouter = router({
             status: "pending",
             resumeId: activeResume.id,
             resumeVersion: activeResume.version,
+            materialSource: material?.materialSource ?? "existing_application_material",
+            userProvidedCoverLetter: material?.userProvidedCoverLetter ?? null,
           }),
         });
         return { success: true, applicationRecordId: applicationId };
@@ -1063,6 +1084,7 @@ export const appRouter = router({
           getJobById,
           getCanonicalJobId,
           getUserApplications,
+          getUserProfile,
           listUserApplicationApprovals,
           resolveApplicationApproval,
           updateApplicationStatus,
@@ -1157,6 +1179,21 @@ export const appRouter = router({
             message: "An active versioned resume is required before Hire.AI can queue an application for review.",
           });
         }
+        const profile = createsPreparedApplication
+          ? await getUserProfile(ctx.user.id)
+          : null;
+        const { buildReviewApplicationMaterial } = await import("./applicationMaterialDraft");
+        const existingPreparedApplication = createsPreparedApplication
+          ? (await getUserApplications(ctx.user.id)).find((application) =>
+            application.jobId === input.jobId && (application.status || "pending") === "pending"
+          )
+          : null;
+        const existingPreparedArtifacts = existingPreparedApplication
+          ? await getApplicationLedgerArtifacts(existingPreparedApplication.id, ctx.user.id).catch(() => null)
+          : null;
+        const material = createsPreparedApplication && !existingPreparedArtifacts?.material
+          ? buildReviewApplicationMaterial(profile, job)
+          : null;
 
         let applicationRecordId: number | null = null;
         if (input.decision === "apply" || input.decision === "review" || input.decision === "manual_apply") {
@@ -1164,6 +1201,7 @@ export const appRouter = router({
             userId: ctx.user.id,
             jobId: input.jobId,
             status: "pending",
+            coverLetter: material?.coverLetter,
             notes: [
               `User decision: ${input.decision}.`,
               input.decisionReason,
@@ -1172,20 +1210,25 @@ export const appRouter = router({
             isAutoApplied: 0,
           });
           applicationRecordId = Number(application.insertId);
-          const existingArtifacts = application.existing === true
+          const artifacts = existingPreparedArtifacts ?? (application.existing === true
             ? await getApplicationLedgerArtifacts(applicationRecordId, ctx.user.id).catch(() => null)
-            : null;
-          const hasQueuedDecisionAttempt = existingArtifacts?.attempts.some((attempt) =>
+            : null);
+          const hasQueuedDecisionAttempt = artifacts?.attempts.some((attempt) =>
             attempt.attemptType === "prepare" &&
             ["prepared", "review_required"].includes(attempt.status || "prepared") &&
             (attempt.confirmationText || "").includes("Application queued from")
           ) === true;
           const shouldCreateQueuedArtifacts = application.existing !== true || !hasQueuedDecisionAttempt;
-          await createApplicationMaterial({
-            applicationId: applicationRecordId,
-            resumeId: activeResume!.id,
-            sourceProfileSnapshot: profileSnapshotForApplication(ctx.user),
-          });
+          if (material) {
+            await createApplicationMaterial({
+              applicationId: applicationRecordId,
+              resumeId: activeResume!.id,
+              coverLetter: material.coverLetter,
+              customAnswers: material.customAnswers,
+              claimsMade: material.claimsMade,
+              sourceProfileSnapshot: profileSnapshotForApplication(ctx.user, profile),
+            });
+          }
           if (shouldCreateQueuedArtifacts) {
             await createApplicationAttempt({
               applicationId: applicationRecordId,
@@ -1214,6 +1257,7 @@ export const appRouter = router({
                 status: "pending",
                 reviewRequired: true,
                 resume: { id: activeResume!.id, version: activeResume!.version },
+                materialSource: material?.materialSource ?? null,
               }),
               riskLevel: input.riskLevel === "high" ? "high" : "medium",
             });
@@ -1256,6 +1300,7 @@ export const appRouter = router({
                 source: "applications.decide",
                 resumeId: activeResume!.id,
                 resumeVersion: activeResume!.version,
+                materialSource: material?.materialSource ?? null,
               }),
             });
           }
@@ -2972,6 +3017,8 @@ export const appRouter = router({
           createAdminReviewItem,
           createApplicationApproval,
           getCanonicalJobId,
+          getApplicationLedgerArtifacts,
+          getUserApplications,
         } = await import("./db");
         const {
           applyToJob,
@@ -2981,6 +3028,7 @@ export const appRouter = router({
         } = await import(
           "./applicationAutomation"
         );
+        const { buildReviewApplicationMaterial } = await import("./applicationMaterialDraft");
 
         // Get job details
         const canonicalJobId = await getCanonicalJobId(input.jobId);
@@ -3021,9 +3069,19 @@ export const appRouter = router({
           resumeUrl: activeResume.fileUrl,
           resumeFileKey: activeResume.fileKey,
         };
+        const existingApplication = (await getUserApplications(ctx.user.id)).find((application) =>
+          application.jobId === input.jobId && (application.status || "pending") === "pending"
+        );
+        const existingArtifacts = existingApplication
+          ? await getApplicationLedgerArtifacts(existingApplication.id, ctx.user.id).catch(() => null)
+          : null;
+        const material = existingArtifacts?.material
+          ? null
+          : buildReviewApplicationMaterial(profileForApplication, job, input.coverLetter);
+        const coverLetter = material?.coverLetter ?? existingArtifacts?.material?.coverLetter ?? undefined;
 
         // Prepare application data
-        const applicationData = prepareApplicationData(ctx.user, profileForApplication, input.coverLetter);
+        const applicationData = prepareApplicationData(ctx.user, profileForApplication, coverLetter);
         if (!applicationData) {
           throw new Error("Unable to prepare application data. Please ensure your profile is complete.");
         }
@@ -3047,18 +3105,24 @@ export const appRouter = router({
           jobId: input.jobId,
           status: submissionRecorded ? "applied" : "pending",
           appliedDate: submissionRecorded ? new Date() : undefined,
-          coverLetter: input.coverLetter,
+          coverLetter: material?.coverLetter,
           notes: result.message,
           isAutoApplied: submissionRecorded ? 1 : 0,
         });
         const applicationRecordId = Number(applicationRecord.insertId);
-        await createApplicationMaterial({
-          applicationId: applicationRecordId,
-          resumeId: activeResume.id,
-          coverLetter: input.coverLetter,
-          customAnswers: applicationData.answers ? JSON.stringify(applicationData.answers) : undefined,
-          sourceProfileSnapshot: profileSnapshotForApplication(ctx.user, profileForApplication),
-        });
+        const artifacts = existingArtifacts ?? (applicationRecord.existing === true
+          ? await getApplicationLedgerArtifacts(applicationRecordId, ctx.user.id).catch(() => null)
+          : null);
+        if (material && !artifacts?.material) {
+          await createApplicationMaterial({
+            applicationId: applicationRecordId,
+            resumeId: activeResume.id,
+            coverLetter: material.coverLetter,
+            customAnswers: material.customAnswers,
+            claimsMade: material.claimsMade,
+            sourceProfileSnapshot: profileSnapshotForApplication(ctx.user, profileForApplication),
+          });
+        }
         await createApplicationAttempt({
           applicationId: applicationRecordId,
           userId: ctx.user.id,
@@ -3102,6 +3166,8 @@ export const appRouter = router({
               fileName: activeResume.fileName,
               fileKey: activeResume.fileKey,
             },
+            materialSource: material?.materialSource ?? "existing_application_material",
+            userProvidedCoverLetter: material?.userProvidedCoverLetter ?? null,
           }),
           riskLevel: submissionRecorded ? "high" : result.reviewRequired ? "medium" : "low",
         });
@@ -3133,6 +3199,8 @@ export const appRouter = router({
               submissionAttempted: result.submissionAttempted,
               resumeId: activeResume.id,
               resumeVersion: activeResume.version,
+              materialSource: material?.materialSource ?? "existing_application_material",
+              userProvidedCoverLetter: material?.userProvidedCoverLetter ?? null,
               source: "automation.applyToJob",
             }),
           });

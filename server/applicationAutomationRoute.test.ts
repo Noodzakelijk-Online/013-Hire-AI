@@ -118,7 +118,17 @@ describe("automation application preparation route", () => {
       attemptType: "prepare",
       status: "review_required",
     });
-    expect(artifacts.material).toMatchObject({ resumeId: 73501 });
+    expect(artifacts.material).toMatchObject({
+      resumeId: 73501,
+      coverLetter: expect.stringContaining("My profile lists TypeScript, React, Node.js"),
+    });
+    expect(JSON.parse(artifacts.material!.claimsMade!)).toMatchObject({
+      supportedClaimsOnly: true,
+      supportedSkills: expect.arrayContaining(["TypeScript", "React", "Node.js"]),
+    });
+    expect(JSON.parse(artifacts.material!.sourceProfileSnapshot!).profile).toMatchObject({
+      skills: "TypeScript, React, Node.js",
+    });
     expect(
       auditEvents.some(
         event => {
@@ -145,6 +155,91 @@ describe("automation application preparation route", () => {
           approval.approvalType === "application_submission"
       )
     ).toBe(true);
+  });
+
+  it("uses a grounded draft for direct preparation and records the source profile snapshot", async () => {
+    const userId = 98406;
+    await upsertUserProfile({
+      userId,
+      resumeUrl: "https://example.com/resume.pdf",
+      skills: "TypeScript, React, Node.js",
+      experience: "Five years building production web applications.",
+      desiredJobTypes: "Frontend Engineer",
+      desiredLocations: "Remote, worldwide",
+    });
+    const caller = appRouter.createCaller(createContext(userId));
+
+    const result = await caller.applications.create({ jobId: 2 });
+    const artifacts = await getApplicationLedgerArtifacts(result.applicationRecordId, userId);
+
+    expect(artifacts.material?.coverLetter).toContain("My profile lists");
+    expect(JSON.parse(artifacts.material!.customAnswers!)).toMatchObject({
+      source: "evidence_bound_application_draft",
+      draftType: "profile_grounded",
+    });
+    expect(JSON.parse(artifacts.material!.claimsMade!)).toMatchObject({
+      supportedClaimsOnly: true,
+    });
+    expect(JSON.parse(artifacts.material!.sourceProfileSnapshot!).profile).toMatchObject({
+      skills: "TypeScript, React, Node.js",
+      desiredJobTypes: "Frontend Engineer",
+    });
+  });
+
+  it("retains a candidate-authored letter but marks its claims unverified", async () => {
+    const userId = 98407;
+    await upsertUserProfile({
+      userId,
+      resumeUrl: "https://example.com/resume.pdf",
+      skills: "TypeScript, React, Node.js",
+      experience: "Five years building production web applications.",
+      desiredJobTypes: "Frontend Engineer",
+      desiredLocations: "Remote, worldwide",
+    });
+    const caller = appRouter.createCaller(createContext(userId));
+    const coverLetter = "I have every certification required for this role.";
+
+    const result = await caller.applications.create({ jobId: 3, coverLetter });
+    const artifacts = await getApplicationLedgerArtifacts(result.applicationRecordId, userId);
+    const claims = JSON.parse(artifacts.material!.claimsMade!);
+
+    expect(artifacts.material?.coverLetter).toBe(coverLetter);
+    expect(JSON.parse(artifacts.material!.customAnswers!)).toMatchObject({
+      source: "user_provided_cover_letter",
+      draftType: "user_authored",
+    });
+    expect(claims.supportedClaimsOnly).toBe(false);
+    expect(claims.blockers).toContain(
+      "Candidate-authored cover letter requires claim-by-claim review before external submission."
+    );
+  });
+
+  it("does not replace existing candidate material when a job is re-queued", async () => {
+    const userId = 98408;
+    await upsertUserProfile({
+      userId,
+      resumeUrl: "https://example.com/resume.pdf",
+      skills: "TypeScript, React, Node.js",
+      experience: "Five years building production web applications.",
+      desiredJobTypes: "Frontend Engineer",
+      desiredLocations: "Remote, worldwide",
+    });
+    const caller = appRouter.createCaller(createContext(userId));
+    const coverLetter = "My candidate-authored letter must remain the source of truth.";
+    const prepared = await caller.applications.create({ jobId: 4, coverLetter });
+
+    await caller.applications.decide({
+      jobId: 4,
+      decision: "review",
+      decisionReason: "Keep this application in the review queue.",
+      reviewRequired: true,
+    });
+    const artifacts = await getApplicationLedgerArtifacts(prepared.applicationRecordId, userId);
+
+    expect(artifacts.material?.coverLetter).toBe(coverLetter);
+    expect(JSON.parse(artifacts.material!.customAnswers!)).toMatchObject({
+      source: "user_provided_cover_letter",
+    });
   });
 
   it("refuses preparation when the user has no active versioned resume", async () => {

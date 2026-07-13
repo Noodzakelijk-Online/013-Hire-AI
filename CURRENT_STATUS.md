@@ -22,7 +22,7 @@ However, several public-facing claims and status documents previously described 
 
 ### Automated application submission
 
-The active `server/applicationAutomation.ts` implementation currently returns a simulated failure and explicitly says the feature is not implemented. There is also separate browser-automation scaffolding, but it is not yet wired as a safe, tested, production submission pipeline.
+The active `server/applicationAutomation.ts` implementation returns a controlled review-only preparation result. It records no employer-portal submission and requires the user to complete the employer handoff and record deterministic confirmation evidence. Separate browser-automation scaffolding remains disabled because it is not a safe, tested production submission pipeline.
 
 Until this is fixed and tested, the product should be described as an **AI-assisted job search and application preparation platform**, not as a fully autonomous auto-apply platform.
 
