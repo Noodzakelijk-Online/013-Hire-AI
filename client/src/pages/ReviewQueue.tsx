@@ -476,6 +476,7 @@ export default function ReviewQueue() {
                           <QueueActionStrip
                             summary={getQueueAction("evidence_gate", item)}
                             onOpen={setLocation}
+                            showAction={false}
                           />
                           <Button variant="outline" size="sm" onClick={() => setLocation(item.route || "/profile")}>
                             <User className="mr-2 h-4 w-4" />
@@ -521,6 +522,7 @@ export default function ReviewQueue() {
                           <QueueActionStrip
                             summary={getQueueAction("connector_readiness", item)}
                             onOpen={setLocation}
+                            showAction={false}
                           />
                           <Button variant="outline" size="sm" onClick={() => setLocation("/profile")}>
                             <User className="mr-2 h-4 w-4" />
@@ -584,6 +586,7 @@ export default function ReviewQueue() {
                             <QueueActionStrip
                               summary={actionSummary}
                               onOpen={setLocation}
+                              showAction={false}
                             />
                             <div className="flex flex-wrap gap-2">
                               <Button
@@ -659,6 +662,7 @@ export default function ReviewQueue() {
                           <QueueActionStrip
                             summary={getQueueAction("interview_scheduling", item)}
                             onOpen={setLocation}
+                            showAction={false}
                           />
                           <Button
                             variant="outline"
@@ -710,6 +714,7 @@ export default function ReviewQueue() {
                           <QueueActionStrip
                             summary={getQueueAction("interview_preparation", item)}
                             onOpen={setLocation}
+                            showAction={false}
                           />
                           <div className="flex flex-wrap gap-2">
                             <Button
@@ -772,6 +777,7 @@ export default function ReviewQueue() {
                           <QueueActionStrip
                             summary={getQueueAction("interview_outcome", item)}
                             onOpen={setLocation}
+                            showAction={false}
                           />
                           <Button
                             variant="outline"
@@ -820,6 +826,7 @@ export default function ReviewQueue() {
                           <QueueActionStrip
                             summary={getQueueAction("employer_reply", item)}
                             onOpen={setLocation}
+                            showAction={false}
                           />
                           <Button
                             variant="outline"
@@ -871,6 +878,7 @@ export default function ReviewQueue() {
                           <QueueActionStrip
                             summary={getQueueAction("follow_up", item)}
                             onOpen={setLocation}
+                            showAction={false}
                           />
                           <Button
                             variant="outline"
@@ -934,6 +942,7 @@ export default function ReviewQueue() {
                           <QueueActionStrip
                             summary={getQueueAction("success_fee", item)}
                             onOpen={setLocation}
+                            showAction={false}
                           />
                           <Button
                             variant="outline"
@@ -988,6 +997,7 @@ export default function ReviewQueue() {
                     <QueueActionStrip
                       summary={getQueueAction("profile_gap", {})}
                       onOpen={setLocation}
+                      showAction={false}
                       className="mt-4"
                     />
                   )}
@@ -1034,6 +1044,7 @@ export default function ReviewQueue() {
                             <QueueActionStrip
                               summary={getQueueAction("admin_review", review)}
                               onOpen={setLocation}
+                              showAction={false}
                             />
                             <Button variant="outline" size="sm" onClick={() => setLocation("/admin")}>
                               <Shield className="mr-2 h-4 w-4" />
@@ -1165,10 +1176,12 @@ function QueueActionStrip({
   summary,
   onOpen,
   className = "",
+  showAction = true,
 }: {
   summary: ReviewQueueActionSummary;
   onOpen: (route: string) => void;
   className?: string;
+  showAction?: boolean;
 }) {
   const externalLabel = summary.externalAction === "manual_handoff"
     ? "Manual handoff"
@@ -1195,15 +1208,17 @@ function QueueActionStrip({
           </div>
           <p className="mt-2 text-sm text-muted-foreground">{summary.detail}</p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="shrink-0"
-          onClick={() => onOpen(summary.route)}
-        >
-          <ClipboardCheck className="mr-2 h-4 w-4" />
-          {summary.cta}
-        </Button>
+        {showAction && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            onClick={() => onOpen(summary.route)}
+          >
+            <ClipboardCheck className="mr-2 h-4 w-4" />
+            {summary.cta}
+          </Button>
+        )}
       </div>
     </div>
   );
