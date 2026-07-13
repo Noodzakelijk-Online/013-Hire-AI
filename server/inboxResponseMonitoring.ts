@@ -62,9 +62,11 @@ async function recordMonitoringAudit(
 ) {
   try {
     await dependencies.createAuditEvent(input);
-    return null;
-  } catch (error) {
-    return error instanceof Error ? error.message : String(error);
+    return true;
+  } catch {
+    // Connector and persistence exceptions can contain authorization details.
+    // The caller records only a phase-specific diagnostic in the run result.
+    return false;
   }
 }
 
@@ -87,10 +89,9 @@ export async function monitorInboxResponses(
   let accounts: Awaited<ReturnType<typeof listUserConnectorAccounts>>;
   try {
     accounts = await dependencies.listUserConnectorAccounts(userId);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+  } catch {
     result.monitoringFailures = 1;
-    result.errors.push(`accounts: ${message}`);
+    result.errors.push("accounts: unable to load connector accounts");
     return result;
   }
   const providers = (["gmail", "outlook"] as const).filter((provider) => {
@@ -136,7 +137,7 @@ export async function monitorInboxResponses(
           `${provider}: ${persistenceFailures} inbox response candidate${persistenceFailures === 1 ? "" : "s"} could not be persisted`
         );
       }
-      const auditError = await recordMonitoringAudit(dependencies, {
+      const auditRecorded = await recordMonitoringAudit(dependencies, {
         userId,
         entityType: "user",
         entityId: userId,
@@ -153,14 +154,13 @@ export async function monitorInboxResponses(
         }),
         riskLevel: persistenceFailures > 0 ? "medium" : "low",
       });
-      if (auditError) {
+      if (!auditRecorded) {
         result.monitoringFailures += 1;
-        result.errors.push(`${provider}: unable to record inbox monitoring audit (${auditError})`);
+        result.errors.push(`${provider}: unable to record inbox monitoring audit`);
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+    } catch {
       result.monitoringFailures += 1;
-      result.errors.push(`${provider}: ${message}`);
+      result.errors.push(`${provider}: inbox response monitoring failed`);
       // A provider request can invalidate a previously healthy grant. Re-read
       // the connector account so this same autonomous run exposes the
       // actionable reauthorization state instead of only a generic failure.
@@ -175,18 +175,22 @@ export async function monitorInboxResponses(
         // The original provider failure remains the durable signal. A failed
         // status refresh must not replace it or invent a reauthorization state.
       }
-      const auditError = await recordMonitoringAudit(dependencies, {
+      const auditRecorded = await recordMonitoringAudit(dependencies, {
         userId,
         entityType: "user",
         entityId: userId,
         action: "inbox_response_monitoring_failed",
         actor: "system",
         source: "autonomousService",
-        afterState: JSON.stringify({ provider, reason: message, externalWritePerformed: false }),
+        afterState: JSON.stringify({
+          provider,
+          reason: "Inbox response monitoring failed.",
+          externalWritePerformed: false,
+        }),
         riskLevel: "medium",
       });
-      if (auditError) {
-        result.errors.push(`${provider}: unable to record inbox monitoring failure (${auditError})`);
+      if (!auditRecorded) {
+        result.errors.push(`${provider}: unable to record inbox monitoring failure`);
       }
     }
   }

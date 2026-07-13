@@ -69,16 +69,16 @@ describe("inbox response monitoring", () => {
     expect(mocks.createAuditEvent).not.toHaveBeenCalled();
   });
 
-  it("reports connector-account lookup failures without escaping the autonomous monitoring boundary", async () => {
+  it("reports connector-account lookup failures without exposing the underlying exception", async () => {
     const mocks = dependencies();
-    mocks.listUserConnectorAccounts.mockRejectedValue(new Error("Connector account store is unavailable."));
+    mocks.listUserConnectorAccounts.mockRejectedValue(new Error("Connector account store is unavailable: Bearer secret-account-token"));
 
     await expect(monitorInboxResponses(701, { dependencies: mocks })).resolves.toEqual({
       providersScanned: 0,
       inboxReauthorizationRequired: 0,
       candidatesDiscovered: 0,
       monitoringFailures: 1,
-      errors: ["accounts: Connector account store is unavailable."],
+      errors: ["accounts: unable to load connector accounts"],
     });
     expect(mocks.discoverInboxResponseCandidates).not.toHaveBeenCalled();
     expect(mocks.createAuditEvent).not.toHaveBeenCalled();
@@ -104,19 +104,20 @@ describe("inbox response monitoring", () => {
     expect(mocks.createAuditEvent).not.toHaveBeenCalled();
   });
 
-  it("records provider failures without turning them into an automatic application update", async () => {
+  it("records provider failures without exposing provider exception details", async () => {
     const mocks = dependencies();
-    mocks.discoverInboxResponseCandidates.mockRejectedValue(new Error("Gmail authorization is no longer valid."));
+    mocks.discoverInboxResponseCandidates.mockRejectedValue(new Error("Gmail authorization is no longer valid: Bearer provider-secret"));
 
     await expect(monitorInboxResponses(701, { dependencies: mocks })).resolves.toMatchObject({
       providersScanned: 0,
       candidatesDiscovered: 0,
       monitoringFailures: 1,
-      errors: ["gmail: Gmail authorization is no longer valid."],
+      errors: ["gmail: inbox response monitoring failed"],
     });
     expect(mocks.createAuditEvent).toHaveBeenCalledWith(expect.objectContaining({
       action: "inbox_response_monitoring_failed",
       riskLevel: "medium",
+      afterState: expect.not.stringContaining("provider-secret"),
     }));
   });
 
@@ -138,7 +139,7 @@ describe("inbox response monitoring", () => {
       inboxReauthorizationRequired: 1,
       candidatesDiscovered: 0,
       monitoringFailures: 1,
-      errors: ["gmail: Gmail authorization is no longer valid."],
+      errors: ["gmail: inbox response monitoring failed"],
     });
     expect(mocks.listUserConnectorAccounts).toHaveBeenCalledTimes(2);
   });
@@ -152,7 +153,7 @@ describe("inbox response monitoring", () => {
       inboxReauthorizationRequired: 0,
       candidatesDiscovered: 1,
       monitoringFailures: 1,
-      errors: ["gmail: unable to record inbox monitoring audit (Audit ledger is unavailable.)"],
+      errors: ["gmail: unable to record inbox monitoring audit"],
     });
     expect(mocks.upsertInboxResponseCandidate).toHaveBeenCalledWith(expect.objectContaining({
       applicationId: 701,
