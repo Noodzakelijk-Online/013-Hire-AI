@@ -71,6 +71,7 @@ describe("job discovery status summary", () => {
       sourcesWithSuccessfulScrape: 2,
       sourcesWithFreshScrape: 2,
       sourcesWithFailedLatestScrape: 1,
+      sourcesWithFreshFailedLatestScrape: 1,
       canonicalJobs: 11,
       latestSuccessfulScrapeAt: "2026-07-12T06:00:00.000Z",
     }, now);
@@ -86,6 +87,7 @@ describe("job discovery status summary", () => {
       sourcesWithSuccessfulScrape: 1,
       sourcesWithFreshScrape: 1,
       sourcesWithPartialLatestScrape: 1,
+      sourcesWithFreshPartialLatestScrape: 1,
       canonicalJobs: 2,
       latestSuccessfulScrapeAt: "2026-07-12T06:00:00.000Z",
     }, now);
@@ -100,6 +102,7 @@ describe("job discovery status summary", () => {
       sourcesWithSuccessfulScrape: 2,
       sourcesWithFreshScrape: 2,
       sourcesWithEmptyLatestScrape: 1,
+      sourcesWithFreshEmptyLatestScrape: 1,
       canonicalJobs: 9,
       latestSuccessfulScrapeAt: "2026-07-12T06:00:00.000Z",
     }, now);
@@ -110,5 +113,23 @@ describe("job discovery status summary", () => {
       sourcesWithEmptyLatestScrape: 1,
     });
     expect(summary.detail).toContain("1 source returned no listings");
+  });
+
+  it("does not preserve a current incident after its source evidence is stale", () => {
+    const summary = getJobDiscoveryStatusSummary({
+      activeSources: 2,
+      sourcesWithSuccessfulScrape: 2,
+      sourcesWithFreshScrape: 0,
+      sourcesWithStaleScrape: 2,
+      sourcesWithEmptyLatestScrape: 1,
+      sourcesWithFreshEmptyLatestScrape: 0,
+      canonicalJobs: 9,
+      latestSuccessfulScrapeAt: "2026-07-11T06:00:00.000Z",
+    }, now);
+
+    expect(summary.status).toBe("stale");
+    expect(summary.label).toBe("Discovery may be stale");
+    expect(summary.sourcesWithEmptyLatestScrape).toBe(1);
+    expect(summary.sourcesWithFreshEmptyLatestScrape).toBe(0);
   });
 });

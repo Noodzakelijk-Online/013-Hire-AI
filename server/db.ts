@@ -489,6 +489,9 @@ export async function getJobDiscoveryStatus() {
       sourcesWithFailedLatestScrape: 0,
       sourcesWithPartialLatestScrape: 0,
       sourcesWithEmptyLatestScrape: 0,
+      sourcesWithFreshFailedLatestScrape: 0,
+      sourcesWithFreshPartialLatestScrape: 0,
+      sourcesWithFreshEmptyLatestScrape: 0,
       latestSuccessfulScrapeAt: successfulScrapes.length > 0
         ? new Date(Math.max(...successfulScrapes.map((lastScraped) => lastScraped.getTime())))
         : null,
@@ -524,6 +527,13 @@ export async function getJobDiscoveryStatus() {
   const emptyLatestScrapes = activePlatforms.filter((platform) =>
     platform.lastScrapeStatus === "success" && platform.lastScrapeJobCount === 0
   );
+  const hasFreshLatestAttempt = (platform: typeof activePlatforms[number]) => {
+    const attemptedAt = platform.lastScrapeAttemptedAt ?? platform.lastScraped;
+    return attemptedAt instanceof Date && attemptedAt >= freshAfter;
+  };
+  const freshFailedLatestScrapes = failedLatestScrapes.filter(hasFreshLatestAttempt);
+  const freshPartialLatestScrapes = partialLatestScrapes.filter(hasFreshLatestAttempt);
+  const freshEmptyLatestScrapes = emptyLatestScrapes.filter(hasFreshLatestAttempt);
 
   return {
     activeSources: activePlatforms.length,
@@ -534,6 +544,9 @@ export async function getJobDiscoveryStatus() {
     sourcesWithFailedLatestScrape: failedLatestScrapes.length,
     sourcesWithPartialLatestScrape: partialLatestScrapes.length,
     sourcesWithEmptyLatestScrape: emptyLatestScrapes.length,
+    sourcesWithFreshFailedLatestScrape: freshFailedLatestScrapes.length,
+    sourcesWithFreshPartialLatestScrape: freshPartialLatestScrapes.length,
+    sourcesWithFreshEmptyLatestScrape: freshEmptyLatestScrapes.length,
     latestSuccessfulScrapeAt: successfulScrapes.length > 0
       ? new Date(Math.max(...successfulScrapes.map((lastScraped) => lastScraped.getTime())))
       : null,

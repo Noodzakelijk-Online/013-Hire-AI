@@ -15,6 +15,9 @@ export interface JobDiscoveryStatusInput {
   sourcesWithFailedLatestScrape?: number | null;
   sourcesWithPartialLatestScrape?: number | null;
   sourcesWithEmptyLatestScrape?: number | null;
+  sourcesWithFreshFailedLatestScrape?: number | null;
+  sourcesWithFreshPartialLatestScrape?: number | null;
+  sourcesWithFreshEmptyLatestScrape?: number | null;
   latestSuccessfulScrapeAt?: Date | string | null;
   canonicalJobs?: number | null;
 }
@@ -30,6 +33,9 @@ export interface JobDiscoveryStatusSummary {
   sourcesWithFailedLatestScrape: number;
   sourcesWithPartialLatestScrape: number;
   sourcesWithEmptyLatestScrape: number;
+  sourcesWithFreshFailedLatestScrape: number;
+  sourcesWithFreshPartialLatestScrape: number;
+  sourcesWithFreshEmptyLatestScrape: number;
   canonicalJobs: number;
   latestSuccessfulScrapeAt: Date | null;
 }
@@ -50,6 +56,12 @@ function plural(count: number, singular: string) {
   return `${count} ${singular}${count === 1 ? "" : "s"}`;
 }
 
+function hasFreshOutcomeEvidence(input: JobDiscoveryStatusInput | undefined) {
+  return input?.sourcesWithFreshFailedLatestScrape !== undefined
+    || input?.sourcesWithFreshPartialLatestScrape !== undefined
+    || input?.sourcesWithFreshEmptyLatestScrape !== undefined;
+}
+
 export function getJobDiscoveryStatusSummary(
   input: JobDiscoveryStatusInput | undefined,
   now = new Date()
@@ -63,6 +75,16 @@ export function getJobDiscoveryStatusSummary(
   const sourcesWithFailedLatestScrape = positiveInteger(input?.sourcesWithFailedLatestScrape);
   const sourcesWithPartialLatestScrape = positiveInteger(input?.sourcesWithPartialLatestScrape);
   const sourcesWithEmptyLatestScrape = positiveInteger(input?.sourcesWithEmptyLatestScrape);
+  const hasFreshOutcomes = hasFreshOutcomeEvidence(input);
+  const sourcesWithFreshFailedLatestScrape = hasFreshOutcomes
+    ? positiveInteger(input?.sourcesWithFreshFailedLatestScrape)
+    : sourcesWithFailedLatestScrape;
+  const sourcesWithFreshPartialLatestScrape = hasFreshOutcomes
+    ? positiveInteger(input?.sourcesWithFreshPartialLatestScrape)
+    : sourcesWithPartialLatestScrape;
+  const sourcesWithFreshEmptyLatestScrape = hasFreshOutcomes
+    ? positiveInteger(input?.sourcesWithFreshEmptyLatestScrape)
+    : sourcesWithEmptyLatestScrape;
   const latestSuccessfulScrapeAt = parseDate(input?.latestSuccessfulScrapeAt);
   const base = {
     activeSources,
@@ -72,6 +94,9 @@ export function getJobDiscoveryStatusSummary(
     sourcesWithFailedLatestScrape,
     sourcesWithPartialLatestScrape,
     sourcesWithEmptyLatestScrape,
+    sourcesWithFreshFailedLatestScrape,
+    sourcesWithFreshPartialLatestScrape,
+    sourcesWithFreshEmptyLatestScrape,
     canonicalJobs,
     latestSuccessfulScrapeAt,
   };
@@ -85,18 +110,20 @@ export function getJobDiscoveryStatusSummary(
     };
   }
 
-  const degradedSources = sourcesWithFailedLatestScrape + sourcesWithPartialLatestScrape + sourcesWithEmptyLatestScrape;
+  const degradedSources = sourcesWithFreshFailedLatestScrape
+    + sourcesWithFreshPartialLatestScrape
+    + sourcesWithFreshEmptyLatestScrape;
   if (degradedSources > 0) {
     const issueDetails = [
-      sourcesWithFailedLatestScrape > 0 ? `${plural(sourcesWithFailedLatestScrape, "source")} failed` : "",
-      sourcesWithPartialLatestScrape > 0 ? `${plural(sourcesWithPartialLatestScrape, "source")} completed only partially` : "",
-      sourcesWithEmptyLatestScrape > 0 ? `${plural(sourcesWithEmptyLatestScrape, "source")} returned no listings` : "",
+      sourcesWithFreshFailedLatestScrape > 0 ? `${plural(sourcesWithFreshFailedLatestScrape, "source")} failed` : "",
+      sourcesWithFreshPartialLatestScrape > 0 ? `${plural(sourcesWithFreshPartialLatestScrape, "source")} completed only partially` : "",
+      sourcesWithFreshEmptyLatestScrape > 0 ? `${plural(sourcesWithFreshEmptyLatestScrape, "source")} returned no listings` : "",
     ].filter(Boolean);
     return {
       ...base,
       status: "degraded",
       label: "Discovery needs attention",
-      detail: `${issueDetails.join(", ")} on their latest scan. Hire.AI will not represent discovery coverage as current until those sources produce a reviewed outcome. ${plural(canonicalJobs, "canonical job")} remain in the index; confirm a listing is still open before preparing materials.`,
+      detail: `${issueDetails.join(", ")} on a scan in the last 24 hours. Hire.AI will not represent discovery coverage as current until those sources produce a reviewed outcome. ${plural(canonicalJobs, "canonical job")} remain in the index; confirm a listing is still open before preparing materials.`,
     };
   }
 

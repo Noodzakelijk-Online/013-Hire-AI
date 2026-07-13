@@ -89,6 +89,9 @@ describe("jobs router", () => {
     expect(status).toMatchObject({
       activeSources: expect.any(Number),
       sourcesWithSuccessfulScrape: expect.any(Number),
+      sourcesWithFreshFailedLatestScrape: expect.any(Number),
+      sourcesWithFreshPartialLatestScrape: expect.any(Number),
+      sourcesWithFreshEmptyLatestScrape: expect.any(Number),
       canonicalJobs: expect.any(Number),
     });
     expect(status.activeSources).toBeGreaterThan(0);
