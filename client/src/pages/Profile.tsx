@@ -20,6 +20,7 @@ import {
   FolderGit2,
   Globe,
   Cloud,
+  Mail,
   Target,
   ShieldCheck,
   LockKeyhole,
@@ -57,6 +58,20 @@ type CloudResumeDocument = {
   modifiedAt: string | null;
 };
 
+type InboxResponseCandidate = {
+  provider: "gmail" | "outlook";
+  messageId: string;
+  applicationId: number;
+  company: string;
+  jobTitle: string;
+  sender: string | null;
+  subject: string;
+  preview: string;
+  receivedAt: string;
+  suggestedResponseType: "rejection" | "interview_invite" | "offer" | "employer_question" | "other";
+  confidence: "high" | "medium";
+};
+
 export default function Profile() {
   const { loading, isAuthenticated } = useAuth();
   const [isUploading, setIsUploading] = useState(false);
@@ -81,6 +96,7 @@ export default function Profile() {
   const [salaryMaximum, setSalaryMaximum] = useState("");
   const [needsVisaSponsorship, setNeedsVisaSponsorship] = useState(false);
   const [cloudResumeDocuments, setCloudResumeDocuments] = useState<CloudResumeDocument[]>([]);
+  const [inboxResponseCandidates, setInboxResponseCandidates] = useState<InboxResponseCandidate[]>([]);
 
   // Queries
   const profileQuery = trpc.profile.get.useQuery(undefined, {
@@ -154,6 +170,26 @@ export default function Profile() {
       ]);
     },
     onError: (error) => toast.error(error.message || "Unable to import this cloud resume"),
+  });
+  const discoverInboxResponses = trpc.applications.discoverInboxResponses.useMutation({
+    onSuccess: (result) => {
+      setInboxResponseCandidates(result.candidates);
+      toast.success(
+        result.candidates.length === 1
+          ? "Found 1 application-linked inbox response"
+          : `Found ${result.candidates.length} application-linked inbox responses`
+      );
+    },
+    onError: (error) => toast.error(error.message || "Unable to discover inbox responses"),
+  });
+  const ingestInboxResponse = trpc.applications.ingestInboxResponse.useMutation({
+    onSuccess: (result, input) => {
+      if (!result.existing) toast.success("Employer response recorded in the application ledger");
+      setInboxResponseCandidates((candidates) => candidates.filter((candidate) =>
+        !(candidate.provider === input.provider && candidate.messageId === input.messageId)
+      ));
+    },
+    onError: (error) => toast.error(error.message || "Unable to record this inbox response"),
   });
   const parseResumeFile = trpc.resume.parseFile.useMutation({
     onSuccess: async ({ resume }) => {
@@ -332,6 +368,21 @@ export default function Profile() {
     importCloudResume.mutate(document);
   };
 
+  const handleInboxDiscovery = (provider: InboxResponseCandidate["provider"]) => {
+    discoverInboxResponses.mutate({ provider });
+  };
+
+  const handleInboxResponseConfirmation = (candidate: InboxResponseCandidate) => {
+    ingestInboxResponse.mutate({
+      applicationId: candidate.applicationId,
+      provider: candidate.provider,
+      messageId: candidate.messageId,
+      responseType: candidate.suggestedResponseType,
+      summary: `${candidate.subject}. ${candidate.preview}`.trim().slice(0, 5000),
+      receivedAt: candidate.receivedAt,
+    });
+  };
+
   const handleSaveSocialLinks = () => {
     updateProfile.mutate({
       linkedinUrl: linkedinUrl.trim() || undefined,
@@ -470,7 +521,7 @@ export default function Profile() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
               <Button
                 variant="outline"
                 className="h-24 flex-col gap-2 border-slate-700 hover:border-cyan-500 hover:bg-cyan-500/10"
@@ -518,6 +569,26 @@ export default function Profile() {
                 )}
                 <span className="text-white">Find Dropbox Resumes</span>
               </Button>
+
+              <Button
+                variant="outline"
+                className="h-24 flex-col gap-2 border-slate-700 hover:border-cyan-500 hover:bg-cyan-500/10"
+                onClick={() => handleInboxDiscovery("gmail")}
+                disabled={discoverInboxResponses.isPending}
+              >
+                {discoverInboxResponses.isPending ? <Loader2 className="w-6 h-6 animate-spin text-cyan-400" /> : <Mail className="w-6 h-6 text-cyan-400" />}
+                <span className="text-white">Find Gmail Replies</span>
+              </Button>
+
+              <Button
+                variant="outline"
+                className="h-24 flex-col gap-2 border-slate-700 hover:border-cyan-500 hover:bg-cyan-500/10"
+                onClick={() => handleInboxDiscovery("outlook")}
+                disabled={discoverInboxResponses.isPending}
+              >
+                {discoverInboxResponses.isPending ? <Loader2 className="w-6 h-6 animate-spin text-cyan-400" /> : <Mail className="w-6 h-6 text-cyan-400" />}
+                <span className="text-white">Find Outlook Replies</span>
+              </Button>
               
               <label>
                 <Button
@@ -564,6 +635,29 @@ export default function Profile() {
                     >
                       {importCloudResume.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
                       Import
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {inboxResponseCandidates.length > 0 ? (
+              <div className="mt-4 space-y-2 rounded-md border border-slate-700/60 bg-slate-950/40 p-3">
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Inbox response candidates</p>
+                {inboxResponseCandidates.map((candidate) => (
+                  <div key={`${candidate.provider}:${candidate.messageId}`} className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-2 first:border-t-0 first:pt-0">
+                    <div className="min-w-0 max-w-2xl">
+                      <p className="truncate text-sm font-medium text-white">{candidate.subject}</p>
+                      <p className="mt-1 text-xs text-slate-400">{candidate.company} - {candidate.jobTitle} - {candidate.suggestedResponseType.replace(/_/g, " ")}</p>
+                      <p className="mt-1 line-clamp-2 text-xs text-slate-500">{candidate.preview}</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleInboxResponseConfirmation(candidate)}
+                      disabled={ingestInboxResponse.isPending}
+                    >
+                      {ingestInboxResponse.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
+                      Confirm
                     </Button>
                   </div>
                 ))}

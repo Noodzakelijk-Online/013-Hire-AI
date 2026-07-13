@@ -1734,6 +1734,31 @@ export const appRouter = router({
           });
         }
       }),
+    discoverInboxResponses: protectedProcedure
+      .input(z.object({ provider: z.enum(["gmail", "outlook"]) }))
+      .mutation(async ({ ctx, input }) => {
+        const { discoverInboxResponseCandidates } = await import("./inboxResponseDiscovery");
+        const { createAuditEvent } = await import("./db");
+        try {
+          const candidates = await discoverInboxResponseCandidates(ctx.user.id, input.provider);
+          await createAuditEvent({
+            userId: ctx.user.id,
+            entityType: "user",
+            entityId: ctx.user.id,
+            action: "inbox_response_candidates_discovered",
+            actor: "user",
+            source: "applications.discoverInboxResponses",
+            afterState: JSON.stringify({ provider: input.provider, candidateCount: candidates.length }),
+            riskLevel: "low",
+          });
+          return { provider: input.provider, candidates };
+        } catch (error) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: error instanceof Error ? error.message : "Inbox response discovery could not be completed.",
+          });
+        }
+      }),
     ingestInboxResponse: protectedProcedure
       .input(z.object({
         applicationId: z.number(),
