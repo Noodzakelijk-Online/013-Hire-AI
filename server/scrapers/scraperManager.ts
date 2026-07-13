@@ -79,6 +79,7 @@ function refreshedListingValues(job: any, current: any, now: Date) {
 
 export class ScraperManager {
   private scrapers: Map<string, BaseScraper> = new Map();
+  private platformIds: Map<string, number> = new Map();
   private initializationErrors: Map<string, string> = new Map();
   private readonly scrapeTimeoutMs: number;
   private readonly maxConcurrentScrapes: number;
@@ -102,6 +103,7 @@ export class ScraperManager {
 
     // Initialize scrapers for platforms we have implemented
     for (const platform of platforms) {
+      this.platformIds.set(platform.name, platform.id);
       try {
         const scraper = this.createScraper(platform.name, platform.id);
         if (scraper) {
@@ -111,6 +113,11 @@ export class ScraperManager {
       } catch {
         this.initializationErrors.set(platform.name, SCRAPER_INITIALIZATION_FAILURE_MESSAGE);
         console.error(`[ScraperManager] Failed to initialize scraper for ${platform.name}.`);
+        await this.recordScrapeOutcome(platform.name, platform.id, {
+          jobs: [],
+          errors: [SCRAPER_INITIALIZATION_FAILURE_MESSAGE],
+          scrapedAt: new Date(),
+        });
       }
     }
 
@@ -195,6 +202,17 @@ export class ScraperManager {
     }
   }
 
+  private async recordUnavailablePlatform(platformName: string) {
+    const platformId = this.platformIds.get(platformName);
+    if (!platformId) return;
+
+    await this.recordScrapeOutcome(platformName, platformId, {
+      jobs: [],
+      errors: [SCRAPER_INITIALIZATION_FAILURE_MESSAGE],
+      scrapedAt: new Date(),
+    });
+  }
+
   /**
    * Scrape jobs from a specific platform
    */
@@ -208,6 +226,7 @@ export class ScraperManager {
   ): Promise<ScrapeResult> {
     const scraper = this.scrapers.get(platformName);
     if (!scraper) {
+      await this.recordUnavailablePlatform(platformName);
       return {
         jobs: [],
         errors: [`No scraper available for platform: ${platformName}`],
@@ -245,6 +264,7 @@ export class ScraperManager {
 
     for (const platformName of requestedPlatformNames) {
       if (!this.scrapers.has(platformName)) {
+        await this.recordUnavailablePlatform(platformName);
         platformResults[platformName] = {
           jobs: [],
           errors: [`No scraper available for platform: ${platformName}`],

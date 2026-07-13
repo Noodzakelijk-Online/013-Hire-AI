@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BaseScraper } from "./baseScraper";
-import { SCRAPER_FAILURE_MESSAGE, ScraperManager } from "./scraperManager";
+import {
+  SCRAPER_FAILURE_MESSAGE,
+  SCRAPER_INITIALIZATION_FAILURE_MESSAGE,
+  ScraperManager,
+} from "./scraperManager";
 
 const mocks = vi.hoisted(() => ({
   ensureScraperPlatformCatalog: vi.fn(),
@@ -71,6 +75,49 @@ describe("scraper manager platform restrictions", () => {
       "No scraper available for platform: Unavailable Board",
     ]);
     expect(manager.getInitializationError("Unavailable Board")).toBeNull();
+  });
+
+  it("records a sanitized failure when an initialized source later becomes unavailable", async () => {
+    const manager = new ScraperManager();
+    const scrapers = (manager as unknown as { scrapers: Map<string, BaseScraper> }).scrapers;
+    const platformIds = (manager as unknown as { platformIds: Map<string, number> }).platformIds;
+    platformIds.set("RemoteOK", 1);
+
+    const result = await manager.scrapePlatform("RemoteOK");
+
+    expect(result.errors).toEqual(["No scraper available for platform: RemoteOK"]);
+    expect(scrapers.size).toBe(0);
+    expect(mocks.recordPlatformScrapeOutcome).toHaveBeenCalledWith(1, {
+      jobCount: 0,
+      errors: [SCRAPER_INITIALIZATION_FAILURE_MESSAGE],
+    });
+  });
+
+  it("records an initialization failure against the configured source without exposing adapter details", async () => {
+    const manager = new ScraperManager();
+    const createScraper = vi
+      .spyOn(manager as unknown as { createScraper: (name: string, id: number) => BaseScraper | null }, "createScraper")
+      .mockImplementation(() => {
+        throw new Error("Bearer adapter-secret");
+      });
+    const where = vi.fn().mockResolvedValue([{
+      id: 91,
+      name: "Failure Board",
+      isActive: 1,
+    }]);
+    mocks.getDb.mockResolvedValue({
+      select: vi.fn(() => ({ from: vi.fn(() => ({ where })) })),
+    });
+
+    await manager.initialize();
+
+    expect(manager.getInitializationError("Failure Board")).toBe(SCRAPER_INITIALIZATION_FAILURE_MESSAGE);
+    expect(mocks.recordPlatformScrapeOutcome).toHaveBeenCalledWith(91, {
+      jobCount: 0,
+      errors: [SCRAPER_INITIALIZATION_FAILURE_MESSAGE],
+    });
+    expect(JSON.stringify(mocks.recordPlatformScrapeOutcome.mock.calls)).not.toContain("adapter-secret");
+    createScraper.mockRestore();
   });
 
   it("times out one source without preventing a healthy source from completing", async () => {
