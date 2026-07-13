@@ -5,6 +5,10 @@ export const getLoginUrl = () => {
   const oauthPortalUrl = import.meta.env.VITE_OAUTH_PORTAL_URL;
   const appId = import.meta.env.VITE_APP_ID;
   if (!oauthPortalUrl || !appId) {
+    // The server only exposes this seeded QA session outside production.
+    if (import.meta.env.DEV) {
+      return "/api/dev/login";
+    }
     return "#";
   }
 

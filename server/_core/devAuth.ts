@@ -9,6 +9,18 @@ const DEV_SESSION_MS = 1000 * 60 * 60 * 6;
 const DEV_SESSION_SECRET = "hire-ai-review-queue-local-dev-secret";
 const DEV_APP_ID = "hire-ai-review-queue-local-dev";
 
+function getSafeRedirectPath(value: unknown, fallback: string) {
+  if (
+    typeof value === "string" &&
+    value.startsWith("/") &&
+    !value.startsWith("//")
+  ) {
+    return value;
+  }
+
+  return fallback;
+}
+
 function ensureDevSessionConfig() {
   if (!ENV.cookieSecret) {
     ENV.cookieSecret = DEV_SESSION_SECRET;
@@ -22,6 +34,26 @@ export function registerDevAuthRoutes(app: Express) {
   if (ENV.isProduction) {
     return;
   }
+
+  app.get("/api/dev/login", async (req: Request, res: Response) => {
+    try {
+      ensureDevSessionConfig();
+      const user = await seedDevReviewQueueUser();
+      const sessionToken = await sdk.createSessionToken(user.openId, {
+        name: user.name || "Review Queue QA",
+        expiresInMs: DEV_SESSION_MS,
+      });
+
+      res.cookie(COOKIE_NAME, sessionToken, {
+        ...getSessionCookieOptions(req),
+        maxAge: DEV_SESSION_MS,
+      });
+      res.redirect(302, getSafeRedirectPath(req.query.redirect, "/dashboard"));
+    } catch (error) {
+      console.error("[DevAuth] Failed to create development session", error);
+      res.status(500).json({ error: "Unable to create development session" });
+    }
+  });
 
   app.get("/api/dev/login-review-queue", async (req: Request, res: Response) => {
     try {
