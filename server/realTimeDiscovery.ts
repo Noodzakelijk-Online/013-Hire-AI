@@ -9,6 +9,7 @@ import { asc, desc, gt, and, eq, gte, inArray, like, or, sql } from "drizzle-orm
 import { sampleJobDuplicateLinks, sampleJobs } from "./sampleData";
 import { matchesJobAlert } from "../shared/jobAlertMatching";
 import { normalizeExperienceLevel, type NormalizedExperienceLevel } from "./jobNormalization";
+import { logOperationalFailure } from "./operationalFailureLog";
 
 const canonicalJobCondition = sql`NOT EXISTS (
   SELECT 1 FROM ${jobDuplicates}
@@ -239,8 +240,8 @@ class SubscriptionManager {
           this.notifySubscribers(canonicalJobs as JobSummary[]);
         }
       }
-    } catch (error) {
-      console.error("[Discovery] Error checking for new jobs:", error);
+    } catch {
+      logOperationalFailure("Discovery", "Job polling");
     }
   }
 
@@ -263,8 +264,8 @@ class SubscriptionManager {
         
         try {
           subscription.callback(event);
-        } catch (error) {
-          console.error(`[Discovery] Error notifying user ${subscription.userId}:`, error);
+        } catch {
+          logOperationalFailure("Discovery", "Subscriber notification");
         }
       }
     }

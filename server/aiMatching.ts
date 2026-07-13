@@ -3,6 +3,7 @@ import type { Job, UserProfile } from "../drizzle/schema";
 import { buildEvidenceBoundApplicationDraft } from "./applicationMaterialDraft";
 import { scoreJobForProfile } from "./autonomousOrchestrator";
 import { getLocationPreferenceFit } from "../shared/locationEligibility";
+import { logOperationalFailure } from "./operationalFailureLog";
 
 /**
  * AI-powered job matching service
@@ -320,8 +321,8 @@ Provide 3-5 potential decision maker roles with their likely titles and departme
     }
 
     return JSON.parse(content);
-  } catch (error) {
-    console.error("Error identifying decision makers:", error);
+  } catch {
+    logOperationalFailure("AIMatching", "Decision-maker analysis");
     return {
       suggestions: [],
     };
@@ -399,8 +400,8 @@ Provide:
     }
 
     return JSON.parse(content);
-  } catch (error) {
-    console.error("Error generating interview preparation:", error);
+  } catch {
+    logOperationalFailure("AIMatching", "Interview preparation");
     return {
       questions: [],
       tips: [],

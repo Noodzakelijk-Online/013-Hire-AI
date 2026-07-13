@@ -12,6 +12,7 @@ import { serveStatic, setupVite } from "./vite";
 import { registerStripeWebhook } from "../stripeWebhook";
 import { ENV, validateProductionEnv } from "./env";
 import { ensureScraperPlatformCatalog } from "../db";
+import { logOperationalFailure } from "../operationalFailureLog";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -115,7 +116,7 @@ async function startServer() {
     server.close((error) => {
       clearTimeout(forceExit);
       if (error) {
-        console.error("[Server] Shutdown failed:", error);
+        logOperationalFailure("Server", "Shutdown");
         process.exit(1);
       }
       process.exit(0);
@@ -127,7 +128,7 @@ async function startServer() {
   console.log(`Server running on http://localhost:${port}/`);
 }
 
-startServer().catch((error) => {
-  console.error("[Server] Startup failed:", error);
+startServer().catch(() => {
+  logOperationalFailure("Server", "Startup");
   process.exitCode = 1;
 });

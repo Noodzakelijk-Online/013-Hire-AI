@@ -3,6 +3,7 @@ import { getDb } from "./db";
 import { stripeWebhookEvents } from "../drizzle/schema";
 
 type WebhookStatus = "processing" | "processed" | "failed";
+export const STRIPE_WEBHOOK_FAILURE_MESSAGE = "Webhook processing failed.";
 
 const memoryEvents = new Map<string, { eventType: string; status: WebhookStatus; errorMessage: string | null }>();
 
@@ -53,8 +54,8 @@ export async function completeStripeWebhookEvent(eventId: string) {
     .where(eq(stripeWebhookEvents.stripeEventId, eventId));
 }
 
-export async function failStripeWebhookEvent(eventId: string, error: unknown) {
-  const errorMessage = error instanceof Error ? error.message : "Webhook processing failed";
+export async function failStripeWebhookEvent(eventId: string, _error: unknown) {
+  const errorMessage = STRIPE_WEBHOOK_FAILURE_MESSAGE;
   const db = await getDb();
   if (!db) {
     const event = memoryEvents.get(eventId);

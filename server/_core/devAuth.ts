@@ -4,6 +4,7 @@ import { seedDevAdminUser, seedDevReviewQueueUser } from "../devReviewQueueSeed"
 import { getSessionCookieOptions } from "./cookies";
 import { ENV } from "./env";
 import { sdk } from "./sdk";
+import { logOperationalFailure } from "../operationalFailureLog";
 
 const DEV_SESSION_MS = 1000 * 60 * 60 * 6;
 const DEV_SESSION_SECRET = "hire-ai-review-queue-local-dev-secret";
@@ -49,8 +50,8 @@ export function registerDevAuthRoutes(app: Express) {
         maxAge: DEV_SESSION_MS,
       });
       res.redirect(302, getSafeRedirectPath(req.query.redirect, "/dashboard"));
-    } catch (error) {
-      console.error("[DevAuth] Failed to create development session", error);
+    } catch {
+      logOperationalFailure("DevAuth", "Development session creation");
       res.status(500).json({ error: "Unable to create development session" });
     }
   });
@@ -69,8 +70,8 @@ export function registerDevAuthRoutes(app: Express) {
         maxAge: DEV_SESSION_MS,
       });
       res.redirect(302, "/review-queue");
-    } catch (error) {
-      console.error("[DevAuth] Failed to create review queue session", error);
+    } catch {
+      logOperationalFailure("DevAuth", "Review queue session creation");
       res.status(500).json({ error: "Unable to create development review queue session" });
     }
   });
@@ -89,8 +90,8 @@ export function registerDevAuthRoutes(app: Express) {
         maxAge: DEV_SESSION_MS,
       });
       res.redirect(302, "/admin");
-    } catch (error) {
-      console.error("[DevAuth] Failed to create admin session", error);
+    } catch {
+      logOperationalFailure("DevAuth", "Admin session creation");
       res.status(500).json({ error: "Unable to create development admin session" });
     }
   });

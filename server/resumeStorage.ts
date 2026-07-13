@@ -9,6 +9,7 @@ import { userResumes } from "../drizzle/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { RESUME_MIME_TYPES, scanSensitiveUpload, validateUploadedFile } from "./uploadValidation";
+import { logOperationalFailure } from "./operationalFailureLog";
 
 // ============================================================================
 // TYPES
@@ -331,8 +332,8 @@ export async function getResumeDownloadUrl(userId: number, version?: number): Pr
   try {
     const { url } = await storageGet(resume.fileKey);
     return url;
-  } catch (error) {
-    console.error("[ResumeStorage] Error getting download URL:", error);
+  } catch {
+    logOperationalFailure("ResumeStorage", "Download URL retrieval");
     return null;
   }
 }

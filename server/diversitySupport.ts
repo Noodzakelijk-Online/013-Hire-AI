@@ -1,4 +1,5 @@
 import { invokeLLM } from "./_core/llm";
+import { logOperationalFailure } from "./operationalFailureLog";
 
 /**
  * Diversity & Inclusion Support Service
@@ -238,8 +239,8 @@ Provide comprehensive D&I analysis including scores, initiatives, ERGs, policies
     }
 
     return JSON.parse(content) as DICompanyAnalysis;
-  } catch (error) {
-    console.error("[DiversitySupport] Company D&I analysis failed:", error);
+  } catch {
+    logOperationalFailure("DiversitySupport", "Company D&I analysis");
     throw new Error("Failed to analyze company D&I practices");
   }
 }
@@ -326,8 +327,8 @@ Provide comprehensive visa sponsorship analysis including likelihood, tips, and 
     }
 
     return JSON.parse(content) as VisaJobMatch;
-  } catch (error) {
-    console.error("[DiversitySupport] Visa sponsorship analysis failed:", error);
+  } catch {
+    logOperationalFailure("DiversitySupport", "Visa sponsorship analysis");
     throw new Error("Failed to analyze visa sponsorship");
   }
 }
@@ -438,8 +439,8 @@ Provide comprehensive accommodation guidance including types, how to request, le
     }
 
     return JSON.parse(content) as AccommodationRecommendation;
-  } catch (error) {
-    console.error("[DiversitySupport] Accommodation recommendations failed:", error);
+  } catch {
+    logOperationalFailure("DiversitySupport", "Accommodation recommendations");
     throw new Error("Failed to generate accommodation recommendations");
   }
 }
@@ -638,8 +639,8 @@ Provide comprehensive relocation analysis including cost of living, housing, qua
     }
 
     return JSON.parse(content) as RelocationAnalysis;
-  } catch (error) {
-    console.error("[DiversitySupport] Relocation analysis failed:", error);
+  } catch {
+    logOperationalFailure("DiversitySupport", "Relocation analysis");
     throw new Error("Failed to analyze relocation");
   }
 }

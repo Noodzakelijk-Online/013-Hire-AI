@@ -1,4 +1,5 @@
 import { invokeLLM } from "./_core/llm";
+import { logOperationalFailure } from "./operationalFailureLog";
 
 /**
  * Social Media Connection Service
@@ -198,8 +199,8 @@ export async function analyzeLinkedInProfile(profileText: string): Promise<Linke
     }
 
     return JSON.parse(content) as LinkedInProfile;
-  } catch (error) {
-    console.error("[SocialConnections] LinkedIn analysis failed:", error);
+  } catch {
+    logOperationalFailure("SocialConnections", "LinkedIn analysis");
     throw new Error("Failed to analyze LinkedIn profile");
   }
 }
@@ -262,8 +263,8 @@ export async function analyzeGitHubProfile(profileText: string): Promise<GitHubP
     }
 
     return JSON.parse(content) as GitHubProfile;
-  } catch (error) {
-    console.error("[SocialConnections] GitHub analysis failed:", error);
+  } catch {
+    logOperationalFailure("SocialConnections", "GitHub analysis");
     throw new Error("Failed to analyze GitHub profile");
   }
 }
@@ -322,8 +323,8 @@ export async function analyzePortfolio(portfolioText: string): Promise<Portfolio
     }
 
     return JSON.parse(content) as PortfolioAnalysis;
-  } catch (error) {
-    console.error("[SocialConnections] Portfolio analysis failed:", error);
+  } catch {
+    logOperationalFailure("SocialConnections", "Portfolio analysis");
     throw new Error("Failed to analyze portfolio");
   }
 }

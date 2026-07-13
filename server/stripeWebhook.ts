@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { getStripeClient } from "./stripeClient";
 import { claimStripeWebhookEvent, completeStripeWebhookEvent, failStripeWebhookEvent } from "./stripeWebhookLedger";
 import { canTransitionSuccessFeeStatus } from "./successFeeStateMachine";
+import { logOperationalFailure } from "./operationalFailureLog";
 
 async function createPaymentFailureReview(
   fee: Pick<SuccessFee, "id" | "userId" | "employerName" | "jobTitle">,
@@ -39,9 +40,9 @@ export function registerStripeWebhook(app: Express) {
           // For development without webhook secret
           event = JSON.parse(req.body.toString()) as Stripe.Event;
         }
-      } catch (err) {
-        console.error("[Stripe Webhook] Signature verification failed:", err);
-        res.status(400).send(`Webhook Error: ${(err as Error).message}`);
+      } catch {
+        logOperationalFailure("Stripe Webhook", "Signature verification");
+        res.status(400).send("Webhook signature verification failed.");
         return;
       }
 
@@ -310,7 +311,7 @@ export function registerStripeWebhook(app: Express) {
         res.json({ received: true });
       } catch (err) {
         await failStripeWebhookEvent(event.id, err);
-        console.error("[Stripe Webhook] Error processing event:", err);
+        logOperationalFailure("Stripe Webhook", "Event processing");
         res.status(500).json({ error: "Webhook processing failed" });
       }
     }

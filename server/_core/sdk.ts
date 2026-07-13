@@ -13,6 +13,7 @@ import {
   seedDevReviewQueueUser,
 } from "../devReviewQueueSeed";
 import { ENV } from "./env";
+import { logOperationalFailure } from "../operationalFailureLog";
 import type {
   ExchangeTokenRequest,
   ExchangeTokenResponse,
@@ -232,8 +233,8 @@ class SDKServer {
         appId,
         name,
       };
-    } catch (error) {
-      console.warn("[Auth] Session verification failed", String(error));
+    } catch {
+      logOperationalFailure("Auth", "Session verification");
       return null;
     }
   }
@@ -315,8 +316,8 @@ class SDKServer {
           lastSignedIn: signedInAt,
         });
         user = await db.getUserByOpenId(userInfo.openId);
-      } catch (error) {
-        console.error("[Auth] Failed to sync user from OAuth:", error);
+      } catch {
+        logOperationalFailure("Auth", "OAuth user synchronization");
         throw ForbiddenError("Failed to sync user info");
       }
     }

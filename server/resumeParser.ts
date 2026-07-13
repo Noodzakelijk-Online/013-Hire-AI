@@ -3,6 +3,7 @@ import { createRequire } from "module";
 import mammoth from "mammoth";
 import { storagePut } from "./storage";
 import { validateGitHubUrl, validateLinkedInUrl, validatePortfolioUrl } from "./socialConnections";
+import { logOperationalFailure } from "./operationalFailureLog";
 
 // pdf-parse is a CJS module; use createRequire to avoid ESM default-export error in production
 const require = createRequire(import.meta.url);
@@ -48,8 +49,8 @@ export async function extractTextFromPDF(buffer: Buffer): Promise<string> {
   try {
     const data = await pdf(buffer);
     return data.text;
-  } catch (error) {
-    console.error("[ResumeParser] PDF extraction failed:", error);
+  } catch {
+    logOperationalFailure("ResumeParser", "PDF extraction");
     throw new Error("Failed to extract text from PDF");
   }
 }
@@ -61,8 +62,8 @@ export async function extractTextFromDOCX(buffer: Buffer): Promise<string> {
   try {
     const result = await mammoth.extractRawText({ buffer });
     return result.value;
-  } catch (error) {
-    console.error("[ResumeParser] DOCX extraction failed:", error);
+  } catch {
+    logOperationalFailure("ResumeParser", "DOCX extraction");
     throw new Error("Failed to extract text from DOCX");
   }
 }
@@ -273,8 +274,8 @@ Return the data in a structured JSON format.`;
 
     const parsed = JSON.parse(content) as ParsedResume;
     return parsed;
-  } catch (error) {
-    console.error("Error parsing resume:", error);
+  } catch {
+    logOperationalFailure("ResumeParser", "Resume parsing");
     throw new Error("Failed to parse resume");
   }
 }

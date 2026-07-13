@@ -1,4 +1,5 @@
 import { invokeLLM } from "./_core/llm";
+import { logOperationalFailure } from "./operationalFailureLog";
 
 /**
  * Career Intelligence Service
@@ -141,8 +142,8 @@ Provide comprehensive salary analysis including market rates, adjustment factors
     }
 
     return JSON.parse(content) as SalaryAnalysis;
-  } catch (error) {
-    console.error("[CareerIntelligence] Salary analysis failed:", error);
+  } catch {
+    logOperationalFailure("CareerIntelligence", "Salary analysis");
     throw new Error("Failed to analyze salary");
   }
 }
@@ -301,8 +302,8 @@ Provide comprehensive culture analysis including scores, dimensions, and fit ass
     }
 
     return JSON.parse(content) as CultureAnalysis;
-  } catch (error) {
-    console.error("[CareerIntelligence] Culture analysis failed:", error);
+  } catch {
+    logOperationalFailure("CareerIntelligence", "Culture analysis");
     throw new Error("Failed to analyze company culture");
   }
 }
@@ -426,8 +427,8 @@ Provide comprehensive networking strategy with specific contacts to target, outr
     }
 
     return JSON.parse(content) as NetworkingStrategy;
-  } catch (error) {
-    console.error("[CareerIntelligence] Networking strategy failed:", error);
+  } catch {
+    logOperationalFailure("CareerIntelligence", "Networking strategy");
     throw new Error("Failed to generate networking strategy");
   }
 }
@@ -615,8 +616,8 @@ Provide comprehensive career plan with short-term and long-term goals, skill dev
     }
 
     return JSON.parse(content) as CareerPlan;
-  } catch (error) {
-    console.error("[CareerIntelligence] Career plan failed:", error);
+  } catch {
+    logOperationalFailure("CareerIntelligence", "Career plan");
     throw new Error("Failed to generate career plan");
   }
 }
@@ -744,8 +745,8 @@ Provide detailed skill gap analysis with matched skills, missing skills, transfe
     }
 
     return JSON.parse(content) as SkillGapAnalysis;
-  } catch (error) {
-    console.error("[CareerIntelligence] Skill gap analysis failed:", error);
+  } catch {
+    logOperationalFailure("CareerIntelligence", "Skill-gap analysis");
     throw new Error("Failed to analyze skill gap");
   }
 }

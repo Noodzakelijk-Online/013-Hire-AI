@@ -4,6 +4,7 @@ import {
   clearStripeWebhookLedgerForTests,
   completeStripeWebhookEvent,
   failStripeWebhookEvent,
+  STRIPE_WEBHOOK_FAILURE_MESSAGE,
 } from "./stripeWebhookLedger";
 
 describe("Stripe webhook event ledger", () => {
@@ -17,7 +18,8 @@ describe("Stripe webhook event ledger", () => {
 
   it("allows a failed event to be retried", async () => {
     await claimStripeWebhookEvent("evt_ledger_2", "invoice.payment_failed");
-    await failStripeWebhookEvent("evt_ledger_2", new Error("temporary outage"));
+    await failStripeWebhookEvent("evt_ledger_2", new Error("Bearer provider-secret"));
     expect(await claimStripeWebhookEvent("evt_ledger_2", "invoice.payment_failed")).toMatchObject({ claimed: true });
+    expect(STRIPE_WEBHOOK_FAILURE_MESSAGE).not.toContain("provider-secret");
   });
 });
