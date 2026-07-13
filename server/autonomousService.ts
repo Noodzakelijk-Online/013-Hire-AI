@@ -14,6 +14,7 @@ import {
   createApplicationMaterial,
   createAdminReviewItem,
   createAuditEvent,
+  createJobMatch,
   acquireAutonomousRunLease,
   completeAutonomousRunLease,
   getActiveJobs,
@@ -97,6 +98,14 @@ function profileSnapshotForAutonomousRun(profile: unknown) {
 
 function riskForDecision(decision: AutonomousJobDecision, fallback: "medium" | "high" = "medium") {
   return decision.blockers.length > 0 ? "high" : fallback;
+}
+
+function autonomousMatchReasons(decision: AutonomousJobDecision) {
+  return [
+    "Autonomous profile match.",
+    decision.reasons.length > 0 ? `Evidence: ${decision.reasons.join(" ")}` : "",
+    decision.blockers.length > 0 ? `Review blockers: ${decision.blockers.join(" ")}` : "",
+  ].filter(Boolean).join(" ");
 }
 
 async function getCurrentJobForAutonomousDecision(jobId: number) {
@@ -338,6 +347,21 @@ async function executeAutonomousRun(
     console.error(`[AutonomousService] ${label} failed for user ${userId}:`, error);
     actionErrors.push(`${label} failed`);
   };
+
+  // Keep autonomous scoring visible through the same canonical match ledger used by jobs.getMatches.
+  for (const decision of plan.decisions) {
+    assertLeaseActive();
+    try {
+      await createJobMatch({
+        userId,
+        jobId: decision.jobId,
+        matchScore: decision.matchScore,
+        matchReasons: autonomousMatchReasons(decision),
+      });
+    } catch (error) {
+      recordFailure(`Job ${decision.jobId} match persistence`, error);
+    }
+  }
 
   if (evidenceGates.length > 0) {
     await createAuditEvent({

@@ -23,6 +23,7 @@ import {
   getApplicationLedgerArtifacts,
   getAuditEventsForEntity,
   getAuditEventsForUser,
+  getUserJobMatches,
   getUserApplications,
   listAdminReviewItems,
   listUserApplicationApprovals,
@@ -81,6 +82,7 @@ describe("autonomous submission approval gates", () => {
     const ledger = await getApplicationLedgerArtifacts(applicationId, userId);
     const auditEvents = await getAuditEventsForUser(userId, 10);
     const adminReviews = await listAdminReviewItems("all");
+    const matches = await getUserJobMatches(userId, 0);
 
     expect(result.queuedReviewRecords + result.queuedApplicationRecords + result.queuedManualRecords).toBeGreaterThan(0);
     expect(applications.length).toBeGreaterThan(0);
@@ -108,6 +110,11 @@ describe("autonomous submission approval gates", () => {
       review.entityId === applicationId &&
       review.category === "application_review"
     )).toBe(true);
+    expect(matches).toHaveLength(1);
+    expect(matches[0]).toMatchObject({
+      jobId: sampleJobs[0].id,
+      matchReasons: expect.stringContaining("Autonomous profile match."),
+    });
   });
 
   it("keeps preparation evidence idempotent when the same autonomous run is retried", async () => {
@@ -145,6 +152,7 @@ describe("autonomous submission approval gates", () => {
     const artifacts = await getApplicationLedgerArtifacts(applicationId, userId);
     const approvals = await listUserApplicationApprovals(userId, "pending");
     const adminReviews = await listAdminReviewItems("all");
+    const matches = await getUserJobMatches(userId, 0);
     const preparationEvents = artifacts.auditEvents.filter((event) =>
       event.action.startsWith("autonomous_") && event.approvalId === approvals[0].id
     );
@@ -160,6 +168,7 @@ describe("autonomous submission approval gates", () => {
       review.entityId === applicationId &&
       review.category === "application_review"
     )).toHaveLength(1);
+    expect(matches.filter((match) => match.jobId === job.id)).toHaveLength(1);
   });
 
   it("rechecks a listing before writing autonomous preparation records", async () => {
