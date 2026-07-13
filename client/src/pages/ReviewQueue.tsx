@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { getApplicationDeepLink } from "@/lib/applicationDeepLinks";
+import { getInterviewSchedulingControl } from "@/lib/interviewSchedulingControl";
 import { getApprovalEvidenceGateSummary } from "@/lib/applicationEvidenceGates";
 import {
   formatApplicationDecision,
@@ -686,8 +687,7 @@ export default function ReviewQueue() {
                       <Card key={item.applicationId}>
                         <CardContent className="space-y-4 pt-6">
                           {(() => {
-                            const cancelledSchedule = item.schedulingRequirement === "cancelled_schedule";
-                            const newInvite = item.schedulingRequirement === "new_invite";
+                            const control = getInterviewSchedulingControl(item.schedulingRequirement);
                             return <>
                           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                             <div>
@@ -699,16 +699,12 @@ export default function ReviewQueue() {
                                 {item.job?.location ? ` - ${item.job.location}` : ""}
                               </p>
                             </div>
-                            <Badge variant="outline" className={cancelledSchedule ? "border-amber-500/40 text-amber-300" : "border-blue-500/40 text-blue-300"}>
-                              {cancelledSchedule ? "Schedule cancelled" : newInvite ? "New interview round" : "Interview invite"}
+                            <Badge variant="outline" className={control.badgeClassName}>
+                              {control.badgeLabel}
                             </Badge>
                           </div>
                           <p className="text-sm text-muted-foreground">
-                            {cancelledSchedule
-                              ? "The recorded interview schedule was cancelled. Record a fresh employer invitation before a new time, or close the interview stage."
-                              : newInvite
-                                ? "A later interview invite was recorded after the prior round. Capture the new time, channel, and interviewer details before follow-up automation continues."
-                              : "This employer response has moved to interview status, but no interview time, channel, or interviewer context has been recorded yet."}
+                            {control.description}
                           </p>
                           <QueueActionStrip
                             summary={getQueueAction("interview_scheduling", item)}
@@ -718,10 +714,10 @@ export default function ReviewQueue() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => setLocation(getApplicationDeepLink(item.applicationId, "schedule-interview"))}
+                            onClick={() => setLocation(getApplicationDeepLink(item.applicationId, control.action))}
                           >
                             <Calendar className="mr-2 h-4 w-4" />
-                            {cancelledSchedule ? "Review in Ledger" : newInvite ? "Schedule Next Round" : "Schedule in Ledger"}
+                            {control.actionLabel}
                           </Button>
                             </>;
                           })()}

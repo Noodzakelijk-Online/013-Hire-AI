@@ -9,6 +9,7 @@ import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
 import { formatAutonomousRunSummary, getAutonomousRunCounts } from "@/lib/autonomousRunSummary";
 import { getApplicationDeepLink } from "@/lib/applicationDeepLinks";
+import { getInterviewSchedulingControl } from "@/lib/interviewSchedulingControl";
 import { getApprovalEvidenceGateSummary } from "@/lib/applicationEvidenceGates";
 import { getAutonomousPolicyControlAction } from "@/lib/autonomousPolicyControl";
 import { getCommandCenterSummary } from "@/lib/commandCenterSummary";
@@ -936,8 +937,9 @@ export default function Dashboard() {
                       </div>
                     ))}
 
-                    {operatingLedger.queues.interviewScheduling.map((item) => (
-                      <div
+                    {operatingLedger.queues.interviewScheduling.map((item) => {
+                      const control = getInterviewSchedulingControl(item.schedulingRequirement);
+                      return <div
                         key={`interview-scheduling-${item.applicationId}`}
                         className="rounded-md border border-blue-500/30 bg-blue-500/5 p-3"
                       >
@@ -945,29 +947,27 @@ export default function Dashboard() {
                           <p className="text-sm font-medium text-white">
                             {item.job?.title || `Application #${item.applicationId}`}
                           </p>
-                          <Badge variant="outline" className={item.schedulingRequirement === "cancelled_schedule" ? "border-amber-500/40 text-amber-300" : "border-blue-500/40 text-blue-300"}>
-                            {item.schedulingRequirement === "cancelled_schedule" ? "Schedule cancelled" : item.schedulingRequirement === "new_invite" ? "New interview round" : "Interview invite"}
+                          <Badge variant="outline" className={control.badgeClassName}>
+                            {control.badgeLabel}
                           </Badge>
                         </div>
                         <p className="mt-1 text-xs text-slate-500">
                           {item.job?.company || "Employer"}{item.job?.location ? ` - ${item.job.location}` : ""}
                         </p>
                         <p className="mt-2 line-clamp-2 text-sm text-slate-300">
-                          {item.schedulingRequirement === "cancelled_schedule"
-                            ? "Record a fresh employer invitation before scheduling another interview time."
-                            : "Add time, channel, interviewer, and notes before Hire.AI continues interview follow-up work."}
+                          {control.description}
                         </p>
                         <Button
                           variant="outline"
                           size="sm"
                           className="mt-3 border-slate-700 text-slate-300"
-                          onClick={() => setLocation(getApplicationDeepLink(item.applicationId, "schedule-interview"))}
+                          onClick={() => setLocation(getApplicationDeepLink(item.applicationId, control.action))}
                         >
                           <Calendar className="mr-2 h-4 w-4" />
-                          {item.schedulingRequirement === "cancelled_schedule" ? "Review Interview" : "Schedule Interview"}
+                          {control.actionLabel}
                         </Button>
-                      </div>
-                    ))}
+                      </div>;
+                    })}
 
                     {operatingLedger.queues.employerResponsesNeedingReply.map((item) => (
                       <div

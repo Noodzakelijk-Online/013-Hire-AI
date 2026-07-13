@@ -10,6 +10,9 @@ describe("application deep links", () => {
     expect(getApplicationDeepLink(42, "schedule-interview")).toBe(
       "/applications?applicationId=42&action=schedule-interview"
     );
+    expect(getApplicationDeepLink(42, "record-interview-invitation")).toBe(
+      "/applications?applicationId=42&action=record-interview-invitation"
+    );
     expect(getApplicationDeepLink(42, "record-interview-outcome", 9)).toBe(
       "/applications?applicationId=42&action=record-interview-outcome&interviewId=9"
     );
@@ -28,6 +31,10 @@ describe("application deep links", () => {
     expect(parseApplicationDeepLink("/applications?applicationId=42&action=schedule-interview")).toEqual({
       applicationId: 42,
       action: "schedule-interview",
+    });
+    expect(parseApplicationDeepLink("?applicationId=43&action=record-interview-invitation")).toEqual({
+      applicationId: 43,
+      action: "record-interview-invitation",
     });
     expect(parseApplicationDeepLink("?applicationId=7")).toEqual({
       applicationId: 7,

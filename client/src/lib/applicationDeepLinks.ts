@@ -1,4 +1,4 @@
-export type ApplicationDeepLinkAction = "view" | "schedule-interview" | "record-interview-outcome" | "employer-response" | "follow-up" | "send-follow-up";
+export type ApplicationDeepLinkAction = "view" | "schedule-interview" | "record-interview-invitation" | "record-interview-outcome" | "employer-response" | "follow-up" | "send-follow-up";
 
 export interface ApplicationDeepLink {
   applicationId: number;
@@ -10,6 +10,7 @@ const DEFAULT_ACTION: ApplicationDeepLinkAction = "view";
 const SUPPORTED_ACTIONS = new Set<ApplicationDeepLinkAction>([
   "view",
   "schedule-interview",
+  "record-interview-invitation",
   "record-interview-outcome",
   "employer-response",
   "follow-up",

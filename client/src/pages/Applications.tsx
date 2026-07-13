@@ -6,6 +6,7 @@ import { getApplicationPipelineControlSummary } from "@/lib/applicationPipelineC
 import { getApplicationLedgerSummary } from "@/lib/applicationLedgerSummary";
 import { getApplicationMaterialEvidenceSummary } from "@/lib/applicationMaterialEvidence";
 import { getInterviewOperatingSummary } from "@/lib/interviewOperatingSummary";
+import { getInterviewSchedulingControl } from "@/lib/interviewSchedulingControl";
 import { getOfferOperatingSummary } from "@/lib/offerOperatingSummary";
 import { getApplicationNextActions, type ApplicationNextActionId } from "@/lib/applicationNextActions";
 import { getApplicationEvidenceGateSummary } from "@/lib/applicationEvidenceGates";
@@ -553,7 +554,10 @@ export default function Applications() {
   const selectedInterviewSchedulingItem = selectedApplication
     ? operatingLedger?.queues.interviewScheduling.find((item) => item.applicationId === selectedApplication.id)
     : null;
-  const canScheduleSelectedInterview = selectedInterviewSchedulingItem?.schedulingRequirement === "new_invite";
+  const selectedInterviewSchedulingControl = selectedInterviewSchedulingItem
+    ? getInterviewSchedulingControl(selectedInterviewSchedulingItem.schedulingRequirement)
+    : null;
+  const canScheduleSelectedInterview = selectedInterviewSchedulingControl?.canSchedule === true;
   const selectedInterviewSummaryForActions = selectedInterviewSummary
     ? { ...selectedInterviewSummary, canSchedule: canScheduleSelectedInterview }
     : null;
@@ -612,10 +616,10 @@ export default function Applications() {
     );
   };
 
-  const openEmployerResponseDialog = (application: any) => {
+  const openEmployerResponseDialog = (application: any, responseType?: EmployerResponseType) => {
     setResponseApplication(application);
     setSelectedApplication(null);
-    setEmployerResponseType(application.status === "interview" ? "offer" : "viewed");
+    setEmployerResponseType(responseType || (application.status === "interview" ? "offer" : "viewed"));
     setEmployerResponseSource("email");
     setEmployerResponseSourceReference("");
     setEmployerResponseSummary("");
@@ -734,6 +738,11 @@ export default function Applications() {
 
     if (deepLink.action === "schedule-interview") {
       openScheduleInterviewDialog(application);
+      return;
+    }
+
+    if (deepLink.action === "record-interview-invitation") {
+      openEmployerResponseDialog(application, "interview_invite");
       return;
     }
 
@@ -1380,7 +1389,9 @@ export default function Applications() {
                         <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                           <div>
                             <h4 className="text-sm font-medium text-slate-200">Interview Control</h4>
-                            <p className="mt-1 text-sm text-slate-400">{selectedInterviewSummary.nextAction}</p>
+                            <p className="mt-1 text-sm text-slate-400">
+                              {selectedInterviewSchedulingControl?.description || selectedInterviewSummary.nextAction}
+                            </p>
                           </div>
                           <Badge
                             variant="outline"
@@ -1511,6 +1522,18 @@ export default function Applications() {
                           >
                             <Calendar className="mr-1 h-4 w-4" />
                             Schedule Interview
+                          </Button>
+                        )}
+                        {selectedInterviewSchedulingControl && !canScheduleSelectedInterview && (
+                          <Button
+                            data-testid="record-interview-invitation-open"
+                            variant="outline"
+                            size="sm"
+                            className="mt-3"
+                            onClick={() => openEmployerResponseDialog(selectedApplication, "interview_invite")}
+                          >
+                            <MessageSquare className="mr-1 h-4 w-4" />
+                            {selectedInterviewSchedulingControl.actionLabel}
                           </Button>
                         )}
                       </div>
