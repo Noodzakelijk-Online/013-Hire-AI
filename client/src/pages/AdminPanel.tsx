@@ -517,16 +517,17 @@ export default function AdminPanel() {
                       ["Fresh sources", scrapingStatus?.coverage.freshReadySources ?? 0],
                       ["Source-specific adapters", scrapingStatus?.coverage.configuredDedicatedAdapterSources ?? 0],
                       ["Generic adapters", (scrapingStatus?.coverage.configuredGenericRssAdapterSources ?? 0) + (scrapingStatus?.coverage.configuredGenericHtmlAdapterSources ?? 0)],
-                      ["No-listing sources", scraperSourceOutcomes.empty],
-                      ["Failed sources", scraperSourceOutcomes.failed],
-                      ["Partial sources", scraperSourceOutcomes.partial],
+                      ["Fresh no-listing sources", scrapingStatus?.coverage.freshZeroListingSources ?? scraperSourceOutcomes.freshEmpty],
+                      ["Fresh failed sources", scrapingStatus?.coverage.freshFailedLatestSources ?? scraperSourceOutcomes.freshFailed],
+                      ["Fresh partial sources", scrapingStatus?.coverage.freshPartialLatestSources ?? scraperSourceOutcomes.freshPartial],
+                      ["Historical source outcomes", scraperSourceOutcomes.staleOutcomes],
                       ["Registry sources", scrapingStatus?.coverage.registeredSources ?? 0],
                       ["Completed cycles", scrapingStatus?.scheduler.totalRunsCompleted ?? 0],
                       ["Clean cycles", scrapingStatus?.scheduler.totalSuccessfulRuns ?? 0],
                       ["Partial cycles", scrapingStatus?.scheduler.totalPartialRuns ?? 0],
                       ["Failed cycles", scrapingStatus?.scheduler.totalFailedRuns ?? 0],
                       ["Jobs saved", scrapingStatus?.scheduler.totalJobsScraped ?? 0],
-                      ["Attention signals", scraperSourceOutcomes.issues + (scrapingStatus?.scheduler.errors.length ?? 0) + (scrapingStatus?.coverage.unavailableConfiguredSources ?? 0)],
+                      ["Current attention signals", (scrapingStatus?.coverage.freshSourceIssues ?? scraperSourceOutcomes.freshIssues) + (scrapingStatus?.scheduler.errors.length ?? 0) + (scrapingStatus?.coverage.unavailableConfiguredSources ?? 0)],
                     ].map(([label, value]) => (
                       <div key={String(label)} className="rounded-md border border-slate-800 bg-slate-950/50 p-3">
                         <div className="text-xs text-slate-500">{label}</div>
@@ -571,19 +572,19 @@ export default function AdminPanel() {
                       </p>
                     </div>
                   )}
-                  {scraperSourceOutcomes.empty > 0 && (
+                  {(scrapingStatus?.coverage.freshZeroListingSources ?? scraperSourceOutcomes.freshEmpty) > 0 && (
                     <div data-testid="admin-scraping-empty-sources" className="mt-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
                       <div className="font-medium">Source scans returned no listings</div>
                       <p className="mt-1 text-xs text-amber-200">
-                        {scraperSourceOutcomes.empty} active source{scraperSourceOutcomes.empty === 1 ? " returned" : "s returned"} no listings on the latest clean scan. This is not a transport failure, but it is not evidence of current discovery coverage.
+                        {scrapingStatus?.coverage.freshZeroListingSources ?? scraperSourceOutcomes.freshEmpty} active source{(scrapingStatus?.coverage.freshZeroListingSources ?? scraperSourceOutcomes.freshEmpty) === 1 ? " returned" : "s returned"} no listings in the last 24 hours. This is not a transport failure, but it is not evidence of current discovery coverage.
                       </p>
                     </div>
                   )}
-                  {scraperSourceOutcomes.failed + scraperSourceOutcomes.partial > 0 && (
+                  {((scrapingStatus?.coverage.freshFailedLatestSources ?? scraperSourceOutcomes.freshFailed) + (scrapingStatus?.coverage.freshPartialLatestSources ?? scraperSourceOutcomes.freshPartial)) > 0 && (
                     <div data-testid="admin-scraping-outcome-issues" className="mt-4 rounded-md border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-100">
                       <div className="font-medium">Latest source outcomes need attention</div>
                       <p className="mt-1 text-xs text-red-200">
-                        {scraperSourceOutcomes.failed} failed and {scraperSourceOutcomes.partial} partial source outcome{scraperSourceOutcomes.failed + scraperSourceOutcomes.partial === 1 ? " was" : "s were"} recorded in the latest scan results. Inspect the source health table before relying on full discovery coverage.
+                        {scrapingStatus?.coverage.freshFailedLatestSources ?? scraperSourceOutcomes.freshFailed} failed and {scrapingStatus?.coverage.freshPartialLatestSources ?? scraperSourceOutcomes.freshPartial} partial source outcome{((scrapingStatus?.coverage.freshFailedLatestSources ?? scraperSourceOutcomes.freshFailed) + (scrapingStatus?.coverage.freshPartialLatestSources ?? scraperSourceOutcomes.freshPartial)) === 1 ? " was" : "s were"} recorded in the last 24 hours. Inspect the source health table before relying on full discovery coverage.
                       </p>
                     </div>
                   )}

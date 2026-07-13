@@ -50,19 +50,38 @@ describe("scraper source health", () => {
   });
 
   it("counts empty, partial, and failed sources as attention items", () => {
+    const now = new Date("2026-07-13T12:00:00.000Z");
     expect(getScraperSourceOutcomeCounts([
-      { lastScrapeStatus: "success", lastScrapeJobCount: 4 },
-      { lastScrapeStatus: "success", lastScrapeJobCount: 0 },
-      { lastScrapeStatus: "partial" },
-      { lastScrapeStatus: "failed" },
+      { lastScrapeStatus: "success", lastScrapeJobCount: 4, lastScrapeAttemptedAt: "2026-07-13T11:00:00.000Z" },
+      { lastScrapeStatus: "success", lastScrapeJobCount: 0, lastScrapeAttemptedAt: "2026-07-13T11:00:00.000Z" },
+      { lastScrapeStatus: "partial", lastScrapeAttemptedAt: "2026-07-13T11:00:00.000Z" },
+      { lastScrapeStatus: "failed", lastScrapeAttemptedAt: "2026-07-11T11:00:00.000Z" },
       {},
-    ])).toEqual({
+    ], now)).toEqual({
       success: 1,
       empty: 1,
       partial: 1,
       failed: 1,
       awaiting: 1,
       issues: 3,
+      freshSuccess: 1,
+      freshEmpty: 1,
+      freshPartial: 1,
+      freshFailed: 0,
+      freshIssues: 2,
+      staleOutcomes: 1,
     });
+  });
+
+  it("keeps stale source outcomes visible without treating them as a current incident", () => {
+    const now = new Date("2026-07-13T12:00:00.000Z");
+    const summary = getScraperSourceHealthSummary({
+      lastScrapeStatus: "failed",
+      lastScrapeJobCount: 0,
+      lastScrapeError: "Rate limited",
+      lastScrapeAttemptedAt: "2026-07-11T12:00:00.000Z",
+    }, now);
+
+    expect(summary).toMatchObject({ outcome: "failed", isFresh: false, error: "Rate limited" });
   });
 });
