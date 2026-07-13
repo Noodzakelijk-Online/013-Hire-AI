@@ -210,7 +210,7 @@ async function getInterviewNotificationQueue(applications: UserApplicationRecord
 
   const items = await Promise.all(notifications.map(async (notification) => {
     const application = applicationsById.get(notification.applicationId);
-    if (!application) return null;
+    if (!application || application.status !== "interview") return null;
 
     const response = (await getEmployerResponses(application.id, userId))
       .find((item) => item.id === notification.employerResponseId);

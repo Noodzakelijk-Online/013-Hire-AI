@@ -135,4 +135,42 @@ describe("interview notification ledger", () => {
       event.afterState?.includes(String(notification.id))
     )).toBe(true);
   });
+
+  it("retires a stale invite alert when a later employer response closes interview scheduling", async () => {
+    const userId = 99175;
+    const application = await createApplication({ userId, jobId: 1, status: "applied" });
+    const applicationId = Number(application.insertId);
+    const invite = await recordEmployerResponse({
+      applicationId,
+      responseType: "interview_invite",
+      source: "email",
+      sourceReference: "gmail-interview-99175",
+      summary: "The recruiter invited the candidate to schedule a first-round interview.",
+    }, userId);
+    const [notification] = await listUnreadInterviewNotifications(userId);
+
+    const rejection = await recordEmployerResponse({
+      applicationId,
+      responseType: "rejection",
+      source: "email",
+      sourceReference: "gmail-rejection-99175",
+      summary: "The recruiter confirmed that the role has been filled and the process is closed.",
+    }, userId);
+    const ledger = await getUserOperatingLedger(userId);
+    const auditEvents = await getAuditEventsForEntity(userId, "application", applicationId);
+
+    expect(rejection).toMatchObject({
+      status: "rejected",
+      retiredInterviewNotificationIds: [notification.id],
+    });
+    expect(invite.status).toBe("interview");
+    expect(await listUnreadInterviewNotifications(userId)).toHaveLength(0);
+    expect(ledger.metrics.unreadInterviewNotifications).toBe(0);
+    expect(ledger.queues.interviewNotifications).toEqual([]);
+    expect(auditEvents.some((event) =>
+      event.action === "interview_notifications_retired_after_response" &&
+      event.afterState?.includes(String(notification.id)) &&
+      event.afterState?.includes('"responseType":"rejection"')
+    )).toBe(true);
+  });
 });

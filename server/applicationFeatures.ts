@@ -692,6 +692,10 @@ function shouldCancelOutstandingInterviews(
   return currentStatus === "interview" && responseType === "rejection";
 }
 
+function shouldRetireInterviewNotifications(statusAfter: ApplicationStatus) {
+  return ["offer", "rejected"].includes(statusAfter);
+}
+
 export async function recordEmployerResponse(input: RecordEmployerResponseInput, userId: number) {
   const db = await getDb();
   if (!db) {
@@ -759,6 +763,32 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
       await updateApplicationStatus(input.applicationId, response.nextStatus, userId);
     } else {
       await touchApplicationActivity(input.applicationId, userId, response.receivedAt);
+    }
+
+    const retiredInterviewNotificationIds: number[] = [];
+    if (shouldRetireInterviewNotifications(statusAfter)) {
+      const { notificationIds } = await markUnreadInterviewNotificationsReadForApplication(
+        input.applicationId,
+        userId
+      );
+      retiredInterviewNotificationIds.push(...notificationIds);
+      if (notificationIds.length > 0) {
+        await createAuditEvent({
+          userId,
+          entityType: "application",
+          entityId: input.applicationId,
+          action: "interview_notifications_retired_after_response",
+          actor: "system",
+          source: "applications.recordResponse",
+          afterState: JSON.stringify({
+            responseId,
+            responseType: response.responseType,
+            status: statusAfter,
+            notificationIds,
+          }),
+          riskLevel: "low",
+        });
+      }
     }
 
     const cancelledFollowUpApprovalIds: number[] = [];
@@ -951,6 +981,7 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
       cancelledOfferAttributionApprovalIds,
       dismissedOfferAttributionReviewIds,
       cancelledInterviewIds,
+      retiredInterviewNotificationIds,
     };
   }
 
@@ -1012,6 +1043,7 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
     const cancelledOfferAttributionApprovalIds: number[] = [];
     const dismissedOfferAttributionReviewIds: number[] = [];
     const cancelledInterviewIds: number[] = [];
+    const retiredInterviewNotificationIds: number[] = [];
 
     if (response.responseType === "interview_invite") {
       const notification = await tx.insert(applicationNotifications).values({
@@ -1056,6 +1088,42 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
         .update(applications)
         .set({ lastActivity: response.receivedAt })
         .where(and(eq(applications.id, input.applicationId), eq(applications.userId, userId)));
+    }
+
+    if (shouldRetireInterviewNotifications(statusAfter)) {
+      const unreadNotifications = await tx
+        .select({ id: applicationNotifications.id })
+        .from(applicationNotifications)
+        .where(and(
+          eq(applicationNotifications.applicationId, input.applicationId),
+          eq(applicationNotifications.userId, userId),
+          isNull(applicationNotifications.readAt)
+        ));
+      retiredInterviewNotificationIds.push(...unreadNotifications.map((notification) => notification.id));
+      if (retiredInterviewNotificationIds.length > 0) {
+        await tx
+          .update(applicationNotifications)
+          .set({ readAt: response.receivedAt })
+          .where(and(
+            inArray(applicationNotifications.id, retiredInterviewNotificationIds),
+            isNull(applicationNotifications.readAt)
+          ));
+        await tx.insert(auditEvents).values({
+          userId,
+          entityType: "application",
+          entityId: input.applicationId,
+          action: "interview_notifications_retired_after_response",
+          actor: "system",
+          source: "applications.recordResponse",
+          afterState: JSON.stringify({
+            responseId,
+            responseType: response.responseType,
+            status: statusAfter,
+            notificationIds: retiredInterviewNotificationIds,
+          }),
+          riskLevel: "low",
+        });
+      }
     }
 
     if (shouldCancelUnsentFollowUpApprovals(response.responseType)) {
@@ -1290,6 +1358,7 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
       cancelledOfferAttributionApprovalIds,
       dismissedOfferAttributionReviewIds,
       cancelledInterviewIds,
+      retiredInterviewNotificationIds,
     };
   });
 }
