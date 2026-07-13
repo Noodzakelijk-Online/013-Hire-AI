@@ -140,11 +140,19 @@ export class GenericScraper extends BaseScraper {
       const rawJobs = Array.isArray(response) ? response : response.jobs || response.data || [];
 
       for (const rawJob of rawJobs) {
+        const salary = this.normalizeApiSalary(rawJob);
         const normalizedJob = this.normalizeJob({
           title: rawJob.title || rawJob.name,
           company: rawJob.company || rawJob.company_name || rawJob.employer,
           location: rawJob.location || "Remote",
           description: rawJob.description || rawJob.content,
+          requirements: rawJob.requirements || rawJob.qualifications,
+          responsibilities: rawJob.responsibilities || rawJob.duties,
+          skills: Array.isArray(rawJob.skills) ? rawJob.skills.join(", ") : rawJob.skills || rawJob.tags,
+          jobType: rawJob.jobType || rawJob.job_type || rawJob.employmentType || rawJob.employment_type,
+          salaryMin: salary.min,
+          salaryMax: salary.max,
+          salaryCurrency: salary.currency,
           applicationUrl: rawJob.url || rawJob.link || rawJob.apply_url,
           externalId: rawJob.id?.toString() || rawJob.slug,
           postedDate: rawJob.date || rawJob.published_at || rawJob.created_at,
@@ -464,6 +472,35 @@ export class GenericScraper extends BaseScraper {
       max: normalized.normalizedYearly.max ?? undefined,
       currency: normalized.currency,
     };
+  }
+
+  private normalizeApiSalary(rawJob: Record<string, unknown>) {
+    const min = this.scalarValue(rawJob.salaryMin ?? rawJob.salary_min ?? rawJob.minSalary ?? rawJob.min_salary);
+    const max = this.scalarValue(rawJob.salaryMax ?? rawJob.salary_max ?? rawJob.maxSalary ?? rawJob.max_salary);
+    const range = this.scalarValue(rawJob.salary ?? rawJob.salaryRange ?? rawJob.salary_range ?? rawJob.compensation);
+    const currency = this.stringValue(rawJob.salaryCurrency ?? rawJob.salary_currency ?? rawJob.currency);
+    const period = this.stringValue(rawJob.salaryPeriod ?? rawJob.salary_period ?? rawJob.payPeriod ?? rawJob.pay_period);
+    const values = [min, max].filter((value): value is string => Boolean(value));
+    const salaryText = [...(values.length > 0 ? values : [range]), currency, period]
+      .filter((value): value is string => Boolean(value))
+      .join(" - ");
+
+    if (!salaryText) {
+      return { min: undefined, max: undefined, currency: undefined };
+    }
+
+    const normalized = normalizeSalary(salaryText);
+    return {
+      min: normalized.normalizedYearly.min ?? undefined,
+      max: normalized.normalizedYearly.max ?? undefined,
+      currency: normalized.currency,
+    };
+  }
+
+  private scalarValue(value: unknown) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+    return undefined;
   }
 
   private extractTag(xml: string, tag: string): string {

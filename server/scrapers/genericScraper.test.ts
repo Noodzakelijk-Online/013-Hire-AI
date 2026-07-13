@@ -149,6 +149,13 @@ describe("generic scraper structured job extraction", () => {
             company: "European Systems",
             location: "Remote - Netherlands",
             description: "Build platform services for distributed teams.",
+            requirements: "Experience with TypeScript and distributed systems.",
+            skills: ["TypeScript", "React"],
+            employment_type: "FULL_TIME",
+            salary_min: "40",
+            salary_max: "50",
+            salary_currency: "EUR",
+            salary_period: "HOUR",
             url: "https://jobs.example.com/eu-platform",
           },
           {
@@ -176,7 +183,15 @@ describe("generic scraper structured job extraction", () => {
 
     expect(result.errors).toEqual([]);
     expect(result.jobs).toEqual([
-      expect.objectContaining({ externalId: "eu-platform", company: "European Systems" }),
+      expect.objectContaining({
+        externalId: "eu-platform",
+        company: "European Systems",
+        jobType: "full-time",
+        skills: "TypeScript, React",
+        salaryMin: 83200,
+        salaryMax: 104000,
+        salaryCurrency: "EUR",
+      }),
     ]);
     const requestedUrl = new URL(String((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]));
     expect(requestedUrl.searchParams.get("source")).toBe("hire-ai");
