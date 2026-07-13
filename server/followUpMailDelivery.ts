@@ -326,6 +326,52 @@ async function recordKnownDeliveryFailure(
   });
 }
 
+async function recordUncertainDeliveryOutcome(
+  input: SendApprovedFollowUpInput,
+  attemptKey: string,
+  reason: string
+) {
+  const db = await getDb();
+  if (!db) return;
+
+  await db.transaction(async (tx) => {
+    const rows = await tx
+      .select({ applicationId: followUps.applicationId })
+      .from(followUps)
+      .innerJoin(applications, eq(followUps.applicationId, applications.id))
+      .where(and(eq(followUps.id, input.followUpId), eq(applications.userId, input.userId)))
+      .limit(1);
+    if (!rows[0]) return;
+
+    const updated = await tx
+      .update(followUps)
+      .set({ deliveryState: "unknown", deliveryFailureMessage: reason })
+      .where(and(
+        eq(followUps.id, input.followUpId),
+        eq(followUps.deliveryAttemptKey, attemptKey),
+        eq(followUps.deliveryState, "sending")
+      ));
+    if (Number(updated[0].affectedRows) !== 1) return;
+    await tx.insert(auditEvents).values({
+      userId: input.userId,
+      entityType: "application",
+      entityId: rows[0].applicationId,
+      action: "follow_up_mail_delivery_uncertain",
+      actor: "user",
+      source: `followUpMailDelivery.${input.provider}`,
+      afterState: JSON.stringify({
+        followUpId: input.followUpId,
+        provider: input.provider,
+        recipient: input.recipient,
+        reason,
+        externalMessageSent: "unknown",
+        retryBlocked: true,
+      }),
+      riskLevel: "high",
+    });
+  });
+}
+
 export async function sendApprovedFollowUp(
   input: SendApprovedFollowUpInput,
   options: { fetcher?: typeof fetch; now?: Date; dependencies?: FollowUpMailDeliveryDependencies } = {}
@@ -359,6 +405,7 @@ export async function sendApprovedFollowUp(
       await recordKnownDeliveryFailure(input, attemptKey, reason);
       throw new Error(reason);
     }
+    await recordUncertainDeliveryOutcome(input, attemptKey, reason);
     throw new Error(`Follow-up delivery outcome is uncertain. Do not retry. Check ${providerLabel(input.provider)} and confirm delivery manually. ${reason}`);
   }
 
@@ -400,6 +447,7 @@ export async function sendApprovedFollowUp(
       });
     });
   } catch (error) {
+    await recordUncertainDeliveryOutcome(input, attemptKey, failureMessage(error));
     throw new Error(`Mailbox accepted the follow-up, but Hire.AI could not finalize its ledger. Do not retry; confirm delivery manually. ${failureMessage(error)}`);
   }
 
