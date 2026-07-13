@@ -170,6 +170,24 @@ describe("inbox response discovery", () => {
       applicationId: 701,
       suggestedResponseType: "rejection",
     })]);
+    const [requestUrl] = fetcher.mock.calls[0];
+    expect(String(requestUrl)).toContain("%24filter=receivedDateTime+ge+2026-06-13T12%3A00%3A00.000Z");
+  });
+
+  it("does not surface Outlook messages outside the recruiting response lookback window", async () => {
+    mocks.listUserConnectorAccounts.mockResolvedValue([connectedInbox("outlook")]);
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      value: [{
+        id: "outlook-stale-701",
+        subject: "Acme Analytics application update",
+        bodyPreview: "We would like to schedule an interview for Acme Analytics.",
+        from: { emailAddress: { address: "recruiter@acme.example" } },
+        receivedDateTime: "2026-06-13T11:59:59.000Z",
+      }],
+    }), { status: 200 }));
+
+    await expect(discoverInboxResponseCandidates(700, "outlook", options(fetcher))).resolves.toEqual([]);
+    expect(mocks.findEmployerResponseBySourceReference).not.toHaveBeenCalled();
   });
 
   it("renews an expired Gmail grant before scanning recruiting messages", async () => {

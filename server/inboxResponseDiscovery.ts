@@ -34,6 +34,7 @@ export type InboxResponseCandidate = {
 
 const MAX_MESSAGES = 50;
 const TOKEN_EXPIRY_SKEW_MS = 60_000;
+const INBOX_RESPONSE_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000;
 
 export type InboxResponseDiscoveryDependencies = {
   findEmployerResponseBySourceReference: typeof findEmployerResponseBySourceReference;
@@ -193,6 +194,11 @@ function normalized(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
+function isWithinInboxResponseLookback(receivedAt: Date, now: Date) {
+  return receivedAt.getTime() >= now.getTime() - INBOX_RESPONSE_LOOKBACK_MS &&
+    receivedAt.getTime() <= now.getTime() + TOKEN_EXPIRY_SKEW_MS;
+}
+
 function findApplicationMatch(
   text: string,
   applications: Awaited<ReturnType<typeof getUserApplications>>
@@ -289,7 +295,7 @@ export async function discoverInboxResponseCandidates(
       const preview = typeof metadata.snippet === "string" ? metadata.snippet.slice(0, 600) : "";
       const match = findApplicationMatch(`${headers.sender || ""} ${headers.subject} ${preview}`, applications);
       const received = headers.receivedAt ? new Date(headers.receivedAt) : now;
-      if (!match || Number.isNaN(received.getTime())) continue;
+      if (!match || Number.isNaN(received.getTime()) || !isWithinInboxResponseLookback(received, now)) continue;
       candidates.push({
         provider,
         messageId: message.id,
@@ -304,9 +310,11 @@ export async function discoverInboxResponseCandidates(
     return await excludeRecordedInboxResponses(userId, candidates, dependencies);
   }
 
+  const lookbackStart = new Date(now.getTime() - INBOX_RESPONSE_LOOKBACK_MS).toISOString();
   const response = await fetcher("https://graph.microsoft.com/v1.0/me/messages?" + new URLSearchParams({
     "$top": String(MAX_MESSAGES),
     "$select": "id,subject,from,receivedDateTime,bodyPreview",
+    "$filter": `receivedDateTime ge ${lookbackStart}`,
     "$orderby": "receivedDateTime desc",
   }), { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!response.ok) await throwInboxApiError(userId, account, "outlook", response.status, dependencies);
@@ -321,7 +329,7 @@ export async function discoverInboxResponseCandidates(
       ? (message.from as { emailAddress: { address: string } }).emailAddress.address
       : null;
     const match = findApplicationMatch(`${sender || ""} ${subject} ${preview}`, applications);
-    if (!messageId || !match || !received || Number.isNaN(received.getTime())) return [];
+    if (!messageId || !match || !received || Number.isNaN(received.getTime()) || !isWithinInboxResponseLookback(received, now)) return [];
     return [{
       provider,
       messageId,
