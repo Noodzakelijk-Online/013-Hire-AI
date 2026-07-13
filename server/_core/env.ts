@@ -7,6 +7,12 @@ export function resolveProductionRuntime(nodeEnv: string | undefined, moduleUrl:
 
 const isProduction = resolveProductionRuntime(process.env.NODE_ENV, import.meta.url);
 const readEnv = (name: string) => process.env[name] ?? "";
+export function readBooleanFeatureFlag(value: string | undefined, fallback: boolean): boolean {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === "true") return true;
+  if (normalized === "false") return false;
+  return fallback;
+}
 const readBoundedInteger = (name: string, fallback: number, minimum: number, maximum: number) => {
   const value = Number.parseInt(readEnv(name), 10);
   if (!Number.isFinite(value)) return fallback;
@@ -47,8 +53,10 @@ export const ENV = {
   linkedInOAuthClientSecret: readEnv("LINKEDIN_OAUTH_CLIENT_SECRET"),
   githubOAuthClientId: readEnv("GITHUB_OAUTH_CLIENT_ID"),
   githubOAuthClientSecret: readEnv("GITHUB_OAUTH_CLIENT_SECRET"),
-  autonomousSchedulerEnabled: readEnv("AUTONOMOUS_SCHEDULER_ENABLED").toLowerCase() === "true",
-  jobScrapingSchedulerEnabled: readEnv("JOB_SCRAPING_SCHEDULER_ENABLED").toLowerCase() === "true",
+  // This worker only processes explicitly opted-in users and never submits to an
+  // external portal. Keep it available unless an operator explicitly disables it.
+  autonomousSchedulerEnabled: readBooleanFeatureFlag(process.env.AUTONOMOUS_SCHEDULER_ENABLED, true),
+  jobScrapingSchedulerEnabled: readBooleanFeatureFlag(process.env.JOB_SCRAPING_SCHEDULER_ENABLED, false),
   jobScrapingIntervalMinutes: readBoundedInteger("JOB_SCRAPING_INTERVAL_MINUTES", 60, 5, 1440),
   jobScrapingMaxJobsPerRun: readBoundedInteger("JOB_SCRAPING_MAX_JOBS_PER_RUN", 100, 10, 1000),
   jobScrapingEnabledPlatforms: readOptionalCsv("JOB_SCRAPING_ENABLED_PLATFORMS"),
