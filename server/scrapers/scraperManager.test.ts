@@ -1,6 +1,16 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BaseScraper } from "./baseScraper";
 import { ScraperManager } from "./scraperManager";
+
+const mocks = vi.hoisted(() => ({
+  getDb: vi.fn(),
+  updatePlatformLastScraped: vi.fn(),
+}));
+
+vi.mock("../db", () => ({
+  getDb: mocks.getDb,
+  updatePlatformLastScraped: mocks.updatePlatformLastScraped,
+}));
 
 function createScraper(platformId: number) {
   return {
@@ -14,6 +24,12 @@ function createScraper(platformId: number) {
 }
 
 describe("scraper manager platform restrictions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getDb.mockResolvedValue(null);
+    mocks.updatePlatformLastScraped.mockResolvedValue(undefined);
+  });
+
   it("runs only the explicitly enabled platform sources", async () => {
     const manager = new ScraperManager();
     const remoteOk = createScraper(1);
@@ -43,5 +59,63 @@ describe("scraper manager platform restrictions", () => {
       "No scraper available for platform: Unavailable Board",
     ]);
     expect(manager.getInitializationError("Unavailable Board")).toBeNull();
+  });
+
+  it("refreshes a re-observed source listing instead of leaving an expired record unavailable", async () => {
+    const existingJob = {
+      id: 712,
+      externalId: "source-job-712",
+      platformId: 7,
+      title: "Senior Platform Engineer",
+      company: "Source Co",
+      description: "Older description",
+      requirements: null,
+      responsibilities: null,
+      benefits: null,
+      location: "Remote",
+      jobType: "full-time",
+      salaryMin: 120000,
+      salaryMax: 160000,
+      salaryCurrency: "USD",
+      skills: "TypeScript",
+      applicationUrl: "https://jobs.example.com/712",
+      applicationEmail: null,
+      applicationProcess: null,
+      sourceUrl: null,
+      postedDate: new Date("2026-07-01T00:00:00.000Z"),
+      expiryDate: new Date("2026-07-10T00:00:00.000Z"),
+      isActive: 0,
+      visaSponsorshipAvailable: 0,
+      openHiringSupport: 0,
+      diversityFriendly: 0,
+    };
+    const where = vi.fn().mockResolvedValue([{ affectedRows: 1 }]);
+    const set = vi.fn(() => ({ where }));
+    const update = vi.fn(() => ({ set }));
+    const limit = vi.fn().mockResolvedValue([existingJob]);
+    const selectWhere = vi.fn(() => ({ limit }));
+    const from = vi.fn(() => ({ where: selectWhere }));
+    const select = vi.fn(() => ({ from }));
+    mocks.getDb.mockResolvedValue({ select, update });
+
+    const result = await new ScraperManager().saveJobs([{
+      externalId: "source-job-712",
+      platformId: 7,
+      title: "Senior Platform Engineer",
+      company: "Source Co",
+      description: "Updated source description",
+      applicationUrl: "https://jobs.example.com/712?source=refresh",
+      isActive: 1,
+    }]);
+
+    expect(result).toEqual({ saved: 0, refreshed: 1, duplicates: 0, errors: 0 });
+    expect(update).toHaveBeenCalledOnce();
+    expect(set).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Senior Platform Engineer",
+      description: "Updated source description",
+      applicationUrl: "https://jobs.example.com/712?source=refresh",
+      expiryDate: null,
+      isActive: 1,
+    }));
   });
 });

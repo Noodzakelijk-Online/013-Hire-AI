@@ -178,15 +178,17 @@ export class ScraperManager {
    */
   async saveJobs(scrapedJobs: any[]): Promise<{
     saved: number;
+    refreshed: number;
     duplicates: number;
     errors: number;
   }> {
     const db = await getDb();
     if (!db) {
-      return { saved: 0, duplicates: scrapedJobs.length, errors: 0 };
+      return { saved: 0, refreshed: 0, duplicates: scrapedJobs.length, errors: 0 };
     }
 
     let saved = 0;
+    let refreshed = 0;
     let duplicates = 0;
     let errors = 0;
     const now = new Date();
@@ -202,7 +204,38 @@ export class ScraperManager {
             .limit(1);
 
           if (existing.length > 0) {
-            duplicates++;
+            const current = existing[0];
+            await db
+              .update(jobs)
+              .set({
+                title: job.title ?? current.title,
+                company: job.company ?? current.company,
+                description: job.description ?? current.description,
+                requirements: job.requirements ?? current.requirements,
+                responsibilities: job.responsibilities ?? current.responsibilities,
+                benefits: job.benefits ?? current.benefits,
+                location: job.location ?? current.location,
+                jobType: job.jobType ?? current.jobType,
+                salaryMin: job.salaryMin ?? current.salaryMin,
+                salaryMax: job.salaryMax ?? current.salaryMax,
+                salaryCurrency: job.salaryCurrency ?? current.salaryCurrency,
+                skills: job.skills ?? current.skills,
+                applicationUrl: job.applicationUrl ?? current.applicationUrl,
+                applicationEmail: job.applicationEmail ?? current.applicationEmail,
+                applicationProcess: job.applicationProcess ?? current.applicationProcess,
+                sourceUrl: job.sourceUrl ?? current.sourceUrl,
+                postedDate: job.postedDate ?? current.postedDate,
+                // Seeing the same source identity again is positive evidence that
+                // the listing remains available, even if a previous cycle retired it.
+                expiryDate: job.expiryDate ?? null,
+                isActive: 1,
+                visaSponsorshipAvailable: job.visaSponsorshipAvailable ?? current.visaSponsorshipAvailable,
+                openHiringSupport: job.openHiringSupport ?? current.openHiringSupport,
+                diversityFriendly: job.diversityFriendly ?? current.diversityFriendly,
+                updatedAt: now,
+              })
+              .where(eq(jobs.id, current.id));
+            refreshed++;
             continue;
           }
         }
@@ -255,10 +288,10 @@ export class ScraperManager {
     }
 
     console.log(
-      `[ScraperManager] Saved ${saved} jobs, skipped ${duplicates} duplicates, ${errors} errors`
+      `[ScraperManager] Saved ${saved} jobs, refreshed ${refreshed} existing listings, linked ${duplicates} duplicates, ${errors} errors`
     );
 
-    return { saved, duplicates, errors };
+    return { saved, refreshed, duplicates, errors };
   }
 
   /**
@@ -267,6 +300,7 @@ export class ScraperManager {
   async runScrapingCycle(options?: ScrapeOptions): Promise<{
     totalScraped: number;
     totalSaved: number;
+    totalRefreshed: number;
     totalDuplicates: number;
     totalErrors: number;
     platformResults: Record<string, ScrapeResult>;
@@ -280,13 +314,14 @@ export class ScraperManager {
     const allJobs = Object.values(platformResults).flatMap((result) => result.jobs);
 
     // Save to database
-    const { saved, duplicates, errors } = await this.saveJobs(allJobs);
+    const { saved, refreshed, duplicates, errors } = await this.saveJobs(allJobs);
 
     console.log("[ScraperManager] Scraping cycle complete");
 
     return {
       totalScraped: totalJobs,
       totalSaved: saved,
+      totalRefreshed: refreshed,
       totalDuplicates: duplicates,
       totalErrors: errors,
       platformResults,
