@@ -1,6 +1,8 @@
 import { invokeLLM } from "./_core/llm";
 import type { Job, UserProfile } from "../drizzle/schema";
 import { buildEvidenceBoundApplicationDraft } from "./applicationMaterialDraft";
+import { scoreJobForProfile } from "./autonomousOrchestrator";
+import { getLocationPreferenceFit } from "../shared/locationEligibility";
 
 /**
  * AI-powered job matching service
@@ -15,6 +17,95 @@ export interface JobMatchResult {
   experienceMatch: number;
   locationMatch: number;
   salaryMatch: number;
+  analysisSource: "llm" | "deterministic_fallback";
+}
+
+function splitList(value?: string | null): string[] {
+  return Array.from(new Set(
+    (value || "")
+      .split(/[,;\n]/)
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean)
+  ));
+}
+
+function overlaps(left: string, right: string) {
+  return left.includes(right) || right.includes(left);
+}
+
+function clampScore(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error("Match score must be a finite number.");
+  }
+  if (value < 0 || value > 100) {
+    throw new Error("Match score must be between 0 and 100.");
+  }
+  return Math.round(value);
+}
+
+function matchSkillScore(profile: UserProfile, job: Job): number {
+  const profileSkills = splitList(profile.skills);
+  const jobSkills = splitList(job.skills);
+  if (jobSkills.length === 0) return 50;
+  if (profileSkills.length === 0) return 0;
+
+  const matched = jobSkills.filter((jobSkill) =>
+    profileSkills.some((profileSkill) => overlaps(profileSkill, jobSkill))
+  ).length;
+  return Math.round((matched / jobSkills.length) * 100);
+}
+
+function matchLocationScore(profile: UserProfile, job: Job): number {
+  const fit = getLocationPreferenceFit(job.location, profile.desiredLocations);
+  if (fit === "fit") return 100;
+  if (fit === "partial") return 50;
+  if (fit === "gap") return 0;
+  return 50;
+}
+
+function matchSalaryScore(profile: UserProfile, job: Job): number {
+  const hasProfileExpectation = Boolean(profile.salaryExpectationMin || profile.salaryExpectationMax);
+  const hasJobSalary = Boolean(job.salaryMin || job.salaryMax);
+  if (!hasProfileExpectation || !hasJobSalary) return 50;
+
+  if (profile.salaryExpectationMin && job.salaryMax && job.salaryMax < profile.salaryExpectationMin) {
+    return 0;
+  }
+  if (profile.salaryExpectationMax && job.salaryMin && job.salaryMin > profile.salaryExpectationMax) {
+    return 50;
+  }
+  return 100;
+}
+
+/**
+ * Produces a review-safe match from only structured profile and job evidence.
+ * It is used whenever an optional LLM analysis is unavailable or invalid.
+ */
+export function calculateDeterministicJobMatch(
+  userProfile: UserProfile,
+  job: Job
+): JobMatchResult {
+  const score = scoreJobForProfile(job, userProfile);
+  const experienceMatch = userProfile.experience?.trim() ? 50 : 0;
+  const reasons = [
+    "Deterministic profile-based analysis used because AI matching was unavailable or invalid.",
+    ...score.reasons,
+    userProfile.experience?.trim()
+      ? "Experience is recorded, but requires human review because no structured years-to-requirement comparison is available."
+      : "Experience evidence is missing from the profile.",
+    ...score.blockers.map((blocker) => `Review: ${blocker}`),
+  ];
+
+  return {
+    jobId: job.id,
+    matchScore: score.score,
+    matchReasons: reasons.join("\n"),
+    skillsMatch: matchSkillScore(userProfile, job),
+    experienceMatch,
+    locationMatch: matchLocationScore(userProfile, job),
+    salaryMatch: matchSalaryScore(userProfile, job),
+    analysisSource: "deterministic_fallback",
+  };
 }
 
 /**
@@ -121,29 +212,23 @@ Return the analysis in JSON format.`;
       throw new Error("No response from LLM");
     }
 
-    const analysis = JSON.parse(content);
+    const analysis = JSON.parse(content) as Record<string, unknown>;
+    if (typeof analysis.matchReasons !== "string" || !analysis.matchReasons.trim()) {
+      throw new Error("Match analysis must include reasons.");
+    }
 
     return {
       jobId: job.id,
-      matchScore: analysis.matchScore,
-      matchReasons: analysis.matchReasons,
-      skillsMatch: analysis.skillsMatch,
-      experienceMatch: analysis.experienceMatch,
-      locationMatch: analysis.locationMatch,
-      salaryMatch: analysis.salaryMatch,
+      matchScore: clampScore(analysis.matchScore),
+      matchReasons: analysis.matchReasons.trim(),
+      skillsMatch: clampScore(analysis.skillsMatch),
+      experienceMatch: clampScore(analysis.experienceMatch),
+      locationMatch: clampScore(analysis.locationMatch),
+      salaryMatch: clampScore(analysis.salaryMatch),
+      analysisSource: "llm",
     };
-  } catch (error) {
-    console.error("Error calculating job match:", error);
-    // Return a default low score if AI matching fails
-    return {
-      jobId: job.id,
-      matchScore: 0,
-      matchReasons: "Unable to calculate match score",
-      skillsMatch: 0,
-      experienceMatch: 0,
-      locationMatch: 0,
-      salaryMatch: 0,
-    };
+  } catch {
+    return calculateDeterministicJobMatch(userProfile, job);
   }
 }
 

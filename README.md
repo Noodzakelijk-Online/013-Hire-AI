@@ -70,7 +70,7 @@ Hire.AI operates on a **success-based fee model** — there are no upfront costs
 | **AI / LLM** | Manus built-in LLM API (GPT-class, server-side) |
 | **Resume Parsing** | pdf-parse (PDF), mammoth (DOCX), LLM structured extraction |
 | **Type Safety** | TypeScript end-to-end (tRPC + Superjson) |
-| **Testing** | Vitest (563 tests across 114 test files) |
+| **Testing** | Vitest (567 tests across 115 test files) |
 | **Build** | Vite (frontend), esbuild (server) |
 
 ---

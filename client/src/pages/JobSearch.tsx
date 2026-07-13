@@ -153,6 +153,13 @@ export default function JobSearch() {
     enabled: Boolean(user),
   });
   const {
+    data: jobMatches = [],
+    refetch: refetchJobMatches,
+  } = trpc.matching.getMatches.useQuery(
+    { minScore: 0 },
+    { enabled: Boolean(user) }
+  );
+  const {
     data: operatingLedger,
     refetch: refetchOperatingLedger,
   } = trpc.applications.getOperatingLedger.useQuery(undefined, {
@@ -199,8 +206,14 @@ export default function JobSearch() {
 
   // AI Match mutation
   const matchMutation = trpc.matching.calculateMatch.useMutation({
-    onSuccess: (data: any) => {
-      toast.success(`Match score: ${data.overallScore || data.matchScore || 0}%`);
+    onSuccess: async (data: any) => {
+      const score = data.overallScore || data.matchScore || 0;
+      if (data.analysisSource === "deterministic_fallback") {
+        toast.info(`Profile-based match score: ${score}%. Review the evidence before acting.`);
+      } else {
+        toast.success(`AI match score: ${score}%`);
+      }
+      await refetchJobMatches();
     },
     onError: () => {
       toast.error("Failed to calculate match");
@@ -263,6 +276,16 @@ export default function JobSearch() {
   const applicationDecisionByJobId = useMemo(() => {
     return new Map((applicationDecisions || []).map((decision: any) => [decision.jobId, decision]));
   }, [applicationDecisions]);
+  const latestJobMatchByJobId = useMemo(() => {
+    const matches = new Map<number, any>();
+    for (const match of jobMatches || []) {
+      const current = matches.get(match.jobId);
+      if (!current || new Date(match.createdAt).getTime() > new Date(current.createdAt).getTime()) {
+        matches.set(match.jobId, match);
+      }
+    }
+    return matches;
+  }, [jobMatches]);
   const platformNameById = useMemo(
     () => new Map((platformsData || []).map((platform) => [platform.id, platform.name])),
     [platformsData]
@@ -296,15 +319,16 @@ export default function JobSearch() {
 
   const scoredJobs = useMemo(() => {
     return filteredJobs.map((job: any) => {
+      const persistedMatch = latestJobMatchByJobId.get(job.id);
       const summary = getJobMatchDecisionSummary(
-        job,
+        persistedMatch ? { ...job, matchScore: persistedMatch.matchScore } : job,
         profileData,
         autonomousDecisionByJobId.get(job.id),
         applicationDecisionByJobId.get(job.id)
       );
       return { ...job, matchScore: summary.matchScore, matchSummary: summary };
     });
-  }, [applicationDecisionByJobId, autonomousDecisionByJobId, filteredJobs, profileData]);
+  }, [applicationDecisionByJobId, autonomousDecisionByJobId, filteredJobs, latestJobMatchByJobId, profileData]);
 
   // Group jobs by match score
   const groupedJobs = useMemo(() => {
@@ -343,13 +367,14 @@ export default function JobSearch() {
 
   const selectedJobSummary = useMemo(() => {
     if (!selectedJob) return null;
+    const persistedMatch = latestJobMatchByJobId.get(selectedJob.id);
     return getJobMatchDecisionSummary(
-      selectedJob,
+      persistedMatch ? { ...selectedJob, matchScore: persistedMatch.matchScore } : selectedJob,
       profileData,
       autonomousDecisionByJobId.get(selectedJob.id),
       applicationDecisionByJobId.get(selectedJob.id)
     );
-  }, [applicationDecisionByJobId, autonomousDecisionByJobId, profileData, selectedJob]);
+  }, [applicationDecisionByJobId, autonomousDecisionByJobId, latestJobMatchByJobId, profileData, selectedJob]);
 
   const handleApply = async (job: any) => {
     if (!user) {
