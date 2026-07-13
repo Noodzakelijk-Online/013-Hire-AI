@@ -6,6 +6,8 @@ export type NotificationPayload = {
   content: string;
 };
 
+export const NOTIFICATION_DELIVERY_FAILURE = "[Notification] Notification delivery failed.";
+
 const TITLE_MAX_LENGTH = 1200;
 const CONTENT_MAX_LENGTH = 20000;
 
@@ -97,18 +99,13 @@ export async function notifyOwner(
     });
 
     if (!response.ok) {
-      const detail = await response.text().catch(() => "");
-      console.warn(
-        `[Notification] Failed to notify owner (${response.status} ${response.statusText})${
-          detail ? `: ${detail}` : ""
-        }`
-      );
+      console.warn(`[Notification] Delivery failed with status ${response.status}.`);
       return false;
     }
 
     return true;
-  } catch (error) {
-    console.warn("[Notification] Error calling notification service:", error);
+  } catch {
+    console.warn(NOTIFICATION_DELIVERY_FAILURE);
     return false;
   }
 }
