@@ -25,8 +25,9 @@ describe("application pipeline control summary", () => {
 
     expect(summary.status).toBe("approval_blocked");
     expect(summary.approvalBlocked).toBe(1);
+    expect(summary.approvalBlockedApplicationIds).toEqual([10]);
     expect(summary.offerActions).toBe(1);
-    expect(summary.primaryTab).toBe("active");
+    expect(summary.primaryTab).toBe("approvals");
   });
 
   it("does not block the active pipeline with approvals from closed applications", () => {
@@ -63,6 +64,8 @@ describe("application pipeline control summary", () => {
     expect(summary.status).toBe("evidence_needed");
     expect(summary.preparedApplications).toBe(1);
     expect(summary.evidenceNeeded).toBe(1);
+    expect(summary.evidenceNeededApplicationIds).toEqual([10]);
+    expect(summary.primaryTab).toBe("evidence");
   });
 
   it("routes offers to attribution review when no approval or evidence is blocking", () => {

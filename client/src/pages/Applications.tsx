@@ -2,7 +2,10 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { parseApplicationDeepLink } from "@/lib/applicationDeepLinks";
-import { getApplicationPipelineControlSummary } from "@/lib/applicationPipelineControl";
+import {
+  getApplicationPipelineControlSummary,
+  type ApplicationPipelineTab,
+} from "@/lib/applicationPipelineControl";
 import { getApplicationLedgerSummary } from "@/lib/applicationLedgerSummary";
 import { getApplicationMaterialEvidenceSummary } from "@/lib/applicationMaterialEvidence";
 import { getInterviewOperatingSummary } from "@/lib/interviewOperatingSummary";
@@ -108,7 +111,7 @@ export default function Applications() {
   const [location, setLocation] = useLocation();
   const [selectedApplication, setSelectedApplication] = useState<any>(null);
   const [handledDeepLink, setHandledDeepLink] = useState("");
-  const [activeTab, setActiveTab] = useState("all");
+  const [activeTab, setActiveTab] = useState<ApplicationPipelineTab>("all");
   const [followUpDraft, setFollowUpDraft] = useState("");
   const [followUpApplicationId, setFollowUpApplicationId] = useState<number | null>(null);
   const [followUpDraftPurpose, setFollowUpDraftPurpose] = useState<"routine_follow_up" | "employer_reply">("routine_follow_up");
@@ -878,15 +881,22 @@ export default function Applications() {
     });
   };
 
-  // Group applications by status
-  const groupedApplications = {
-    all: applications || [],
-    active: (applications || []).filter((a: any) => 
+  const pipelineSummary = getApplicationPipelineControlSummary(applications || [], approvals || []);
+  const applicationRecords = applications || [];
+  const approvalBlockedApplicationIds = new Set(pipelineSummary.approvalBlockedApplicationIds);
+  const evidenceNeededApplicationIds = new Set(pipelineSummary.evidenceNeededApplicationIds);
+
+  // Keep pipeline shortcuts and rendered tabs on the same ledger criteria.
+  const groupedApplications: Record<ApplicationPipelineTab, any[]> = {
+    all: applicationRecords,
+    active: applicationRecords.filter((a: any) =>
       ["pending", "applied", "viewed", "interview"].includes(a.status)
     ),
-    interviewing: (applications || []).filter((a: any) => a.status === "interview"),
-    offered: (applications || []).filter((a: any) => ["offer", "accepted"].includes(a.status)),
-    closed: (applications || []).filter((a: any) => 
+    approvals: applicationRecords.filter((a: any) => approvalBlockedApplicationIds.has(a.id)),
+    evidence: applicationRecords.filter((a: any) => evidenceNeededApplicationIds.has(a.id)),
+    interviewing: applicationRecords.filter((a: any) => a.status === "interview"),
+    offered: applicationRecords.filter((a: any) => ["offer", "accepted"].includes(a.status)),
+    closed: applicationRecords.filter((a: any) =>
       ["rejected", "withdrawn"].includes(a.status)
     ),
   };
@@ -902,7 +912,6 @@ export default function Applications() {
       ? Math.round((applications.filter((a: any) => ["interview", "offer", "accepted"].includes(a.status)).length / applications.filter((a: any) => a.status !== "pending").length) * 100)
       : 0,
   };
-  const pipelineSummary = getApplicationPipelineControlSummary(applications || [], approvals || []);
   const pipelineTone = {
     empty: "border-slate-700 bg-slate-900/50",
     approval_blocked: "border-amber-500/40 bg-amber-500/10",
@@ -1032,21 +1041,21 @@ export default function Applications() {
             </div>
 
             <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
-              {[
-                ["Approvals", pipelineSummary.approvalBlocked, "active"],
-                ["Evidence", pipelineSummary.evidenceNeeded, "active"],
+              {([
+                ["Approvals", pipelineSummary.approvalBlocked, "approvals"],
+                ["Evidence", pipelineSummary.evidenceNeeded, "evidence"],
                 ["Active", pipelineSummary.activeApplications, "active"],
                 ["Responses", pipelineSummary.responseActive, "active"],
                 ["Interviews", pipelineSummary.interviewPipeline, "interviewing"],
                 ["Offers", pipelineSummary.offerActions, "offered"],
                 ["Closed", pipelineSummary.closedApplications, "closed"],
-              ].map(([label, value, tab]) => (
+              ] as Array<[string, number, ApplicationPipelineTab]>).map(([label, value, tab]) => (
                 <button
                   key={String(label)}
                   type="button"
                   data-testid={`application-pipeline-metric-${String(label).toLowerCase()}`}
                   className="rounded-md border border-slate-800 bg-slate-950/40 p-3 text-left transition hover:border-cyan-500/50 hover:bg-slate-900"
-                  onClick={() => setActiveTab(String(tab))}
+                  onClick={() => setActiveTab(tab)}
                 >
                   <p className="text-xs text-slate-500">{label}</p>
                   <p className="mt-1 text-lg font-semibold text-white">{value}</p>
@@ -1110,13 +1119,19 @@ export default function Applications() {
         </div>
 
         {/* Application Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="bg-slate-800/50 border border-slate-700">
+        <Tabs value={activeTab} onValueChange={(tab) => setActiveTab(tab as ApplicationPipelineTab)}>
+          <TabsList className="h-auto flex-wrap justify-start bg-slate-800/50 border border-slate-700">
             <TabsTrigger value="all" className="data-[state=active]:bg-slate-700">
               All ({groupedApplications.all.length})
             </TabsTrigger>
             <TabsTrigger value="active" className="data-[state=active]:bg-blue-900/50">
               Active ({groupedApplications.active.length})
+            </TabsTrigger>
+            <TabsTrigger value="approvals" className="data-[state=active]:bg-amber-900/50">
+              Approvals ({groupedApplications.approvals.length})
+            </TabsTrigger>
+            <TabsTrigger value="evidence" className="data-[state=active]:bg-amber-900/50">
+              Evidence ({groupedApplications.evidence.length})
             </TabsTrigger>
             <TabsTrigger value="interviewing" className="data-[state=active]:bg-amber-900/50">
               Interviewing ({groupedApplications.interviewing.length})
@@ -1136,13 +1151,13 @@ export default function Applications() {
               </div>
             ) : (
               <>
-                {["all", "active", "interviewing", "offered", "closed"].map((tab) => (
+                {(["all", "active", "approvals", "evidence", "interviewing", "offered", "closed"] as ApplicationPipelineTab[]).map((tab) => (
                   <TabsContent key={tab} value={tab} className="mt-0">
                     <div className="grid gap-3">
-                      {groupedApplications[tab as keyof typeof groupedApplications].map((app: any) => (
+                      {groupedApplications[tab].map((app: any) => (
                         <ApplicationCard key={app.id} application={app} />
                       ))}
-                      {groupedApplications[tab as keyof typeof groupedApplications].length === 0 && (
+                      {groupedApplications[tab].length === 0 && (
                         <div className="text-center py-16 px-4">
                           <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-cyan-500/20 to-blue-500/20 flex items-center justify-center">
                             <FileText className="w-10 h-10 text-cyan-400" />

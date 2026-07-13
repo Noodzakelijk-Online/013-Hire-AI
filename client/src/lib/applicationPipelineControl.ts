@@ -7,6 +7,15 @@ export type ApplicationPipelineStatus =
   | "follow_up_candidate"
   | "clear";
 
+export type ApplicationPipelineTab =
+  | "all"
+  | "active"
+  | "approvals"
+  | "evidence"
+  | "interviewing"
+  | "offered"
+  | "closed";
+
 export interface ApplicationPipelineApplicationLike {
   id?: number | null;
   status?: string | null;
@@ -25,12 +34,14 @@ export interface ApplicationPipelineControlSummary {
   label: string;
   headline: string;
   nextAction: string;
-  primaryTab: "all" | "active" | "interviewing" | "offered" | "closed";
+  primaryTab: ApplicationPipelineTab;
   primaryCta: string;
   trackedApplications: number;
   preparedApplications: number;
   approvalBlocked: number;
   evidenceNeeded: number;
+  approvalBlockedApplicationIds: number[];
+  evidenceNeededApplicationIds: number[];
   activeApplications: number;
   responseActive: number;
   interviewPipeline: number;
@@ -80,9 +91,10 @@ export function getApplicationPipelineControlSummary(
   );
 
   const preparedApplications = applications.filter((application) => (application.status || "pending") === "pending");
-  const evidenceNeeded = preparedApplications.filter((application) =>
-    typeof application.id !== "number" || !approvalBlockedIds.has(application.id)
-  ).length;
+  const evidenceNeededApplicationIds = preparedApplications
+    .filter((application) => typeof application.id === "number" && !approvalBlockedIds.has(application.id))
+    .map((application) => application.id as number);
+  const evidenceNeeded = evidenceNeededApplicationIds.length;
   const activeApplications = applications.filter((application) =>
     ACTIVE_STATUSES.has(application.status || "pending")
   ).length;
@@ -106,6 +118,8 @@ export function getApplicationPipelineControlSummary(
     preparedApplications: preparedApplications.length,
     approvalBlocked: approvalBlockedIds.size,
     evidenceNeeded,
+    approvalBlockedApplicationIds: Array.from(approvalBlockedIds),
+    evidenceNeededApplicationIds,
     activeApplications,
     responseActive,
     interviewPipeline,
@@ -133,8 +147,8 @@ export function getApplicationPipelineControlSummary(
       label: "Approval blocked",
       headline: `${approvalBlockedIds.size} prepared submission${approvalBlockedIds.size === 1 ? "" : "s"} need a decision before any external action.`,
       nextAction: "Open the prepared applications and approve or reject submission gates before recording evidence.",
-      primaryTab: "active",
-      primaryCta: "Review active",
+      primaryTab: "approvals",
+      primaryCta: "Review approvals",
     };
   }
 
@@ -145,7 +159,7 @@ export function getApplicationPipelineControlSummary(
       label: "Evidence needed",
       headline: `${evidenceNeeded} prepared application${evidenceNeeded === 1 ? "" : "s"} still need submission proof.`,
       nextAction: "Confirm submission only after employer portal, ATS, email, or manual evidence is available.",
-      primaryTab: "active",
+      primaryTab: "evidence",
       primaryCta: "Review prepared",
     };
   }
