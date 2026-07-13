@@ -106,6 +106,27 @@ describe("job search filters", () => {
     expect(result.map((job) => job.id)).toContain(4);
   });
 
+  it("excludes hybrid listings even when their text also mentions remote work", () => {
+    const result = filterJobListings([
+      ...jobs,
+      {
+        id: 5,
+        title: "Senior Product Engineer",
+        company: "Hybrid Works",
+        description: "Work remotely three days a week in our hybrid operating model.",
+        location: "Hybrid - Amsterdam, Netherlands",
+        jobType: "full-time",
+        platformId: 5,
+        salaryMin: 110000,
+        salaryMax: 140000,
+        applicationProcess: "other",
+        postedDate: new Date("2026-07-09T12:00:00.000Z"),
+      },
+    ], defaultJobSearchFilters, new Date("2026-07-10T12:00:00.000Z"));
+
+    expect(result.map((job) => job.id)).not.toContain(5);
+  });
+
   it("does not treat unknown salary as a failed range unless disclosure is required", () => {
     const included = filterJobListings(jobs, {
       ...defaultJobSearchFilters,

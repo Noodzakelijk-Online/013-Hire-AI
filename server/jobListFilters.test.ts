@@ -55,6 +55,26 @@ describe("canonical job list filters", () => {
     expect(jobs.some((job) => job.id === staleJob.id)).toBe(false);
   });
 
+  it("excludes hybrid roles from the default remote-only discovery result", async () => {
+    const hybridJob = {
+      ...sampleJobs[0],
+      id: 989905,
+      externalId: "hybrid-list-regression",
+      title: "Hybrid List Regression Engineer",
+      company: "Hybrid List Co",
+      description: "A remote-friendly hybrid role with two office days each week.",
+      location: "Hybrid - Amsterdam, Netherlands",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    sampleJobs.push(hybridJob);
+    injectedJobIds.push(hybridJob.id);
+
+    const jobs = await getActiveJobs(250, 0, { query: "Hybrid List Regression" });
+
+    expect(jobs.some((job) => job.id === hybridJob.id)).toBe(false);
+  });
+
   it("keeps a recently discovered listing without a provider posting date in a posted window", async () => {
     const recentlyDiscoveredJob = {
       ...sampleJobs[0],

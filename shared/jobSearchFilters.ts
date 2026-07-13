@@ -65,17 +65,27 @@ function hasRemoteSignal(value?: string | null) {
   return /\b(remote|worldwide|anywhere|distributed|work from home|wfh)\b/i.test(value || "");
 }
 
-function isRemote(job: JobSearchFilterJob) {
-  if (hasRemoteSignal(job.location)) return true;
+function hasNonRemoteSignal(value?: string | null) {
+  return /\b(hybrid|onsite|on-site|in office|in-office)\b/i.test(value || "");
+}
 
-  // Some sources retain a geographic location while placing the remote
-  // eligibility in the role title or posting body.
-  return hasRemoteSignal([
+function isRemote(job: JobSearchFilterJob) {
+  const listingText = [
+    job.location,
     job.title,
     job.description,
     job.requirements,
     job.responsibilities,
-  ].filter(Boolean).join(" "));
+  ].filter(Boolean).join(" ");
+
+  // A hybrid or office-bound statement is stronger than a generic "remote"
+  // mention elsewhere in the listing when the user asks for remote-only work.
+  if (hasNonRemoteSignal(listingText)) return false;
+  if (hasRemoteSignal(job.location)) return true;
+
+  // Some sources retain a geographic location while placing the remote
+  // eligibility in the role title or posting body.
+  return hasRemoteSignal(listingText);
 }
 
 function experienceLevel(job: JobSearchFilterJob): Exclude<JobExperienceLevel, "all"> | "unknown" {

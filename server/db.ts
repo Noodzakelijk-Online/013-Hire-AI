@@ -617,6 +617,15 @@ function addJobSearchFilterConditions(conditions: SQL[], filters: JobSearchFilte
       like(jobs.responsibilities, "%wfh%")
     );
     if (remoteCondition) conditions.push(remoteCondition);
+    const remoteOnlyExclusions = [jobs.location, jobs.title, jobs.description, jobs.requirements, jobs.responsibilities]
+      .flatMap((column) => [
+        sql`LOWER(COALESCE(${column}, '')) NOT LIKE '%hybrid%'`,
+        sql`LOWER(COALESCE(${column}, '')) NOT LIKE '%onsite%'`,
+        sql`LOWER(COALESCE(${column}, '')) NOT LIKE '%on-site%'`,
+        sql`LOWER(COALESCE(${column}, '')) NOT LIKE '%in office%'`,
+        sql`LOWER(COALESCE(${column}, '')) NOT LIKE '%in-office%'`,
+      ]);
+    conditions.push(...remoteOnlyExclusions);
   }
   if (filters.visaSponsorshipOnly) conditions.push(eq(jobs.visaSponsorshipAvailable, 1));
   if (filters.openHiringSupportOnly) conditions.push(eq(jobs.openHiringSupport, 1));
