@@ -74,6 +74,7 @@ export default function JobSearch() {
   const { user, loading: authLoading } = useAuth();
   const [, setLocation] = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedLocation, setSelectedLocation] = useState("");
   const [selectedJobType, setSelectedJobType] = useState<JobTypeFilter>("all");
   const [selectedPlatform, setSelectedPlatform] = useState<string>("all");
   const [salaryRange, setSalaryRange] = useState<[number, number]>([0, 300000]);
@@ -96,6 +97,7 @@ export default function JobSearch() {
 
   const jobSearchFilters = useMemo<JobSearchFilterState>(() => ({
     query: searchQuery,
+    location: selectedLocation,
     jobType: selectedJobType,
     platformId: selectedPlatform,
     salaryRange,
@@ -115,6 +117,7 @@ export default function JobSearch() {
     salaryDisclosedOnly,
     salaryRange,
     selectedSalaryCurrency,
+    selectedLocation,
     searchQuery,
     selectedApplicationProcess,
     selectedExperienceLevel,
@@ -323,6 +326,7 @@ export default function JobSearch() {
 
   const resetFilters = () => {
     setSearchQuery(defaultJobSearchFilters.query);
+    setSelectedLocation(defaultJobSearchFilters.location);
     setSelectedJobType(defaultJobSearchFilters.jobType);
     setSelectedPlatform(defaultJobSearchFilters.platformId);
     setSalaryRange(defaultJobSearchFilters.salaryRange);
@@ -1022,6 +1026,17 @@ export default function JobSearch() {
                     </Button>
                   )}
                 </div>
+              </div>
+
+              <div className="flex-1 min-w-52 relative">
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <Input
+                  data-testid="job-filter-location"
+                  placeholder="Location, region, or timezone"
+                  value={selectedLocation}
+                  onChange={(event) => setSelectedLocation(event.target.value)}
+                  className="pl-10 bg-slate-800 border-slate-700"
+                />
               </div>
               <Input
                 data-testid="job-filter-salary-currency"

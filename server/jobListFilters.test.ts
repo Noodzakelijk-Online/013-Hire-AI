@@ -36,6 +36,36 @@ describe("canonical job list filters", () => {
     expect(outsideRange.map((job) => job.id)).not.toContain(3);
   });
 
+  it("does not treat default salary bounds as an implicit maximum", async () => {
+    const highSalaryJob = {
+      ...sampleJobs[0],
+      id: 989906,
+      externalId: "high-salary-default-filter-regression",
+      title: "High Salary Default Filter Regression Engineer",
+      company: "Compensation Co",
+      salaryMin: 325000,
+      salaryMax: 390000,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    sampleJobs.push(highSalaryJob);
+    injectedJobIds.push(highSalaryJob.id);
+
+    const jobs = await getActiveJobs(250, 0, { query: "High Salary Default Filter" });
+
+    expect(jobs.some((job) => job.id === highSalaryJob.id)).toBe(true);
+  });
+
+  it("filters canonical listings by a comma-separated location selection", async () => {
+    const jobs = await getActiveJobs(250, 0, {
+      remoteOnly: false,
+      location: "Europe, US Only",
+    });
+
+    expect(jobs.map((job) => job.id)).toEqual(expect.arrayContaining([2, 3]));
+    expect(jobs.map((job) => job.id)).not.toContain(1);
+  });
+
   it("excludes no-expiry listings that are no longer observed by their source", async () => {
     const staleJob = {
       ...sampleJobs[0],

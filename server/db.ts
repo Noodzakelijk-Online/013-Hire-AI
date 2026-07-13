@@ -583,6 +583,14 @@ function addJobSearchFilterConditions(conditions: SQL[], filters: JobSearchFilte
   if (filters.platformId !== "all" && Number.isInteger(Number(filters.platformId)) && Number(filters.platformId) > 0) {
     conditions.push(eq(jobs.platformId, Number(filters.platformId)));
   }
+  const selectedLocations = filters.location
+    .split(/[,\n]/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (selectedLocations.length > 0) {
+    const locationCondition = or(...selectedLocations.map((value) => like(jobs.location, searchTerm(value))));
+    if (locationCondition) conditions.push(locationCondition);
+  }
   if (filters.remoteOnly) {
     const remoteCondition = or(
       like(jobs.location, "%remote%"),
@@ -676,12 +684,15 @@ function addJobSearchFilterConditions(conditions: SQL[], filters: JobSearchFilte
     or(isNull(jobs.salaryMin), lte(jobs.salaryMin, filters.salaryRange[1])),
     or(isNull(jobs.salaryMax), gte(jobs.salaryMax, filters.salaryRange[0]))
   );
+  const hasActiveSalaryRange = filters.salaryCurrency !== "all" ||
+    filters.salaryRange[0] !== defaultJobSearchFilters.salaryRange[0] ||
+    filters.salaryRange[1] !== defaultJobSearchFilters.salaryRange[1];
   if (filters.salaryDisclosedOnly) {
     const hasSalary = or(isNotNull(jobs.salaryMin), isNotNull(jobs.salaryMax));
     if (hasSalary) conditions.push(hasSalary);
   }
   if (salaryCurrencyMatches) conditions.push(salaryCurrencyMatches);
-  if (salaryOverlap) {
+  if (hasActiveSalaryRange && salaryOverlap) {
     if (filters.salaryDisclosedOnly) {
       conditions.push(salaryOverlap);
     } else {

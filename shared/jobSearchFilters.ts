@@ -7,6 +7,7 @@ export type JobTypeFilter = "all" | "full-time" | "part-time" | "contract" | "te
 
 export interface JobSearchFilterState {
   query: string;
+  location: string;
   jobType: JobTypeFilter;
   platformId: string;
   salaryRange: [number, number];
@@ -45,6 +46,7 @@ export interface JobSearchFilterJob {
 
 export const defaultJobSearchFilters: JobSearchFilterState = {
   query: "",
+  location: "",
   jobType: "all",
   platformId: "all",
   salaryRange: [0, 300000],
@@ -68,6 +70,19 @@ function text(job: JobSearchFilterJob) {
 
 function hasRemoteSignal(value?: string | null) {
   return /\b(remote|worldwide|anywhere|distributed|work from home|wfh)\b/i.test(value || "");
+}
+
+function locationTerms(value: string) {
+  return value
+    .split(/[,\n]/)
+    .map((term) => term.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function hasActiveSalaryRange(filters: JobSearchFilterState) {
+  return filters.salaryCurrency !== "all" ||
+    filters.salaryRange[0] !== defaultJobSearchFilters.salaryRange[0] ||
+    filters.salaryRange[1] !== defaultJobSearchFilters.salaryRange[1];
 }
 
 function hasNonRemoteSignal(value?: string | null) {
@@ -125,9 +140,12 @@ function isWithinPostedWindow(job: JobSearchFilterJob, postedWithin: JobPostedWi
 
 export function filterJobListings<T extends JobSearchFilterJob>(jobs: T[], filters: JobSearchFilterState, now = new Date()) {
   const queryTerms = filters.query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  const selectedLocations = locationTerms(filters.location);
+  const rangeIsActive = hasActiveSalaryRange(filters);
 
   return jobs.filter((job) => {
     if (queryTerms.length > 0 && !queryTerms.every((term) => text(job).includes(term))) return false;
+    if (selectedLocations.length > 0 && !selectedLocations.some((term) => (job.location || "").toLowerCase().includes(term))) return false;
     if (filters.jobType !== "all" && job.jobType !== filters.jobType) return false;
     if (filters.platformId !== "all" && String(job.platformId) !== filters.platformId) return false;
     if (filters.remoteOnly && !isRemote(job)) return false;
@@ -152,7 +170,7 @@ export function filterJobListings<T extends JobSearchFilterJob>(jobs: T[], filte
 
     // Preserve the established range-only API behavior when no currency is
     // selected. The UI disables range controls until a source currency is set.
-    const salaryOverlap = hasSalaryOverlap(job, filters.salaryRange);
+    const salaryOverlap = rangeIsActive ? hasSalaryOverlap(job, filters.salaryRange) : null;
     const hasSalary = typeof job.salaryMin === "number" || typeof job.salaryMax === "number";
     if (filters.salaryDisclosedOnly && !hasSalary) return false;
     return salaryOverlap !== false;
@@ -162,6 +180,7 @@ export function filterJobListings<T extends JobSearchFilterJob>(jobs: T[], filte
 export function countActiveJobSearchFilters(filters: JobSearchFilterState) {
   return [
     filters.query.trim().length > 0,
+    filters.location.trim().length > 0,
     filters.jobType !== "all",
     filters.platformId !== "all",
     filters.salaryCurrency !== "all",

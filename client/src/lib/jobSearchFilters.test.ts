@@ -156,6 +156,31 @@ describe("job search filters", () => {
     })).toBe(2);
   });
 
+  it("matches any requested location while keeping remote eligibility separate", () => {
+    const result = filterJobListings(jobs, {
+      ...defaultJobSearchFilters,
+      remoteOnly: false,
+      location: "Netherlands, US Only",
+    });
+
+    expect(result.map((job) => job.id)).toEqual([2, 3]);
+  });
+
+  it("does not apply the default salary bounds until a salary filter is active", () => {
+    const result = filterJobListings([
+      ...jobs,
+      {
+        ...jobs[0],
+        id: 4,
+        title: "Principal Platform Engineer",
+        salaryMin: 320000,
+        salaryMax: 400000,
+      },
+    ], defaultJobSearchFilters);
+
+    expect(result.map((job) => job.id)).toContain(4);
+  });
+
   it("only applies a numeric range to roles in the selected currency", () => {
     const result = filterJobListings([
       ...jobs,

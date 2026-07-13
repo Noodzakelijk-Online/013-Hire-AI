@@ -58,6 +58,7 @@ const boundedFilterText = z.string().trim().min(1).max(200);
 const jobListPageSize = z.number().int().min(1).max(250);
 const jobSearchFiltersInput = z.object({
   query: z.string().trim().max(200).optional(),
+  location: z.string().trim().max(200).optional(),
   jobType: z.enum(["all", "full-time", "part-time", "contract", "temporary"]).optional(),
   platformId: z.string().trim().max(20).optional(),
   salaryRange: z.tuple([z.number().min(0).max(10_000_000), z.number().min(0).max(10_000_000)]).optional(),
