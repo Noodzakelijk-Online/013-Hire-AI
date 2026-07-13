@@ -47,7 +47,7 @@ vi.mock("./stripeClient", () => ({ getStripeClient: vi.fn(() => ({})) }));
 
 import { registerStripeWebhook } from "./stripeWebhook";
 
-async function postWebhook(event: Record<string, unknown>) {
+async function postWebhook(event: Record<string, unknown>, headers: Record<string, string> = {}) {
   const app = express();
   registerStripeWebhook(app);
   const server = await new Promise<ReturnType<typeof app.listen>>((resolve) => {
@@ -59,7 +59,7 @@ async function postWebhook(event: Record<string, unknown>) {
   try {
     return await fetch(`http://127.0.0.1:${address.port}/api/stripe/webhook`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...headers },
       body: JSON.stringify(event),
     });
   } finally {
@@ -86,6 +86,18 @@ describe("Stripe payment failure webhook", () => {
   });
 
   afterEach(() => vi.unstubAllEnvs());
+
+  it("does not expose Stripe verification failures to callers", async () => {
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "configured-for-test");
+
+    const response = await postWebhook(
+      { id: "evt_invalid_signature_701", type: "invoice.payment_failed", data: { object: {} } },
+      { "stripe-signature": "invalid-signature" }
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("Webhook signature verification failed.");
+  });
 
   it("suspends the fee and opens an admin payment-failure review", async () => {
     const response = await postWebhook({
