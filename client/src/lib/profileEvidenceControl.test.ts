@@ -126,6 +126,7 @@ describe("profile evidence control", () => {
           status: "connected",
           externalAccountLabel: "candidate-drive@example.com",
           consentScopes: "[\"files.metadata.read\"]",
+          lastVerifiedAt: new Date(),
         },
       ],
     });
@@ -160,6 +161,7 @@ describe("profile evidence control", () => {
         provider: "gmail",
         status: "connected",
         consentScopes: ["email.metadata.read"],
+        lastVerifiedAt: new Date(),
       }],
     });
 

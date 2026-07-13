@@ -178,4 +178,42 @@ describe("connector account tRPC procedures", () => {
     });
     expect(await getEmployerResponses(Number(application.insertId), userId)).toHaveLength(0);
   });
+
+  it("treats a connected account without verification evidence as needing reauthorization", async () => {
+    const userId = 99655;
+    const application = await createApplication({
+      userId,
+      jobId: 1,
+      status: "applied",
+      notes: "Application awaiting a response from an unverified legacy connection.",
+    });
+    await upsertUserConnectorAccount({
+      userId,
+      provider: "gmail",
+      status: "connected",
+      consentScopes: JSON.stringify(["email.metadata.read", "email.messages.read_recruiting"]),
+      externalAccountLabel: "candidate@example.com",
+      lastVerifiedAt: null,
+    });
+
+    const caller = appRouter.createCaller(createContext(userId));
+    await expect(caller.applications.ingestInboxResponse({
+      applicationId: Number(application.insertId),
+      provider: "gmail",
+      messageId: "gmail-unverified-99655",
+      responseType: "interview_invite",
+      summary: "Recruiter invited the candidate to an interview through an unverified connection.",
+    })).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: "Gmail must be currently verified with recruiting-message read consent before inbox responses can be ingested.",
+    });
+
+    const summary = await caller.profile.getEvidenceReadiness();
+    expect(summary.providers.find((provider) => provider.id === "gmail")).toMatchObject({
+      status: "consent_required",
+      connectionStatus: "needs_reauth",
+      authorizationStale: true,
+    });
+    expect(await getEmployerResponses(Number(application.insertId), userId)).toHaveLength(0);
+  });
 });

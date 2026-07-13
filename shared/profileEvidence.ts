@@ -38,7 +38,9 @@ export function isConnectorAuthorizationStale(
   lastVerifiedAt: Date | string | null | undefined,
   now = new Date()
 ): boolean {
-  if (!lastVerifiedAt) return false;
+  // A connected account without a verification timestamp has no evidence that
+  // its consent is current. Treat legacy records as needing reauthorization.
+  if (!lastVerifiedAt) return true;
   const verifiedAt = new Date(lastVerifiedAt).getTime();
   return !Number.isFinite(verifiedAt) || now.getTime() - verifiedAt > CONNECTOR_VERIFICATION_MAX_AGE_MS;
 }
