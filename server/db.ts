@@ -327,6 +327,53 @@ export async function updatePlatformLastScraped(platformId: number) {
   await db.update(jobPlatforms).set({ lastScraped: new Date() }).where(eq(jobPlatforms.id, platformId));
 }
 
+export type ScrapeOutcome = {
+  jobCount: number;
+  errors: string[];
+};
+
+function boundedScrapeError(errors: string[]) {
+  return errors
+    .map((error) => error.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .join(" | ")
+    .slice(0, 2000) || null;
+}
+
+/**
+ * Preserve the most recent source attempt independently from the last clean
+ * scrape. Discovery can then report a degraded source without treating an old
+ * clean timestamp as evidence that the latest run succeeded.
+ */
+export async function recordPlatformScrapeOutcome(platformId: number, outcome: ScrapeOutcome) {
+  const db = await getDb();
+  if (!db) return;
+
+  const attemptedAt = new Date();
+  const jobCount = Math.max(0, Math.floor(outcome.jobCount));
+  const error = boundedScrapeError(outcome.errors);
+  const status = outcome.errors.length === 0
+    ? "success"
+    : jobCount > 0
+      ? "partial"
+      : "failed";
+  const values = {
+    lastScrapeAttemptedAt: attemptedAt,
+    lastScrapeStatus: status,
+    lastScrapeJobCount: jobCount,
+    lastScrapeError: error,
+  } as const;
+
+  if (status === "success") {
+    await db.update(jobPlatforms)
+      .set({ ...values, lastScraped: attemptedAt })
+      .where(eq(jobPlatforms.id, platformId));
+    return;
+  }
+
+  await db.update(jobPlatforms).set(values).where(eq(jobPlatforms.id, platformId));
+}
+
 // Jobs
 export async function createJob(job: InsertJob) {
   const db = await getDb();
@@ -395,6 +442,8 @@ export async function getJobDiscoveryStatus() {
       sourcesWithFreshScrape: freshScrapes.length,
       sourcesAwaitingFirstScrape: activePlatforms.length - successfulScrapes.length,
       sourcesWithStaleScrape: successfulScrapes.length - freshScrapes.length,
+      sourcesWithFailedLatestScrape: 0,
+      sourcesWithPartialLatestScrape: 0,
       latestSuccessfulScrapeAt: successfulScrapes.length > 0
         ? new Date(Math.max(...successfulScrapes.map((lastScraped) => lastScraped.getTime())))
         : null,
@@ -404,7 +453,11 @@ export async function getJobDiscoveryStatus() {
 
   const [activePlatforms, jobCountRows] = await Promise.all([
     db
-      .select({ lastScraped: jobPlatforms.lastScraped })
+      .select({
+        lastScraped: jobPlatforms.lastScraped,
+        lastScrapeAttemptedAt: jobPlatforms.lastScrapeAttemptedAt,
+        lastScrapeStatus: jobPlatforms.lastScrapeStatus,
+      })
       .from(jobPlatforms)
       .where(eq(jobPlatforms.isActive, 1)),
     db
@@ -420,6 +473,8 @@ export async function getJobDiscoveryStatus() {
     .map((platform) => platform.lastScraped)
     .filter((lastScraped): lastScraped is Date => lastScraped instanceof Date);
   const freshScrapes = successfulScrapes.filter((lastScraped) => lastScraped >= freshAfter);
+  const failedLatestScrapes = activePlatforms.filter((platform) => platform.lastScrapeStatus === "failed");
+  const partialLatestScrapes = activePlatforms.filter((platform) => platform.lastScrapeStatus === "partial");
 
   return {
     activeSources: activePlatforms.length,
@@ -427,6 +482,8 @@ export async function getJobDiscoveryStatus() {
     sourcesWithFreshScrape: freshScrapes.length,
     sourcesAwaitingFirstScrape: activePlatforms.length - successfulScrapes.length,
     sourcesWithStaleScrape: successfulScrapes.length - freshScrapes.length,
+    sourcesWithFailedLatestScrape: failedLatestScrapes.length,
+    sourcesWithPartialLatestScrape: partialLatestScrapes.length,
     latestSuccessfulScrapeAt: successfulScrapes.length > 0
       ? new Date(Math.max(...successfulScrapes.map((lastScraped) => lastScraped.getTime())))
       : null,

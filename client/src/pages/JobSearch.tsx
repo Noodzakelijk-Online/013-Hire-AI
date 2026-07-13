@@ -488,6 +488,7 @@ export default function JobSearch() {
     no_active_sources: "border-red-500/40 bg-red-500/10 text-red-100",
     awaiting_first_scan: "border-amber-500/40 bg-amber-500/10 text-amber-100",
     stale: "border-orange-500/40 bg-orange-500/10 text-orange-100",
+    degraded: "border-red-500/40 bg-red-500/10 text-red-100",
     partial: "border-amber-500/40 bg-amber-500/10 text-amber-100",
     current: "border-emerald-500/40 bg-emerald-500/10 text-emerald-100",
   }[discoveryControl.status];

@@ -64,4 +64,33 @@ describe("job discovery status summary", () => {
     expect(summary.label).toBe("Discovery coverage partial");
     expect(summary.detail).toContain("2 sources need a fresh scan");
   });
+
+  it("never labels discovery current after a source's latest scan failed", () => {
+    const summary = getJobDiscoveryStatusSummary({
+      activeSources: 2,
+      sourcesWithSuccessfulScrape: 2,
+      sourcesWithFreshScrape: 2,
+      sourcesWithFailedLatestScrape: 1,
+      canonicalJobs: 11,
+      latestSuccessfulScrapeAt: "2026-07-12T06:00:00.000Z",
+    }, now);
+
+    expect(summary.status).toBe("degraded");
+    expect(summary.label).toBe("Discovery needs attention");
+    expect(summary.detail).toContain("1 source failed");
+  });
+
+  it("surfaces a partial source scan without exposing source errors", () => {
+    const summary = getJobDiscoveryStatusSummary({
+      activeSources: 1,
+      sourcesWithSuccessfulScrape: 1,
+      sourcesWithFreshScrape: 1,
+      sourcesWithPartialLatestScrape: 1,
+      canonicalJobs: 2,
+      latestSuccessfulScrapeAt: "2026-07-12T06:00:00.000Z",
+    }, now);
+
+    expect(summary.status).toBe("degraded");
+    expect(summary.detail).toContain("1 source completed only partially");
+  });
 });

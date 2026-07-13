@@ -5,13 +5,13 @@ import { ScraperManager } from "./scraperManager";
 const mocks = vi.hoisted(() => ({
   ensureScraperPlatformCatalog: vi.fn(),
   getDb: vi.fn(),
-  updatePlatformLastScraped: vi.fn(),
+  recordPlatformScrapeOutcome: vi.fn(),
 }));
 
 vi.mock("../db", () => ({
   ensureScraperPlatformCatalog: mocks.ensureScraperPlatformCatalog,
   getDb: mocks.getDb,
-  updatePlatformLastScraped: mocks.updatePlatformLastScraped,
+  recordPlatformScrapeOutcome: mocks.recordPlatformScrapeOutcome,
 }));
 
 function createScraper(platformId: number) {
@@ -30,7 +30,7 @@ describe("scraper manager platform restrictions", () => {
     vi.clearAllMocks();
     mocks.ensureScraperPlatformCatalog.mockResolvedValue({ created: 0, total: 8 });
     mocks.getDb.mockResolvedValue(null);
-    mocks.updatePlatformLastScraped.mockResolvedValue(undefined);
+    mocks.recordPlatformScrapeOutcome.mockResolvedValue(undefined);
   });
 
   it("ensures the source catalog before initializing configured scrapers", async () => {
@@ -89,8 +89,35 @@ describe("scraper manager platform restrictions", () => {
     expect(result.platformResults["Slow source"].errors).toEqual(["Scrape timed out after 5ms"]);
     expect(result.platformResults["Healthy source"].errors).toEqual([]);
     expect(healthy.scrape).toHaveBeenCalledOnce();
-    expect(mocks.updatePlatformLastScraped).toHaveBeenCalledWith(2);
-    expect(mocks.updatePlatformLastScraped).not.toHaveBeenCalledWith(1);
+    expect(mocks.recordPlatformScrapeOutcome).toHaveBeenCalledWith(2, {
+      jobCount: 0,
+      errors: [],
+    });
+    expect(mocks.recordPlatformScrapeOutcome).toHaveBeenCalledWith(1, {
+      jobCount: 0,
+      errors: ["Scrape timed out after 5ms"],
+    });
+  });
+
+  it("records a partial outcome when a source returns jobs alongside errors", async () => {
+    const manager = new ScraperManager();
+    const partial = {
+      getPlatformId: () => 3,
+      scrape: vi.fn().mockResolvedValue({
+        jobs: [{ title: "Recovered role" }],
+        errors: ["One feed page was unavailable"],
+        scrapedAt: new Date(),
+      }),
+    } as unknown as BaseScraper;
+    const scrapers = (manager as unknown as { scrapers: Map<string, BaseScraper> }).scrapers;
+    scrapers.set("Partial source", partial);
+
+    await manager.scrapePlatform("Partial source");
+
+    expect(mocks.recordPlatformScrapeOutcome).toHaveBeenCalledWith(3, {
+      jobCount: 1,
+      errors: ["One feed page was unavailable"],
+    });
   });
 
   it("refreshes a re-observed source listing instead of leaving an expired record unavailable", async () => {

@@ -2463,6 +2463,10 @@ export const appRouter = router({
           tier: platform.tier,
           isActive: platform.isActive === 1,
           lastScraped: platform.lastScraped,
+          lastScrapeAttemptedAt: platform.lastScrapeAttemptedAt,
+          lastScrapeStatus: platform.lastScrapeStatus,
+          lastScrapeJobCount: platform.lastScrapeJobCount,
+          lastScrapeError: platform.lastScrapeError,
           readiness: initializedPlatformNames.has(platform.name) ? "ready" : "unavailable",
           freshness: !platform.lastScraped
             ? "awaiting_first_scan"

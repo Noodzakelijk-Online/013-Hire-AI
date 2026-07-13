@@ -1,6 +1,6 @@
 import type { BaseScraper, ScrapeResult } from "./baseScraper";
 import { getScraperForPlatform, getSupportedPlatforms, hasScraper } from "./index";
-import { ensureScraperPlatformCatalog, getDb, updatePlatformLastScraped } from "../db";
+import { ensureScraperPlatformCatalog, getDb, recordPlatformScrapeOutcome } from "../db";
 import { jobDuplicates, jobs, jobPlatforms } from "../../drizzle/schema";
 import { and, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { samplePlatforms } from "../sampleData";
@@ -151,16 +151,28 @@ export class ScraperManager {
           );
         }),
       ]);
-      if (result.errors.length === 0) {
-        await updatePlatformLastScraped(scraper.getPlatformId());
-      }
+      await this.recordScrapeOutcome(platformName, scraper.getPlatformId(), result);
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`[ScraperManager] Failed to scrape ${platformName}:`, error);
-      return { jobs: [], errors: [message], scrapedAt: new Date() };
+      const result = { jobs: [], errors: [message], scrapedAt: new Date() };
+      await this.recordScrapeOutcome(platformName, scraper.getPlatformId(), result);
+      return result;
     } finally {
       if (timeout) clearTimeout(timeout);
+    }
+  }
+
+  private async recordScrapeOutcome(platformName: string, platformId: number, result: ScrapeResult) {
+    try {
+      await recordPlatformScrapeOutcome(platformId, {
+        jobCount: result.jobs.length,
+        errors: result.errors,
+      });
+    } catch (error) {
+      // A metadata write must not convert a completed external scan into a failed one.
+      console.error(`[ScraperManager] Failed to record scrape outcome for ${platformName}:`, error);
     }
   }
 

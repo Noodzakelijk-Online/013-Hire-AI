@@ -2,6 +2,7 @@ export type JobDiscoveryStatus =
   | "no_active_sources"
   | "awaiting_first_scan"
   | "stale"
+  | "degraded"
   | "partial"
   | "current";
 
@@ -11,6 +12,8 @@ export interface JobDiscoveryStatusInput {
   sourcesWithFreshScrape?: number | null;
   sourcesAwaitingFirstScrape?: number | null;
   sourcesWithStaleScrape?: number | null;
+  sourcesWithFailedLatestScrape?: number | null;
+  sourcesWithPartialLatestScrape?: number | null;
   latestSuccessfulScrapeAt?: Date | string | null;
   canonicalJobs?: number | null;
 }
@@ -23,6 +26,8 @@ export interface JobDiscoveryStatusSummary {
   sourcesWithFreshScrape: number;
   sourcesAwaitingFirstScrape: number;
   sourcesWithStaleScrape: number;
+  sourcesWithFailedLatestScrape: number;
+  sourcesWithPartialLatestScrape: number;
   canonicalJobs: number;
   latestSuccessfulScrapeAt: Date | null;
 }
@@ -53,12 +58,16 @@ export function getJobDiscoveryStatusSummary(
   const sourcesWithFreshScrape = positiveInteger(input?.sourcesWithFreshScrape);
   const sourcesAwaitingFirstScrape = positiveInteger(input?.sourcesAwaitingFirstScrape);
   const sourcesWithStaleScrape = positiveInteger(input?.sourcesWithStaleScrape);
+  const sourcesWithFailedLatestScrape = positiveInteger(input?.sourcesWithFailedLatestScrape);
+  const sourcesWithPartialLatestScrape = positiveInteger(input?.sourcesWithPartialLatestScrape);
   const latestSuccessfulScrapeAt = parseDate(input?.latestSuccessfulScrapeAt);
   const base = {
     activeSources,
     sourcesWithFreshScrape,
     sourcesAwaitingFirstScrape,
     sourcesWithStaleScrape,
+    sourcesWithFailedLatestScrape,
+    sourcesWithPartialLatestScrape,
     canonicalJobs,
     latestSuccessfulScrapeAt,
   };
@@ -69,6 +78,21 @@ export function getJobDiscoveryStatusSummary(
       status: "no_active_sources",
       label: "Discovery unavailable",
       detail: "No active discovery sources are configured, so the job index cannot be refreshed yet.",
+    };
+  }
+
+  const degradedSources = sourcesWithFailedLatestScrape + sourcesWithPartialLatestScrape;
+  if (degradedSources > 0) {
+    const failureDetail = sourcesWithFailedLatestScrape > 0 && sourcesWithPartialLatestScrape > 0
+      ? `${plural(sourcesWithFailedLatestScrape, "source")} failed and ${plural(sourcesWithPartialLatestScrape, "source")} completed only partially`
+      : sourcesWithFailedLatestScrape > 0
+        ? `${plural(sourcesWithFailedLatestScrape, "source")} failed`
+        : `${plural(sourcesWithPartialLatestScrape, "source")} completed only partially`;
+    return {
+      ...base,
+      status: "degraded",
+      label: "Discovery needs attention",
+      detail: `${failureDetail} on their latest scan. Hire.AI will not represent discovery coverage as current until those sources complete a clean scan. ${plural(canonicalJobs, "canonical job")} remain in the index; confirm a listing is still open before preparing materials.`,
     };
   }
 

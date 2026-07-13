@@ -7,14 +7,14 @@ export type SampleJob = InferSelectModel<typeof jobs>;
 const now = Date.now();
 
 export const samplePlatforms: SamplePlatform[] = [
-  { id: 1, name: "FlexJobs", url: "https://www.flexjobs.com/", tier: "tier1", category: "General", isActive: 1, lastScraped: null, createdAt: new Date(now) },
-  { id: 2, name: "We Work Remotely", url: "https://weworkremotely.com/", tier: "tier1", category: "General", isActive: 1, lastScraped: null, createdAt: new Date(now) },
-  { id: 3, name: "Remote.co", url: "https://remote.co/", tier: "tier1", category: "General", isActive: 1, lastScraped: null, createdAt: new Date(now) },
-  { id: 4, name: "RemoteOK", url: "https://remoteok.com/", tier: "tier1", category: "General", isActive: 1, lastScraped: null, createdAt: new Date(now) },
-  { id: 5, name: "LinkedIn Jobs", url: "https://www.linkedin.com/jobs/", tier: "tier1", category: "General", isActive: 1, lastScraped: null, createdAt: new Date(now) },
-  { id: 6, name: "Remotive", url: "https://remotive.com/", tier: "tier2", category: "General", isActive: 1, lastScraped: null, createdAt: new Date(now) },
-  { id: 7, name: "Arc", url: "https://arc.dev/", tier: "tier3", category: "Tech", isActive: 1, lastScraped: null, createdAt: new Date(now) },
-  { id: 8, name: "PowerToFly", url: "https://powertofly.com/", tier: "tier4", category: "Diversity", isActive: 1, lastScraped: null, createdAt: new Date(now) },
+  { id: 1, name: "FlexJobs", url: "https://www.flexjobs.com/", tier: "tier1", category: "General", isActive: 1, lastScraped: null, lastScrapeAttemptedAt: null, lastScrapeStatus: null, lastScrapeJobCount: null, lastScrapeError: null, createdAt: new Date(now) },
+  { id: 2, name: "We Work Remotely", url: "https://weworkremotely.com/", tier: "tier1", category: "General", isActive: 1, lastScraped: null, lastScrapeAttemptedAt: null, lastScrapeStatus: null, lastScrapeJobCount: null, lastScrapeError: null, createdAt: new Date(now) },
+  { id: 3, name: "Remote.co", url: "https://remote.co/", tier: "tier1", category: "General", isActive: 1, lastScraped: null, lastScrapeAttemptedAt: null, lastScrapeStatus: null, lastScrapeJobCount: null, lastScrapeError: null, createdAt: new Date(now) },
+  { id: 4, name: "RemoteOK", url: "https://remoteok.com/", tier: "tier1", category: "General", isActive: 1, lastScraped: null, lastScrapeAttemptedAt: null, lastScrapeStatus: null, lastScrapeJobCount: null, lastScrapeError: null, createdAt: new Date(now) },
+  { id: 5, name: "LinkedIn Jobs", url: "https://www.linkedin.com/jobs/", tier: "tier1", category: "General", isActive: 1, lastScraped: null, lastScrapeAttemptedAt: null, lastScrapeStatus: null, lastScrapeJobCount: null, lastScrapeError: null, createdAt: new Date(now) },
+  { id: 6, name: "Remotive", url: "https://remotive.com/", tier: "tier2", category: "General", isActive: 1, lastScraped: null, lastScrapeAttemptedAt: null, lastScrapeStatus: null, lastScrapeJobCount: null, lastScrapeError: null, createdAt: new Date(now) },
+  { id: 7, name: "Arc", url: "https://arc.dev/", tier: "tier3", category: "Tech", isActive: 1, lastScraped: null, lastScrapeAttemptedAt: null, lastScrapeStatus: null, lastScrapeJobCount: null, lastScrapeError: null, createdAt: new Date(now) },
+  { id: 8, name: "PowerToFly", url: "https://powertofly.com/", tier: "tier4", category: "Diversity", isActive: 1, lastScraped: null, lastScrapeAttemptedAt: null, lastScrapeStatus: null, lastScrapeJobCount: null, lastScrapeError: null, createdAt: new Date(now) },
 ];
 export const sampleJobs: SampleJob[] = [
   {
