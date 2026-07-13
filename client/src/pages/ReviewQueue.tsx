@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { getApplicationDeepLink } from "@/lib/applicationDeepLinks";
@@ -42,11 +43,14 @@ import {
   XCircle,
 } from "lucide-react";
 
+type InboxResponseType = "rejection" | "interview_invite" | "offer" | "employer_question" | "other";
+
 export default function ReviewQueue() {
   const { user, loading: authLoading } = useAuth();
   const [, setLocation] = useLocation();
   const [sendHandoff, setSendHandoff] = useState<{ followUpId: number; label: string } | null>(null);
   const [deliveryConfirmation, setDeliveryConfirmation] = useState("");
+  const [inboxResponseTypeOverrides, setInboxResponseTypeOverrides] = useState<Record<number, InboxResponseType>>({});
   const {
     data: operatingLedger,
     isLoading,
@@ -106,6 +110,7 @@ export default function ReviewQueue() {
   const ingestInboxResponse = trpc.applications.ingestInboxResponse.useMutation({
     onSuccess: async (result) => {
       toast.success(result.existing ? "Existing employer response kept" : "Employer response recorded");
+      setInboxResponseTypeOverrides({});
       await Promise.all([refetch(), refetchAuditTrail()]);
     },
     onError: (error) => {
@@ -115,6 +120,7 @@ export default function ReviewQueue() {
   const dismissInboxResponseCandidate = trpc.applications.dismissInboxResponseCandidate.useMutation({
     onSuccess: async () => {
       toast.success("Inbox response candidate dismissed");
+      setInboxResponseTypeOverrides({});
       await Promise.all([refetch(), refetchAuditTrail()]);
     },
     onError: (error) => {
@@ -192,11 +198,11 @@ export default function ReviewQueue() {
     applicationId: number;
     provider: "gmail" | "outlook";
     messageId: string;
-    suggestedResponseType: "rejection" | "interview_invite" | "offer" | "employer_question" | "other";
+    suggestedResponseType: InboxResponseType;
     subject: string;
     preview: string;
     receivedAt: Date | string;
-  }) => {
+  }, responseType: InboxResponseType) => {
     const discoveredSummary = [candidate.subject, candidate.preview]
       .map((value) => value.trim())
       .filter(Boolean)
@@ -208,7 +214,7 @@ export default function ReviewQueue() {
       applicationId: candidate.applicationId,
       provider: candidate.provider,
       messageId: candidate.messageId,
-      responseType: candidate.suggestedResponseType,
+      responseType,
       summary: summary.slice(0, 5000),
       receivedAt: new Date(candidate.receivedAt).toISOString(),
     });
@@ -872,10 +878,36 @@ export default function ReviewQueue() {
                             onOpen={setLocation}
                             showAction={false}
                           />
+                          <div className="max-w-xs space-y-2">
+                            <label className="text-sm font-medium" htmlFor={`inbox-response-type-${candidate.id}`}>
+                              Confirm as
+                            </label>
+                            <Select
+                              value={inboxResponseTypeOverrides[candidate.id] ?? candidate.suggestedResponseType}
+                              onValueChange={(value: InboxResponseType) => setInboxResponseTypeOverrides((current) => ({
+                                ...current,
+                                [candidate.id]: value,
+                              }))}
+                            >
+                              <SelectTrigger id={`inbox-response-type-${candidate.id}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="interview_invite">Interview invite</SelectItem>
+                                <SelectItem value="offer">Offer</SelectItem>
+                                <SelectItem value="employer_question">Employer question</SelectItem>
+                                <SelectItem value="rejection">Rejection</SelectItem>
+                                <SelectItem value="other">Other</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
                           <div className="flex flex-wrap gap-2">
                             <Button
                               size="sm"
-                              onClick={() => confirmInboxResponseCandidate(candidate)}
+                              onClick={() => confirmInboxResponseCandidate(
+                                candidate,
+                                inboxResponseTypeOverrides[candidate.id] ?? candidate.suggestedResponseType
+                              )}
                               disabled={ingestInboxResponse.isPending || dismissInboxResponseCandidate.isPending}
                             >
                               {ingestInboxResponse.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-2 h-4 w-4" />}
