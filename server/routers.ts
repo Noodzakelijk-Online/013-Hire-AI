@@ -154,6 +154,24 @@ function assertJobCurrentForPreparation(job: Awaited<ReturnType<typeof import(".
   }
 }
 
+function assertJobSearchTermsAccepted(user: {
+  tosAcceptedAt?: Date | null;
+  accountStatus?: string | null;
+}) {
+  if (user.accountStatus && user.accountStatus !== "active") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Job-search actions are unavailable while this account is not active.",
+    });
+  }
+  if (!user.tosAcceptedAt) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: "Accept the Terms of Service before preparing, confirming, or sending job-search actions.",
+    });
+  }
+}
+
 function resolveConnectorScopes(
   provider: z.infer<typeof connectorProvider>,
   requestedScopes?: string[]
@@ -948,6 +966,7 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
+        assertJobSearchTermsAccepted(ctx.user);
         const {
           createApplication,
           createApplicationMaterial,
@@ -1130,6 +1149,7 @@ export const appRouter = router({
 
         const createsPreparedApplication = ["apply", "review", "manual_apply"].includes(input.decision);
         if (createsPreparedApplication) {
+          assertJobSearchTermsAccepted(ctx.user);
           assertJobCurrentForPreparation(job);
         }
         const preparationSafety = createsPreparedApplication
@@ -1854,6 +1874,7 @@ export const appRouter = router({
         confirmationUrl: safeHttpUrl.optional(),
       }))
       .mutation(async ({ ctx, input }) => {
+        assertJobSearchTermsAccepted(ctx.user);
         try {
           return await confirmApplicationSubmission(input, ctx.user.id);
         } catch (error) {
@@ -2128,6 +2149,7 @@ export const appRouter = router({
         deliveryConfirmation: z.string().trim().min(8).max(1000),
       }).strict())
       .mutation(async ({ ctx, input }) => {
+        assertJobSearchTermsAccepted(ctx.user);
         try {
           return await markFollowUpSent(input.followUpId, ctx.user.id, input.deliveryConfirmation);
         } catch (error) {
@@ -3038,6 +3060,7 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
+        assertJobSearchTermsAccepted(ctx.user);
         const {
           getJobById,
           getUserProfile,

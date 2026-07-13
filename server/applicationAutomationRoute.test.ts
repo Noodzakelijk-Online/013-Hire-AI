@@ -21,7 +21,7 @@ import {
 import { appRouter } from "./routers";
 import { sampleJobs } from "./sampleData";
 
-function createContext(userId: number): TrpcContext {
+function createContext(userId: number, tosAcceptedAt: Date | null = new Date()): TrpcContext {
   return {
     user: {
       id: userId,
@@ -32,7 +32,7 @@ function createContext(userId: number): TrpcContext {
       role: "user",
       stripeCustomerId: null,
       accountStatus: "active",
-      tosAcceptedAt: new Date(),
+      tosAcceptedAt,
       createdAt: new Date(),
       updatedAt: new Date(),
       lastSignedIn: new Date(),
@@ -78,6 +78,22 @@ describe("automation application preparation route", () => {
       supported: false,
       preparationSupported: false,
     });
+  });
+
+  it("requires Terms acceptance before creating application-preparation artifacts", async () => {
+    const userId = 98409;
+    const caller = appRouter.createCaller(createContext(userId, null));
+
+    await expect(caller.automation.applyToJob({ jobId: 1 })).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: expect.stringContaining("Accept the Terms of Service"),
+    });
+    await expect(caller.applications.create({ jobId: 1 })).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: expect.stringContaining("Accept the Terms of Service"),
+    });
+    expect(await getUserApplications(userId)).toHaveLength(0);
+    expect(await listUserApplicationApprovals(userId, "all")).toHaveLength(0);
   });
 
   it("records a reviewable preparation rather than an applied submission", async () => {
