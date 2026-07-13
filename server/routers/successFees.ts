@@ -28,6 +28,24 @@ const UNRESOLVED_SUCCESS_FEE_STATUSES = [
 ] as const;
 const EMPLOYMENT_END_REPORTABLE_STATUSES = new Set(["pending_verification", "active"]);
 
+function assertSuccessFeeTermsAccepted(user: {
+  tosAcceptedAt?: Date | null;
+  accountStatus?: string | null;
+}) {
+  if (user.accountStatus && user.accountStatus !== "active") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Success-fee actions are unavailable while this account is not active.",
+    });
+  }
+  if (!user.tosAcceptedAt) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: "Accept the Terms of Service before managing success-fee, verification, or billing actions.",
+    });
+  }
+}
+
 // Helper: get or create Stripe customer for user
 async function getOrCreateStripeCustomer(userId: number, email: string, name: string | null) {
   const stripe = getStripeClient();
@@ -139,6 +157,7 @@ export const successFeesRouter = router({
       termsAccepted: z.boolean().refine(v => v === true, "You must accept the terms"),
     }))
     .mutation(async ({ ctx, input }) => {
+      assertSuccessFeeTermsAccepted(ctx.user);
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const userId = ctx.user.id;
@@ -497,6 +516,7 @@ export const successFeesRouter = router({
       confirmBillingSetup: z.literal(true),
     }).strict())
     .mutation(async ({ ctx, input }) => {
+      assertSuccessFeeTermsAccepted(ctx.user);
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const userId = ctx.user.id;
@@ -684,6 +704,7 @@ export const successFeesRouter = router({
       documentType: z.enum(["paystub", "employment_letter", "bank_statement", "other"]),
     }))
     .mutation(async ({ ctx, input }) => {
+      assertSuccessFeeTermsAccepted(ctx.user);
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const userId = ctx.user.id;
@@ -761,6 +782,7 @@ export const successFeesRouter = router({
       endDate: z.string().datetime({ offset: true }),
     }))
     .mutation(async ({ ctx, input }) => {
+      assertSuccessFeeTermsAccepted(ctx.user);
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const userId = ctx.user.id;
