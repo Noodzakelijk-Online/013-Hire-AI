@@ -803,17 +803,16 @@ export async function getAutonomousUserEligibility(userId: number): Promise<{
   reason?: string;
 }> {
   const db = await getDb();
-  if (!db) return { eligible: true };
-
-  const result = await db
-    .select({
-      accountStatus: users.accountStatus,
-      tosAcceptedAt: users.tosAcceptedAt,
-    })
-    .from(users)
-    .where(eq(users.id, userId))
-    .limit(1);
-  const user = result[0];
+  const user = !db
+    ? memoryUsers.find((item) => item.id === userId)
+    : (await db
+      .select({
+        accountStatus: users.accountStatus,
+        tosAcceptedAt: users.tosAcceptedAt,
+      })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1))[0];
   if (!user) return { eligible: false, reason: "User account was not found." };
   if (user.accountStatus !== "active") {
     return { eligible: false, reason: "Autonomous actions are disabled while the account is not active." };

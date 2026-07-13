@@ -30,11 +30,26 @@ import {
   listAdminReviewItems,
   listUserApplicationApprovals,
   touchApplicationActivity,
+  getUserByOpenId,
+  upsertUser,
   upsertUserProfile,
 } from "./db";
 import { getFollowUps, recordInterviewOutcome, scheduleInterview, updateInterviewStatus } from "./applicationFeatures";
 import { runAutonomousForUser } from "./autonomousService";
 import { sampleJobs } from "./sampleData";
+
+async function createEligibleTestUser(label: string) {
+  const openId = `autonomous-submission-${label}`;
+  await upsertUser({
+    openId,
+    email: `${label}@example.local`,
+    accountStatus: "active",
+    tosAcceptedAt: new Date(),
+  });
+  const user = await getUserByOpenId(openId);
+  if (!user) throw new Error("Unable to create autonomous test user.");
+  return user.id;
+}
 
 describe("autonomous submission approval gates", () => {
   beforeEach(() => {
@@ -58,7 +73,7 @@ describe("autonomous submission approval gates", () => {
   });
 
   it("creates submission approvals for queued autonomous application records", async () => {
-    const userId = 99101;
+    const userId = await createEligibleTestUser("99101");
 
     await upsertUserProfile({
       userId,
@@ -120,7 +135,7 @@ describe("autonomous submission approval gates", () => {
   });
 
   it("keeps preparation evidence idempotent when the same autonomous run is retried", async () => {
-    const userId = 99104;
+    const userId = await createEligibleTestUser("99104");
     const job = sampleJobs[0];
 
     await upsertUserProfile({
@@ -174,7 +189,7 @@ describe("autonomous submission approval gates", () => {
   });
 
   it("rechecks a listing before writing autonomous preparation records", async () => {
-    const userId = 99109;
+    const userId = await createEligibleTestUser("99109");
     mocks.getJobById.mockResolvedValue({ ...sampleJobs[0], isActive: 0 });
     await upsertUserProfile({
       userId,
@@ -205,7 +220,7 @@ describe("autonomous submission approval gates", () => {
   });
 
   it("keeps a blocked high-fit job visible as a review decision without creating an application", async () => {
-    const userId = 99111;
+    const userId = await createEligibleTestUser("99111");
     mocks.getActiveResume.mockResolvedValue(null);
     await upsertUserProfile({
       userId,
@@ -236,7 +251,7 @@ describe("autonomous submission approval gates", () => {
   });
 
   it("does not replace an explicit user job decision with an autonomous terminal outcome", async () => {
-    const userId = 99112;
+    const userId = await createEligibleTestUser("99112");
     mocks.getActiveResume.mockResolvedValue(null);
     await upsertUserProfile({
       userId,
@@ -274,7 +289,7 @@ describe("autonomous submission approval gates", () => {
   });
 
   it("records daily-limit deferrals as saved decisions for a future run", async () => {
-    const userId = 99113;
+    const userId = await createEligibleTestUser("99113");
     mocks.getActiveJobs.mockResolvedValue([sampleJobs[0], sampleJobs[1]]);
     await upsertUserProfile({
       userId,
@@ -302,7 +317,7 @@ describe("autonomous submission approval gates", () => {
   });
 
   it("does not draft routine follow-ups while an employer response needs review", async () => {
-    const userId = 99102;
+    const userId = await createEligibleTestUser("99102");
     const staleDate = new Date(Date.now() - 8 * 86400000);
 
     await upsertUserProfile({
@@ -358,7 +373,7 @@ describe("autonomous submission approval gates", () => {
   });
 
   it("does not draft routine follow-ups after an interview is cancelled", async () => {
-    const userId = 99106;
+    const userId = await createEligibleTestUser("99106");
     const staleDate = new Date(Date.now() - 8 * 86400000);
 
     await upsertUserProfile({
@@ -409,7 +424,7 @@ describe("autonomous submission approval gates", () => {
   });
 
   it("does not draft routine follow-ups while a completed interview needs an outcome", async () => {
-    const userId = 99108;
+    const userId = await createEligibleTestUser("99108");
     const staleDate = new Date(Date.now() - 8 * 86400000);
 
     await upsertUserProfile({
@@ -461,7 +476,7 @@ describe("autonomous submission approval gates", () => {
   });
 
   it("does not draft routine follow-ups while a later interview round needs scheduling", async () => {
-    const userId = 99107;
+    const userId = await createEligibleTestUser("99107");
     const staleDate = new Date(Date.now() - 8 * 86400000);
 
     await upsertUserProfile({
@@ -518,7 +533,7 @@ describe("autonomous submission approval gates", () => {
   });
 
   it("does not create application preparation records when no active resume is available", async () => {
-    const userId = 99103;
+    const userId = await createEligibleTestUser("99103");
     mocks.getActiveResume.mockResolvedValue(null);
     await upsertUserProfile({
       userId,
@@ -549,7 +564,7 @@ describe("autonomous submission approval gates", () => {
   });
 
   it("does not create materials or approvals when core profile evidence is incomplete", async () => {
-    const userId = 99105;
+    const userId = await createEligibleTestUser("99105");
     await upsertUserProfile({
       userId,
       skills: "React, TypeScript, Node.js",

@@ -4,7 +4,9 @@ import { getUserOperatingLedger } from "./applicationCampaigns";
 import { runAutonomousForUser, runScheduledAutonomousForUser } from "./autonomousService";
 import {
   getAuditEventsForUser,
+  getUserByOpenId,
   getUserApplications,
+  upsertUser,
   updateApplicationCampaignStatus,
   upsertUserProfile,
 } from "./db";
@@ -31,9 +33,22 @@ function createContext(userId: number): TrpcContext {
   };
 }
 
+async function createEligibleTestUser(label: string) {
+  const openId = `campaign-user-${label}`;
+  await upsertUser({
+    openId,
+    email: `campaign-${label}@example.local`,
+    accountStatus: "active",
+    tosAcceptedAt: new Date(),
+  });
+  const user = await getUserByOpenId(openId);
+  if (!user) throw new Error("Unable to create campaign test user.");
+  return user.id;
+}
+
 describe("application campaign control", () => {
   it("persists a user pause through ledger resync and records the control decision", async () => {
-    const userId = 99501;
+    const userId = await createEligibleTestUser("99501");
     await upsertUserProfile({
       userId,
       skills: "React, TypeScript",
@@ -60,7 +75,7 @@ describe("application campaign control", () => {
   });
 
   it("blocks both manual and scheduled autonomous runs while the campaign is paused", async () => {
-    const userId = 99502;
+    const userId = await createEligibleTestUser("99502");
     await upsertUserProfile({
       userId,
       skills: "React, TypeScript, Node.js",
