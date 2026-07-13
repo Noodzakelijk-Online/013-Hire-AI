@@ -59,11 +59,10 @@ type CloudResumeDocument = {
 };
 
 type InboxResponseCandidate = {
+  id: number;
   provider: "gmail" | "outlook";
   messageId: string;
   applicationId: number;
-  company: string;
-  jobTitle: string;
   sender: string | null;
   subject: string;
   preview: string;
@@ -118,7 +117,6 @@ export default function Profile() {
   const [salaryMaximum, setSalaryMaximum] = useState("");
   const [needsVisaSponsorship, setNeedsVisaSponsorship] = useState(false);
   const [cloudResumeDocuments, setCloudResumeDocuments] = useState<CloudResumeDocument[]>([]);
-  const [inboxResponseCandidates, setInboxResponseCandidates] = useState<InboxResponseCandidate[]>([]);
   const [githubProfileCandidate, setGitHubProfileCandidate] = useState<GitHubProfileCandidate | null>(null);
   const [linkedInIdentityCandidate, setLinkedInIdentityCandidate] = useState<LinkedInIdentityCandidate | null>(null);
   const [selectedGitHubRepositoryUrls, setSelectedGitHubRepositoryUrls] = useState<string[]>([]);
@@ -142,6 +140,17 @@ export default function Profile() {
   const projectsQuery = trpc.profile.getProjects.useQuery(undefined, {
     enabled: isAuthenticated,
   });
+  const inboxResponseCandidatesQuery = trpc.applications.listInboxResponseCandidates.useQuery(undefined, {
+    enabled: isAuthenticated,
+  });
+  const inboxResponseCandidates = useMemo<InboxResponseCandidate[]>(() => (
+    inboxResponseCandidatesQuery.data?.map((candidate) => ({
+      ...candidate,
+      receivedAt: candidate.receivedAt instanceof Date
+        ? candidate.receivedAt.toISOString()
+        : String(candidate.receivedAt),
+    })) ?? []
+  ), [inboxResponseCandidatesQuery.data]);
   const activeResumeQuery = trpc.resume.getActive.useQuery(undefined, {
     enabled: isAuthenticated,
   });
@@ -226,24 +235,29 @@ export default function Profile() {
     onError: (error) => toast.error(error.message || "Unable to import this GitHub profile"),
   });
   const discoverInboxResponses = trpc.applications.discoverInboxResponses.useMutation({
-    onSuccess: (result) => {
-      setInboxResponseCandidates(result.candidates);
+    onSuccess: async (result) => {
       toast.success(
         result.candidates.length === 1
           ? "Found 1 application-linked inbox response"
           : `Found ${result.candidates.length} application-linked inbox responses`
       );
+      await inboxResponseCandidatesQuery.refetch();
     },
     onError: (error) => toast.error(error.message || "Unable to discover inbox responses"),
   });
   const ingestInboxResponse = trpc.applications.ingestInboxResponse.useMutation({
-    onSuccess: (result, input) => {
+    onSuccess: async (result) => {
       if (!result.existing) toast.success("Employer response recorded in the application ledger");
-      setInboxResponseCandidates((candidates) => candidates.filter((candidate) =>
-        !(candidate.provider === input.provider && candidate.messageId === input.messageId)
-      ));
+      await inboxResponseCandidatesQuery.refetch();
     },
     onError: (error) => toast.error(error.message || "Unable to record this inbox response"),
+  });
+  const dismissInboxResponseCandidate = trpc.applications.dismissInboxResponseCandidate.useMutation({
+    onSuccess: async () => {
+      toast.success("Inbox response candidate dismissed");
+      await inboxResponseCandidatesQuery.refetch();
+    },
+    onError: (error) => toast.error(error.message || "Unable to dismiss this inbox response candidate"),
   });
   const parseResumeFile = trpc.resume.parseFile.useMutation({
     onSuccess: async ({ resume }) => {
@@ -808,7 +822,7 @@ export default function Profile() {
                   <div key={`${candidate.provider}:${candidate.messageId}`} className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-2 first:border-t-0 first:pt-0">
                     <div className="min-w-0 max-w-2xl">
                       <p className="truncate text-sm font-medium text-white">{candidate.subject}</p>
-                      <p className="mt-1 text-xs text-slate-400">{candidate.company} - {candidate.jobTitle} - {candidate.suggestedResponseType.replace(/_/g, " ")}</p>
+                      <p className="mt-1 text-xs text-slate-400">Application #{candidate.applicationId} - {candidate.suggestedResponseType.replace(/_/g, " ")}</p>
                       <p className="mt-1 line-clamp-2 text-xs text-slate-500">{candidate.preview}</p>
                     </div>
                     <Button
@@ -819,6 +833,14 @@ export default function Profile() {
                     >
                       {ingestInboxResponse.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
                       Confirm
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => dismissInboxResponseCandidate.mutate({ candidateId: candidate.id })}
+                      disabled={dismissInboxResponseCandidate.isPending}
+                    >
+                      Dismiss
                     </Button>
                   </div>
                 ))}

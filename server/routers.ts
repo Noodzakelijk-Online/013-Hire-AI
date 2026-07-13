@@ -1455,6 +1455,10 @@ export const appRouter = router({
         includeAdminReviews: ctx.user.role === "admin",
       });
     }),
+    listInboxResponseCandidates: protectedProcedure.query(async ({ ctx }) => {
+      const { listPendingInboxResponseCandidates } = await import("./db");
+      return await listPendingInboxResponseCandidates(ctx.user.id);
+    }),
     setCampaignStatus: protectedProcedure
       .input(z.object({ status: z.enum(["active", "paused"]) }))
       .mutation(async ({ ctx, input }) => {
@@ -1909,9 +1913,24 @@ export const appRouter = router({
       .input(z.object({ provider: z.enum(["gmail", "outlook"]) }))
       .mutation(async ({ ctx, input }) => {
         const { discoverInboxResponseCandidates } = await import("./inboxResponseDiscovery");
-        const { createAuditEvent } = await import("./db");
+        const { createAuditEvent, upsertInboxResponseCandidate } = await import("./db");
         try {
           const candidates = await discoverInboxResponseCandidates(ctx.user.id, input.provider);
+          const persisted = await Promise.all(candidates.map((candidate) =>
+            upsertInboxResponseCandidate({
+              userId: ctx.user.id,
+              applicationId: candidate.applicationId,
+              provider: candidate.provider,
+              messageId: candidate.messageId,
+              sender: candidate.sender,
+              subject: candidate.subject,
+              preview: candidate.preview,
+              receivedAt: new Date(candidate.receivedAt),
+              suggestedResponseType: candidate.suggestedResponseType,
+              confidence: candidate.confidence,
+            })
+          ));
+          const newCandidateCount = persisted.filter((item) => !item.existing).length;
           await createAuditEvent({
             userId: ctx.user.id,
             entityType: "user",
@@ -1919,16 +1938,40 @@ export const appRouter = router({
             action: "inbox_response_candidates_discovered",
             actor: "user",
             source: "applications.discoverInboxResponses",
-            afterState: JSON.stringify({ provider: input.provider, candidateCount: candidates.length }),
+            afterState: JSON.stringify({ provider: input.provider, candidateCount: newCandidateCount, externalWritePerformed: false }),
             riskLevel: "low",
           });
-          return { provider: input.provider, candidates };
+          return { provider: input.provider, candidates: persisted.map((item) => item.candidate) };
         } catch (error) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
             message: error instanceof Error ? error.message : "Inbox response discovery could not be completed.",
           });
         }
+      }),
+    dismissInboxResponseCandidate: protectedProcedure
+      .input(z.object({ candidateId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const { createAuditEvent, resolveInboxResponseCandidate } = await import("./db");
+        const candidate = await resolveInboxResponseCandidate({
+          id: input.candidateId,
+          userId: ctx.user.id,
+          status: "dismissed",
+        });
+        if (!candidate) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Inbox response candidate not found." });
+        }
+        await createAuditEvent({
+          userId: ctx.user.id,
+          entityType: "application",
+          entityId: candidate.applicationId,
+          action: "inbox_response_candidate_dismissed",
+          actor: "user",
+          source: "applications.dismissInboxResponseCandidate",
+          afterState: JSON.stringify({ candidateId: candidate.id, provider: candidate.provider, messageId: candidate.messageId }),
+          riskLevel: "low",
+        });
+        return { candidate };
       }),
     ingestInboxResponse: protectedProcedure
       .input(z.object({
@@ -1940,7 +1983,7 @@ export const appRouter = router({
         receivedAt: z.string().datetime().transform((value) => new Date(value)).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const { listUserConnectorAccounts, createAuditEvent } = await import("./db");
+        const { listUserConnectorAccounts, createAuditEvent, resolveInboxResponseCandidateBySourceReference } = await import("./db");
         const account = (await listUserConnectorAccounts(ctx.user.id))
           .find((item) => item.provider === input.provider);
         const requiredScope = input.provider === "gmail"
@@ -1991,6 +2034,12 @@ export const appRouter = router({
               riskLevel: input.responseType === "offer" ? "high" : input.responseType === "interview_invite" ? "medium" : "low",
             });
           }
+          await resolveInboxResponseCandidateBySourceReference({
+            userId: ctx.user.id,
+            provider: input.provider,
+            messageId: input.messageId,
+            status: "confirmed",
+          });
           return { ...result, provider: input.provider };
         } catch (error) {
           const message = error instanceof Error ? error.message : "Unable to ingest inbox response.";
@@ -3048,6 +3097,9 @@ export const appRouter = router({
         profileReadinessBlockedActions: persistedSummary?.skippedProfileReadinessActions ?? userStatus?.profileReadinessBlockedActions ?? 0,
         evidenceGatedActions: persistedSummary?.skippedEvidenceGatedActions ?? userStatus?.evidenceGatedActions ?? 0,
         staleJobActionsSkipped: persistedSummary?.skippedStaleJobActions ?? 0,
+        inboxProvidersScanned: persistedSummary?.inboxProvidersScanned ?? userStatus?.inboxProvidersScanned ?? 0,
+        inboxCandidatesDiscovered: persistedSummary?.inboxCandidatesDiscovered ?? userStatus?.inboxCandidatesDiscovered ?? 0,
+        inboxMonitoringFailures: persistedSummary?.inboxMonitoringFailures ?? userStatus?.inboxMonitoringFailures ?? 0,
         failedActions: persistedSummary?.failedActions ?? userStatus?.failedActions ?? 0,
         errorCount: persistedRunState?.lastStatus === "failed" ? 1 : userStatus?.errorCount || 0,
       };

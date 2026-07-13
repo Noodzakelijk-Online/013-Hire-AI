@@ -14,6 +14,7 @@ import {
   applicationMaterials,
   applicationAttempts,
   employerResponses,
+  inboxResponseCandidates,
   applicationNotifications,
   auditEvents,
   adminReviewItems,
@@ -37,6 +38,7 @@ import {
   type ApplicationMaterial,
   type ApplicationAttempt,
   type EmployerResponse,
+  type InboxResponseCandidate,
   type ApplicationNotification,
   type AuditEvent,
   type AdminReviewItem,
@@ -78,6 +80,7 @@ type InsertApplicationDecision = InferInsertModel<typeof applicationDecisions>;
 type InsertApplicationMaterial = InferInsertModel<typeof applicationMaterials>;
 type InsertApplicationAttempt = InferInsertModel<typeof applicationAttempts>;
 type InsertEmployerResponse = InferInsertModel<typeof employerResponses>;
+type InsertInboxResponseCandidate = InferInsertModel<typeof inboxResponseCandidates>;
 type InsertApplicationNotification = InferInsertModel<typeof applicationNotifications>;
 type InsertAuditEvent = InferInsertModel<typeof auditEvents>;
 type InsertAdminReviewItem = InferInsertModel<typeof adminReviewItems>;
@@ -111,6 +114,7 @@ const memoryApplicationDecisions: (InsertApplicationDecision & { id: number; cre
 const memoryApplicationMaterials: (InsertApplicationMaterial & { id: number; createdAt: Date; updatedAt: Date })[] = [];
 const memoryApplicationAttempts: (InsertApplicationAttempt & { id: number; createdAt: Date })[] = [];
 const memoryEmployerResponses: (InsertEmployerResponse & { id: number; createdAt: Date })[] = [];
+const memoryInboxResponseCandidates: (InsertInboxResponseCandidate & { id: number; createdAt: Date; updatedAt: Date })[] = [];
 const memoryApplicationNotifications: (InsertApplicationNotification & { id: number; createdAt: Date })[] = [];
 const memoryAuditEvents: (InsertAuditEvent & { id: number; createdAt: Date })[] = [];
 const memoryAdminReviewItems: (InsertAdminReviewItem & { id: number; createdAt: Date; updatedAt: Date })[] = [];
@@ -140,6 +144,9 @@ export interface AutonomousRunSummaryRecord {
   skippedProfileReadinessActions: number;
   skippedEvidenceGatedActions: number;
   skippedStaleJobActions: number;
+  inboxProvidersScanned?: number;
+  inboxCandidatesDiscovered?: number;
+  inboxMonitoringFailures?: number;
   failedActions: number;
 }
 
@@ -180,6 +187,18 @@ function parseAutonomousRunSummary(value: string | null | undefined): Autonomous
     summary.skippedStaleJobActions = typeof parsed.skippedStaleJobActions === "number"
       && Number.isFinite(parsed.skippedStaleJobActions)
       ? Math.max(0, Math.round(parsed.skippedStaleJobActions))
+      : 0;
+    summary.inboxProvidersScanned = typeof parsed.inboxProvidersScanned === "number"
+      && Number.isFinite(parsed.inboxProvidersScanned)
+      ? Math.max(0, Math.round(parsed.inboxProvidersScanned))
+      : 0;
+    summary.inboxCandidatesDiscovered = typeof parsed.inboxCandidatesDiscovered === "number"
+      && Number.isFinite(parsed.inboxCandidatesDiscovered)
+      ? Math.max(0, Math.round(parsed.inboxCandidatesDiscovered))
+      : 0;
+    summary.inboxMonitoringFailures = typeof parsed.inboxMonitoringFailures === "number"
+      && Number.isFinite(parsed.inboxMonitoringFailures)
+      ? Math.max(0, Math.round(parsed.inboxMonitoringFailures))
       : 0;
     return summary;
   } catch {
@@ -1773,6 +1792,154 @@ export async function findEmployerResponseBySourceReference(input: {
     ))
     .limit(1);
   return result[0];
+}
+
+export async function upsertInboxResponseCandidate(candidate: InsertInboxResponseCandidate) {
+  const db = await getDb();
+  if (!db) {
+    const existing = memoryInboxResponseCandidates.find((item) =>
+      item.userId === candidate.userId &&
+      item.provider === candidate.provider &&
+      item.messageId === candidate.messageId
+    );
+    if (existing) {
+      return { candidate: existing as InboxResponseCandidate, existing: true };
+    }
+    const record = {
+      ...candidate,
+      id: memoryInboxResponseCandidates.length + 1,
+      sender: candidate.sender ?? null,
+      status: candidate.status ?? "pending",
+      reviewedAt: candidate.reviewedAt ?? null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    memoryInboxResponseCandidates.push(record);
+    return { candidate: record as InboxResponseCandidate, existing: false };
+  }
+
+  const existing = await db
+    .select()
+    .from(inboxResponseCandidates)
+    .where(and(
+      eq(inboxResponseCandidates.userId, candidate.userId),
+      eq(inboxResponseCandidates.provider, candidate.provider),
+      eq(inboxResponseCandidates.messageId, candidate.messageId)
+    ))
+    .limit(1);
+  if (existing[0]) return { candidate: existing[0], existing: true };
+
+  try {
+    const result = await db.insert(inboxResponseCandidates).values(candidate);
+    const inserted = await db
+      .select()
+      .from(inboxResponseCandidates)
+      .where(eq(inboxResponseCandidates.id, Number(result[0].insertId)))
+      .limit(1);
+    return { candidate: inserted[0], existing: false };
+  } catch (error) {
+    const concurrent = await db
+      .select()
+      .from(inboxResponseCandidates)
+      .where(and(
+        eq(inboxResponseCandidates.userId, candidate.userId),
+        eq(inboxResponseCandidates.provider, candidate.provider),
+        eq(inboxResponseCandidates.messageId, candidate.messageId)
+      ))
+      .limit(1);
+    if (concurrent[0]) return { candidate: concurrent[0], existing: true };
+    throw error;
+  }
+}
+
+export async function listPendingInboxResponseCandidates(userId: number) {
+  const db = await getDb();
+  if (!db) {
+    return memoryInboxResponseCandidates
+      .filter((candidate) => candidate.userId === userId && candidate.status === "pending")
+      .sort((a, b) => b.receivedAt.getTime() - a.receivedAt.getTime()) as InboxResponseCandidate[];
+  }
+  return await db
+    .select()
+    .from(inboxResponseCandidates)
+    .where(and(
+      eq(inboxResponseCandidates.userId, userId),
+      eq(inboxResponseCandidates.status, "pending")
+    ))
+    .orderBy(desc(inboxResponseCandidates.receivedAt));
+}
+
+export async function resolveInboxResponseCandidate(input: {
+  id: number;
+  userId: number;
+  status: "confirmed" | "dismissed";
+}) {
+  const db = await getDb();
+  const reviewedAt = new Date();
+  if (!db) {
+    const candidate = memoryInboxResponseCandidates.find((item) =>
+      item.id === input.id && item.userId === input.userId
+    );
+    if (!candidate) return null;
+    candidate.status = input.status;
+    candidate.reviewedAt = reviewedAt;
+    candidate.updatedAt = reviewedAt;
+    return candidate as InboxResponseCandidate;
+  }
+  await db
+    .update(inboxResponseCandidates)
+    .set({ status: input.status, reviewedAt })
+    .where(and(
+      eq(inboxResponseCandidates.id, input.id),
+      eq(inboxResponseCandidates.userId, input.userId)
+    ));
+  const candidate = await db
+    .select()
+    .from(inboxResponseCandidates)
+    .where(and(
+      eq(inboxResponseCandidates.id, input.id),
+      eq(inboxResponseCandidates.userId, input.userId)
+    ))
+    .limit(1);
+  return candidate[0] ?? null;
+}
+
+export async function resolveInboxResponseCandidateBySourceReference(input: {
+  userId: number;
+  provider: "gmail" | "outlook";
+  messageId: string;
+  status: "confirmed" | "dismissed";
+}) {
+  const db = await getDb();
+  const reviewedAt = new Date();
+  if (!db) {
+    const candidate = memoryInboxResponseCandidates.find((item) =>
+      item.userId === input.userId && item.provider === input.provider && item.messageId === input.messageId
+    );
+    if (!candidate) return null;
+    candidate.status = input.status;
+    candidate.reviewedAt = reviewedAt;
+    candidate.updatedAt = reviewedAt;
+    return candidate as InboxResponseCandidate;
+  }
+  await db
+    .update(inboxResponseCandidates)
+    .set({ status: input.status, reviewedAt })
+    .where(and(
+      eq(inboxResponseCandidates.userId, input.userId),
+      eq(inboxResponseCandidates.provider, input.provider),
+      eq(inboxResponseCandidates.messageId, input.messageId)
+    ));
+  const candidate = await db
+    .select()
+    .from(inboxResponseCandidates)
+    .where(and(
+      eq(inboxResponseCandidates.userId, input.userId),
+      eq(inboxResponseCandidates.provider, input.provider),
+      eq(inboxResponseCandidates.messageId, input.messageId)
+    ))
+    .limit(1);
+  return candidate[0] ?? null;
 }
 
 export async function getEmployerResponses(applicationId: number, userId: number) {

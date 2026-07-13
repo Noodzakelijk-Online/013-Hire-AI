@@ -22,6 +22,9 @@ interface AutonomousSchedulerStatus {
   resumeEvidenceBlockedActions: number;
   profileReadinessBlockedActions: number;
   evidenceGatedActions: number;
+  inboxProvidersScanned: number;
+  inboxCandidatesDiscovered: number;
+  inboxMonitoringFailures: number;
   failedActions: number;
   errors: string[];
 }
@@ -34,6 +37,9 @@ interface AutonomousUserRunStatus {
   resumeEvidenceBlockedActions: number;
   profileReadinessBlockedActions: number;
   evidenceGatedActions: number;
+  inboxProvidersScanned: number;
+  inboxCandidatesDiscovered: number;
+  inboxMonitoringFailures: number;
   failedActions: number;
   errorCount: number;
 }
@@ -56,6 +62,9 @@ export class AutonomousScheduler {
     resumeEvidenceBlockedActions: 0,
     profileReadinessBlockedActions: 0,
     evidenceGatedActions: 0,
+    inboxProvidersScanned: 0,
+    inboxCandidatesDiscovered: 0,
+    inboxMonitoringFailures: 0,
     failedActions: 0,
     errors: [],
   };
@@ -102,6 +111,9 @@ export class AutonomousScheduler {
     this.status.resumeEvidenceBlockedActions = 0;
     this.status.profileReadinessBlockedActions = 0;
     this.status.evidenceGatedActions = 0;
+    this.status.inboxProvidersScanned = 0;
+    this.status.inboxCandidatesDiscovered = 0;
+    this.status.inboxMonitoringFailures = 0;
     this.status.failedActions = 0;
     try {
       const profiles = await getProfilesWithAutonomousPreferences();
@@ -127,6 +139,9 @@ export class AutonomousScheduler {
             this.status.resumeEvidenceBlockedActions += result.skippedResumeEvidenceActions || 0;
             this.status.profileReadinessBlockedActions += result.skippedProfileReadinessActions || 0;
             this.status.evidenceGatedActions += result.skippedEvidenceGatedActions;
+            this.status.inboxProvidersScanned += result.inboxProvidersScanned || 0;
+            this.status.inboxCandidatesDiscovered += result.inboxCandidatesDiscovered || 0;
+            this.status.inboxMonitoringFailures += result.inboxMonitoringFailures || 0;
             this.status.failedActions += result.failedActions;
             this.userRunStatuses.set(profile.userId, {
               lastRunAt: new Date(),
@@ -136,6 +151,9 @@ export class AutonomousScheduler {
               resumeEvidenceBlockedActions: result.skippedResumeEvidenceActions || 0,
               profileReadinessBlockedActions: result.skippedProfileReadinessActions || 0,
               evidenceGatedActions: result.skippedEvidenceGatedActions,
+              inboxProvidersScanned: result.inboxProvidersScanned || 0,
+              inboxCandidatesDiscovered: result.inboxCandidatesDiscovered || 0,
+              inboxMonitoringFailures: result.inboxMonitoringFailures || 0,
               failedActions: result.failedActions,
               errorCount: result.failedActions,
             });
@@ -155,6 +173,9 @@ export class AutonomousScheduler {
             resumeEvidenceBlockedActions: 0,
             profileReadinessBlockedActions: 0,
             evidenceGatedActions: 0,
+            inboxProvidersScanned: 0,
+            inboxCandidatesDiscovered: 0,
+            inboxMonitoringFailures: 0,
             failedActions: 0,
             errorCount: 1,
           });

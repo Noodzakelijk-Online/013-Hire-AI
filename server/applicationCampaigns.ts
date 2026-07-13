@@ -6,6 +6,7 @@ import {
   getEducationEntries,
   getInterviewPreparationForJob,
   listUnreadInterviewNotifications,
+  listPendingInboxResponseCandidates,
   getUserApplicationDecisions,
   getUserApplications,
   getUserProfile,
@@ -434,7 +435,7 @@ export function getConnectorReadinessQueue(input: {
     items.push(connectorReadinessItem({
       id: "inbox-response-monitoring",
       label: "Inbox response monitoring",
-      detail: `Connect Gmail or Outlook before Hire.AI can automatically detect replies for ${responseApplications} active application${responseApplications === 1 ? "" : "s"}.`,
+      detail: `Connect Gmail or Outlook before Hire.AI can scan for application-linked replies across ${responseApplications} active application${responseApplications === 1 ? "" : "s"}. Detected messages stay pending until you confirm them.`,
       providerIds: ["gmail", "outlook"],
       status: "not_connected",
       riskLevel: "medium",
@@ -480,6 +481,7 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
     offerAttributionReviews,
     connectorAccounts,
     activeResume,
+    inboxResponseCandidates,
   ] = await Promise.all([
     getUserProfile(userId),
     getWorkExperiences(userId),
@@ -494,6 +496,7 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
     getUserOfferAttributionReviews(userId),
     listUserConnectorAccounts(userId),
     getActiveResume(userId),
+    listPendingInboxResponseCandidates(userId),
   ]);
   const approvals = allApprovals.filter((approval) => approval.status === "pending");
   const existingCampaign = await getApplicationCampaign(userId);
@@ -600,6 +603,9 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
     interviewNotificationQueue.length > 0
       ? `Review ${interviewNotificationQueue.length} verified interview invite${interviewNotificationQueue.length === 1 ? "" : "s"}.`
       : "",
+    inboxResponseCandidates.length > 0
+      ? `Confirm or dismiss ${inboxResponseCandidates.length} inbox response candidate${inboxResponseCandidates.length === 1 ? "" : "s"} before changing application status.`
+      : "",
     interviewPreparationQueue.length > 0
       ? `Prepare for ${interviewPreparationQueue.length} upcoming interview${interviewPreparationQueue.length === 1 ? "" : "s"}.`
       : "",
@@ -688,6 +694,7 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
       employerResponsesNeedingReply: employerResponseQueue.length,
       interviews: applicationStatusCount(applications, ["interview"]),
       unreadInterviewNotifications: interviewNotificationQueue.length,
+      inboxResponseCandidates: inboxResponseCandidates.length,
       interviewSchedulingNeeded: interviewSchedulingQueue.length,
       interviewPreparationNeeded: interviewPreparationQueue.length,
       interviewOutcomesNeeded: interviewOutcomeQueue.length,
@@ -713,6 +720,7 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
       adminReviews: userAdminReviews.slice(0, 5),
       reviewDecisions: reviewDecisionQueue.slice(0, 5),
       interviewNotifications: interviewNotificationQueue,
+      inboxResponseCandidates: inboxResponseCandidates.slice(0, 5),
       interviewScheduling: interviewSchedulingQueue.slice(0, 5),
       interviewPreparationNeeded: interviewPreparationQueue.slice(0, 5),
       interviewOutcomesNeeded: interviewOutcomeQueue.slice(0, 5),

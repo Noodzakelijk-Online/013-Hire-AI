@@ -45,6 +45,7 @@ import {
 import { getAutonomousEvidenceContext } from "./autonomousEvidence";
 import { getActiveResume } from "./resumeStorage";
 import { buildEvidenceBoundApplicationDraft, type EvidenceBoundApplicationDraft } from "./applicationMaterialDraft";
+import { monitorInboxResponses } from "./inboxResponseMonitoring";
 
 export interface AutonomousRunResult extends AutonomousPlan {
   queuedApplicationRecords: number;
@@ -57,6 +58,9 @@ export interface AutonomousRunResult extends AutonomousPlan {
   skippedProfileReadinessActions: number;
   skippedEvidenceGatedActions: number;
   skippedStaleJobActions: number;
+  inboxProvidersScanned: number;
+  inboxCandidatesDiscovered: number;
+  inboxMonitoringFailures: number;
   evidenceGates: AutonomousEvidenceGate[];
   failedActions: number;
   actionErrors: string[];
@@ -76,6 +80,9 @@ function persistableRunSummary(result: AutonomousRunResult) {
     skippedProfileReadinessActions: result.skippedProfileReadinessActions,
     skippedEvidenceGatedActions: result.skippedEvidenceGatedActions,
     skippedStaleJobActions: result.skippedStaleJobActions,
+    inboxProvidersScanned: result.inboxProvidersScanned,
+    inboxCandidatesDiscovered: result.inboxCandidatesDiscovered,
+    inboxMonitoringFailures: result.inboxMonitoringFailures,
     failedActions: result.failedActions,
   };
 }
@@ -378,6 +385,9 @@ async function executeAutonomousRun(
   let queuedReviewRecords = 0;
   let queuedManualRecords = 0;
   let skippedStaleJobActions = 0;
+  let inboxProvidersScanned = 0;
+  let inboxCandidatesDiscovered = 0;
+  let inboxMonitoringFailures = 0;
   let completedActions = 0;
   const actionErrors: string[] = [];
 
@@ -747,6 +757,13 @@ async function executeAutonomousRun(
     }
   }
 
+  // Read-only inbox monitoring is consent-gated and only creates pending review candidates.
+  assertLeaseActive();
+  const inboxMonitoring = await monitorInboxResponses(userId);
+  inboxProvidersScanned = inboxMonitoring.providersScanned;
+  inboxCandidatesDiscovered = inboxMonitoring.candidatesDiscovered;
+  inboxMonitoringFailures = inboxMonitoring.monitoringFailures;
+
   if (actionErrors.length > 0 && completedActions === 0) {
     throw new Error(`Autonomous run failed all actions (${actionErrors.length} failures).`);
   }
@@ -763,6 +780,9 @@ async function executeAutonomousRun(
     skippedProfileReadinessActions,
     skippedEvidenceGatedActions: evidenceGatedActions.total,
     skippedStaleJobActions,
+    inboxProvidersScanned,
+    inboxCandidatesDiscovered,
+    inboxMonitoringFailures,
     evidenceGates,
     failedActions: actionErrors.length,
     actionErrors,

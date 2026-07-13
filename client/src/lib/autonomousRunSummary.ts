@@ -9,6 +9,9 @@ export interface AutonomousRunSummaryInput {
   skippedProfileReadinessActions?: number;
   skippedEvidenceGatedActions?: number;
   skippedStaleJobActions?: number;
+  inboxProvidersScanned?: number;
+  inboxCandidatesDiscovered?: number;
+  inboxMonitoringFailures?: number;
   evidenceGates?: Array<{ id?: string; label?: string; severity?: string }>;
   failedActions?: number;
   summary?: {
@@ -36,6 +39,9 @@ export function getAutonomousRunCounts(result: AutonomousRunSummaryInput) {
     profileReadinessBlockedActions: result.skippedProfileReadinessActions || 0,
     evidenceGatedActions: result.skippedEvidenceGatedActions || 0,
     staleJobActionsSkipped: result.skippedStaleJobActions || 0,
+    inboxProvidersScanned: result.inboxProvidersScanned || 0,
+    inboxCandidatesDiscovered: result.inboxCandidatesDiscovered || 0,
+    inboxMonitoringFailures: result.inboxMonitoringFailures || 0,
     evidenceGates: result.evidenceGates?.length || 0,
     expiredJobsSkipped: result.summary?.expiredJobsSkipped || 0,
     failures: result.failedActions || 0,
@@ -81,6 +87,12 @@ export function formatAutonomousRunSummary(result: AutonomousRunSummaryInput) {
   }
   if (counts.staleJobActionsSkipped > 0) {
     notes.push(`${plural(counts.staleJobActionsSkipped, "job preparation")} blocked after a final listing freshness check`);
+  }
+  if (counts.inboxCandidatesDiscovered > 0) {
+    notes.push(`${plural(counts.inboxCandidatesDiscovered, "inbox response candidate")} queued for confirmation`);
+  }
+  if (counts.inboxMonitoringFailures > 0) {
+    notes.push(`${plural(counts.inboxMonitoringFailures, "inbox monitor")} needs attention`);
   }
   if (counts.failures > 0) {
     notes.push(`${plural(counts.failures, "action")} failed`);

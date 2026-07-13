@@ -563,6 +563,39 @@ export const followUps = mysqlTable("follow_ups", {
 });
 
 /**
+ * Inbox Response Candidates
+ * Stores read-only, application-linked message metadata until the user confirms
+ * or dismisses the proposed employer-response classification.
+ */
+export const inboxResponseCandidates = mysqlTable("inbox_response_candidates", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  applicationId: int("application_id").notNull(),
+  provider: mysqlEnum("provider", ["gmail", "outlook"]).notNull(),
+  messageId: varchar("message_id", { length: 280 }).notNull(),
+  sender: varchar("sender", { length: 500 }),
+  subject: varchar("subject", { length: 500 }).notNull(),
+  preview: text("preview").notNull(),
+  receivedAt: timestamp("received_at").notNull(),
+  suggestedResponseType: mysqlEnum("suggested_response_type", [
+    "rejection",
+    "interview_invite",
+    "offer",
+    "employer_question",
+    "other",
+  ]).notNull(),
+  confidence: mysqlEnum("confidence", ["high", "medium"]).notNull(),
+  status: mysqlEnum("status", ["pending", "confirmed", "dismissed"]).default("pending").notNull(),
+  reviewedAt: timestamp("reviewed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("inbox_response_candidates_user_provider_message_unique").on(table.userId, table.provider, table.messageId),
+  index("inbox_response_candidates_user_status_received_idx").on(table.userId, table.status, table.receivedAt),
+  index("inbox_response_candidates_application_idx").on(table.applicationId),
+]);
+
+/**
  * User Resumes
  * Stores resume files with version history
  */
@@ -738,6 +771,7 @@ export type ApplicationDecision = typeof applicationDecisions.$inferSelect;
 export type ApplicationMaterial = typeof applicationMaterials.$inferSelect;
 export type ApplicationAttempt = typeof applicationAttempts.$inferSelect;
 export type EmployerResponse = typeof employerResponses.$inferSelect;
+export type InboxResponseCandidate = typeof inboxResponseCandidates.$inferSelect;
 export type ApplicationNotification = typeof applicationNotifications.$inferSelect;
 export type AuditEvent = typeof auditEvents.$inferSelect;
 export type AdminReviewItem = typeof adminReviewItems.$inferSelect;
