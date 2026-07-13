@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   getActiveResume: vi.fn(),
   getActiveJobs: vi.fn(),
+  getJobById: vi.fn(),
 }));
 
 vi.mock("./resumeStorage", async (importOriginal) => ({
@@ -13,6 +14,7 @@ vi.mock("./resumeStorage", async (importOriginal) => ({
 vi.mock("./db", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./db")>()),
   getActiveJobs: mocks.getActiveJobs,
+  getJobById: mocks.getJobById,
 }));
 
 import {
@@ -47,6 +49,9 @@ describe("autonomous submission approval gates", () => {
       uploadedAt: new Date(),
     }));
     mocks.getActiveJobs.mockResolvedValue([sampleJobs[0]]);
+    mocks.getJobById.mockImplementation(async (jobId: number) =>
+      sampleJobs.find((job) => job.id === jobId)
+    );
   });
 
   it("creates submission approvals for queued autonomous application records", async () => {
@@ -152,6 +157,37 @@ describe("autonomous submission approval gates", () => {
       review.entityId === applicationId &&
       review.category === "application_review"
     )).toHaveLength(1);
+  });
+
+  it("rechecks a listing before writing autonomous preparation records", async () => {
+    const userId = 99109;
+    mocks.getJobById.mockResolvedValue({ ...sampleJobs[0], isActive: 0 });
+    await upsertUserProfile({
+      userId,
+      skills: "React, TypeScript, Node.js",
+      experience: "Five years building production web applications.",
+      desiredJobTypes: "full-time",
+      desiredLocations: "remote, worldwide",
+      resumeUrl: "https://example.com/resume.pdf",
+      preferences: JSON.stringify({
+        autonomousEnabled: true,
+        mode: "review_first",
+        minMatchScore: 0,
+        dailyApplicationLimit: 1,
+      }),
+    });
+
+    const result = await runAutonomousForUser(userId, { dailyApplicationLimit: 1, minMatchScore: 0 });
+    const auditEvents = await getAuditEventsForUser(userId, 10);
+
+    expect(result.skippedStaleJobActions).toBe(1);
+    expect(result.queuedReviewRecords + result.queuedApplicationRecords + result.queuedManualRecords).toBe(0);
+    expect(await getUserApplications(userId)).toHaveLength(0);
+    expect(auditEvents.some((event) =>
+      event.action === "autonomous_application_preparation_blocked_stale_job" &&
+      event.afterState?.includes(`"jobId":${sampleJobs[0].id}`) &&
+      event.afterState?.includes('"externalSubmissionPerformed":false')
+    )).toBe(true);
   });
 
   it("does not draft routine follow-ups while an employer response needs review", async () => {

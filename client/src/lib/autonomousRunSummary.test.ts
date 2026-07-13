@@ -76,4 +76,12 @@ describe("autonomous run summary", () => {
       summary: { expiredJobsSkipped: 2 },
     })).toBe("Autonomous run completed with no new tasks; 2 expired job postings excluded");
   });
+
+  it("reports jobs that became stale after planning", () => {
+    expect(formatAutonomousRunSummary({
+      skippedStaleJobActions: 1,
+    })).toBe(
+      "Autonomous run completed with no new tasks; 1 job preparation blocked after a final listing freshness check"
+    );
+  });
 });

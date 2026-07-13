@@ -42,6 +42,7 @@ describe("autonomous scheduler status", () => {
       skippedResumeEvidenceActions: 0,
       skippedProfileReadinessActions: 2,
       skippedEvidenceGatedActions: 3,
+      skippedStaleJobActions: 2,
       failedActions: 0,
     });
 
@@ -57,6 +58,7 @@ describe("autonomous scheduler status", () => {
       duplicateFollowUpsSkipped: 1,
       profileReadinessBlockedActions: 2,
       evidenceGatedActions: 3,
+      staleJobActionsSkipped: 2,
     });
     expect(status.lastCycleAt).toBeInstanceOf(Date);
   });
@@ -74,6 +76,7 @@ describe("autonomous scheduler status", () => {
       skippedResumeEvidenceActions: 0,
       skippedProfileReadinessActions: 0,
       skippedEvidenceGatedActions: 0,
+      skippedStaleJobActions: 0,
       failedActions: 0,
     });
     expect(await acquireAutonomousRunLease(userId, "failed", 0)).toBe(true);

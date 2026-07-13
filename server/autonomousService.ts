@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
   buildAutonomousPlan,
   getExecutableDecisions,
+  isJobCurrentForAutonomousProcessing,
   parseAutonomousPreferences,
 } from "./autonomousOrchestrator";
 import {
@@ -20,6 +21,7 @@ import {
   getApplicationLedgerArtifacts,
   getApplicationCampaign,
   getEmployerResponses,
+  getJobById,
   getUserApplications,
   getUserProfile,
   renewAutonomousRunLease,
@@ -51,6 +53,7 @@ export interface AutonomousRunResult extends AutonomousPlan {
   skippedResumeEvidenceActions: number;
   skippedProfileReadinessActions: number;
   skippedEvidenceGatedActions: number;
+  skippedStaleJobActions: number;
   evidenceGates: AutonomousEvidenceGate[];
   failedActions: number;
   actionErrors: string[];
@@ -69,6 +72,7 @@ function persistableRunSummary(result: AutonomousRunResult) {
     skippedResumeEvidenceActions: result.skippedResumeEvidenceActions,
     skippedProfileReadinessActions: result.skippedProfileReadinessActions,
     skippedEvidenceGatedActions: result.skippedEvidenceGatedActions,
+    skippedStaleJobActions: result.skippedStaleJobActions,
     failedActions: result.failedActions,
   };
 }
@@ -92,6 +96,30 @@ function profileSnapshotForAutonomousRun(profile: unknown) {
 
 function riskForDecision(decision: AutonomousJobDecision, fallback: "medium" | "high" = "medium") {
   return decision.blockers.length > 0 ? "high" : fallback;
+}
+
+async function getCurrentJobForAutonomousDecision(jobId: number) {
+  const job = await getJobById(jobId);
+  return job && isJobCurrentForAutonomousProcessing(job) ? job : null;
+}
+
+async function recordStaleJobPreparationBlocked(userId: number, decision: AutonomousJobDecision) {
+  await createAuditEvent({
+    userId,
+    entityType: "user",
+    entityId: userId,
+    action: "autonomous_application_preparation_blocked_stale_job",
+    actor: "system",
+    source: "autonomousService",
+    afterState: JSON.stringify({
+      jobId: decision.jobId,
+      title: decision.title,
+      company: decision.company,
+      plannedAction: decision.action,
+      externalSubmissionPerformed: false,
+    }),
+    riskLevel: "medium",
+  });
 }
 
 async function recordAutonomousApplicationLedgerArtifacts({
@@ -293,10 +321,10 @@ async function executeAutonomousRun(
   const executableApplicationDecisions = activeResume && skippedProfileReadinessActions === 0
     ? executable
     : { ...executable, autoApply: [], review: [], manual: [] };
-  const jobById = new Map(jobList.map((job) => [job.id, job]));
   let queuedApplicationRecords = 0;
   let queuedReviewRecords = 0;
   let queuedManualRecords = 0;
+  let skippedStaleJobActions = 0;
   let completedActions = 0;
   const actionErrors: string[] = [];
 
@@ -368,6 +396,12 @@ async function executeAutonomousRun(
   for (const decision of executableApplicationDecisions.autoApply) {
     assertLeaseActive();
     try {
+      const currentJob = await getCurrentJobForAutonomousDecision(decision.jobId);
+      if (!currentJob) {
+        skippedStaleJobActions += 1;
+        await recordStaleJobPreparationBlocked(userId, decision);
+        continue;
+      }
       const result = await createApplication({
         userId,
         jobId: decision.jobId,
@@ -418,7 +452,7 @@ async function executeAutonomousRun(
         decision,
         profile,
         resume: activeResume!,
-        platformId: jobById.get(decision.jobId)?.platformId,
+        platformId: currentJob.platformId,
         branch: "auto_apply",
         approvalId: Number(approval.insertId),
       });
@@ -432,6 +466,12 @@ async function executeAutonomousRun(
   for (const decision of executableApplicationDecisions.review) {
     assertLeaseActive();
     try {
+      const currentJob = await getCurrentJobForAutonomousDecision(decision.jobId);
+      if (!currentJob) {
+        skippedStaleJobActions += 1;
+        await recordStaleJobPreparationBlocked(userId, decision);
+        continue;
+      }
       const result = await createApplication({
         userId,
         jobId: decision.jobId,
@@ -482,7 +522,7 @@ async function executeAutonomousRun(
         decision,
         profile,
         resume: activeResume!,
-        platformId: jobById.get(decision.jobId)?.platformId,
+        platformId: currentJob.platformId,
         branch: "review",
         approvalId: Number(approval.insertId),
       });
@@ -496,6 +536,12 @@ async function executeAutonomousRun(
   for (const decision of executableApplicationDecisions.manual) {
     assertLeaseActive();
     try {
+      const currentJob = await getCurrentJobForAutonomousDecision(decision.jobId);
+      if (!currentJob) {
+        skippedStaleJobActions += 1;
+        await recordStaleJobPreparationBlocked(userId, decision);
+        continue;
+      }
       const result = await createApplication({
         userId,
         jobId: decision.jobId,
@@ -541,7 +587,7 @@ async function executeAutonomousRun(
         decision,
         profile,
         resume: activeResume!,
-        platformId: jobById.get(decision.jobId)?.platformId,
+        platformId: currentJob.platformId,
         branch: "manual",
         approvalId: Number(approval.insertId),
       });
@@ -623,6 +669,7 @@ async function executeAutonomousRun(
     skippedResumeEvidenceActions,
     skippedProfileReadinessActions,
     skippedEvidenceGatedActions: evidenceGatedActions.total,
+    skippedStaleJobActions,
     evidenceGates,
     failedActions: actionErrors.length,
     actionErrors,

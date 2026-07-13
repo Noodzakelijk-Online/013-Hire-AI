@@ -2602,6 +2602,7 @@ export const appRouter = router({
         resumeEvidenceBlockedActions: persistedSummary?.skippedResumeEvidenceActions ?? userStatus?.resumeEvidenceBlockedActions ?? 0,
         profileReadinessBlockedActions: persistedSummary?.skippedProfileReadinessActions ?? userStatus?.profileReadinessBlockedActions ?? 0,
         evidenceGatedActions: persistedSummary?.skippedEvidenceGatedActions ?? userStatus?.evidenceGatedActions ?? 0,
+        staleJobActionsSkipped: persistedSummary?.skippedStaleJobActions ?? 0,
         failedActions: persistedSummary?.failedActions ?? userStatus?.failedActions ?? 0,
         errorCount: persistedRunState?.lastStatus === "failed" ? 1 : userStatus?.errorCount || 0,
       };

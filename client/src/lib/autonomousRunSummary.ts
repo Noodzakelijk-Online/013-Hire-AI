@@ -8,6 +8,7 @@ export interface AutonomousRunSummaryInput {
   skippedResumeEvidenceActions?: number;
   skippedProfileReadinessActions?: number;
   skippedEvidenceGatedActions?: number;
+  skippedStaleJobActions?: number;
   evidenceGates?: Array<{ id?: string; label?: string; severity?: string }>;
   failedActions?: number;
   summary?: {
@@ -34,6 +35,7 @@ export function getAutonomousRunCounts(result: AutonomousRunSummaryInput) {
     resumeEvidenceBlockedActions: result.skippedResumeEvidenceActions || 0,
     profileReadinessBlockedActions: result.skippedProfileReadinessActions || 0,
     evidenceGatedActions: result.skippedEvidenceGatedActions || 0,
+    staleJobActionsSkipped: result.skippedStaleJobActions || 0,
     evidenceGates: result.evidenceGates?.length || 0,
     expiredJobsSkipped: result.summary?.expiredJobsSkipped || 0,
     failures: result.failedActions || 0,
@@ -76,6 +78,9 @@ export function formatAutonomousRunSummary(result: AutonomousRunSummaryInput) {
   }
   if (counts.expiredJobsSkipped > 0) {
     notes.push(`${plural(counts.expiredJobsSkipped, "expired job posting")} excluded`);
+  }
+  if (counts.staleJobActionsSkipped > 0) {
+    notes.push(`${plural(counts.staleJobActionsSkipped, "job preparation")} blocked after a final listing freshness check`);
   }
   if (counts.failures > 0) {
     notes.push(`${plural(counts.failures, "action")} failed`);
