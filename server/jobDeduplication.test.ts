@@ -60,6 +60,44 @@ describe("job deduplication", () => {
     expect(match.isDuplicate).toBe(false);
   });
 
+  it("keeps location-specific openings separate even when company, title, and boilerplate match", () => {
+    const match = compareJobsForDeduplication(
+      {
+        company: "Acme Technologies",
+        title: "Senior Software Engineer",
+        location: "New York, United States",
+        description: "Build distributed TypeScript services with Node.js, PostgreSQL, AWS, and Kubernetes.",
+      },
+      {
+        company: "Acme Technologies",
+        title: "Senior Software Engineer",
+        location: "London, United Kingdom",
+        description: "Build distributed TypeScript services with Node.js, PostgreSQL, AWS, and Kubernetes.",
+      }
+    );
+
+    expect(match).toMatchObject({ isDuplicate: false });
+  });
+
+  it("keeps remote and global variants eligible for content deduplication", () => {
+    const match = compareJobsForDeduplication(
+      {
+        company: "Acme Technologies",
+        title: "Senior Software Engineer - Remote",
+        location: "Remote - Worldwide",
+        description: "Build distributed TypeScript services with Node.js, PostgreSQL, AWS, and Kubernetes.",
+      },
+      {
+        company: "Acme Technologies",
+        title: "Senior Software Engineer",
+        location: "Remote - Europe",
+        description: "Build distributed TypeScript services using Node.js, PostgreSQL, AWS and Kubernetes.",
+      }
+    );
+
+    expect(match).toMatchObject({ isDuplicate: true, reason: "content" });
+  });
+
   it("chooses the strongest canonical source deterministically before linking a duplicate", () => {
     const match = findBestJobDuplicateCandidate(
       {

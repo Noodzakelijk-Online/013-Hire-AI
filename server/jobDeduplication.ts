@@ -4,6 +4,7 @@ export interface JobDeduplicationCandidate {
   title?: string | null;
   company?: string | null;
   description?: string | null;
+  location?: string | null;
 }
 
 export interface JobDuplicateMatch {
@@ -27,6 +28,28 @@ export interface JobDuplicateLink {
 }
 
 const TITLE_NOISE = new Set(["remote", "hybrid", "onsite", "job", "role", "position"]);
+const LOCATION_NEUTRAL_TERMS = new Set([
+  "remote",
+  "hybrid",
+  "onsite",
+  "anywhere",
+  "worldwide",
+  "world",
+  "global",
+  "flexible",
+  "location",
+  "based",
+  // Geographic umbrella words cannot establish that two listings share a location.
+  "united",
+  "states",
+  "state",
+  "kingdom",
+  "republic",
+  "province",
+  "city",
+  "area",
+  "region",
+]);
 const TRACKING_QUERY_PARAMETERS = new Set([
   "source",
   "ref",
@@ -57,6 +80,22 @@ function tokenSimilarity(left?: string | null, right?: string | null, ignored?: 
     if (rightTokens.has(token)) intersection += 1;
   }
   return intersection / (leftTokens.size + rightTokens.size - intersection);
+}
+
+function locationHasRemoteOrGlobalCoverage(value?: string | null) {
+  return /\b(remote|anywhere|worldwide|global)\b/i.test(value || "");
+}
+
+function locationsConflict(left?: string | null, right?: string | null) {
+  if (!left || !right || locationHasRemoteOrGlobalCoverage(left) || locationHasRemoteOrGlobalCoverage(right)) {
+    return false;
+  }
+
+  const leftTokens = new Set(tokenize(left, LOCATION_NEUTRAL_TERMS));
+  const rightTokens = new Set(tokenize(right, LOCATION_NEUTRAL_TERMS));
+  if (leftTokens.size === 0 || rightTokens.size === 0) return false;
+
+  return !Array.from(leftTokens).some((token) => rightTokens.has(token));
 }
 
 function canonicalizeUrl(value?: string | null): string | null {
@@ -112,7 +151,8 @@ export function compareJobsForDeduplication(
   const isDuplicate = companySimilarity >= 0.8
     && titleSimilarity >= 0.8
     && descriptionSimilarity >= 0.72
-    && similarity >= 0.82;
+    && similarity >= 0.82
+    && !locationsConflict(candidate.location, existing.location);
 
   return {
     isDuplicate,

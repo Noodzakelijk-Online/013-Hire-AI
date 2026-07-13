@@ -330,6 +330,7 @@ export class ScraperManager {
                 title: jobs.title,
                 company: jobs.company,
                 description: jobs.description,
+                location: jobs.location,
               })
               .from(jobs)
               .where(and(
