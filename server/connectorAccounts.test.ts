@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TrpcContext } from "./_core/context";
-import { createApplication, getAuditEventsForUser, getEmployerResponses, upsertUserConnectorAccount, upsertUserProfile } from "./db";
+import { createApplication, getAuditEventsForUser, getEmployerResponses, listUserConnectorAccounts, upsertUserConnectorAccount, upsertUserProfile } from "./db";
 import { appRouter } from "./routers";
 
 function createContext(userId: number): TrpcContext {
@@ -120,5 +120,24 @@ describe("connector account tRPC procedures", () => {
     });
     expect(disconnectResult.success).toBe(true);
     expect(disconnectResult.account.status).toBe("disabled");
+  });
+
+  it("rejects connector scopes outside Hire.AI's least-privilege inventory", async () => {
+    const userId = 99653;
+    const caller = appRouter.createCaller(createContext(userId));
+
+    await expect(caller.connectors.requestConnection({
+      provider: "gmail",
+      consentScopes: [
+        "email.metadata.read",
+        "email.messages.read_recruiting",
+        "email.messages.send",
+      ],
+    })).rejects.toThrow(/not permitted/i);
+
+    expect(await listUserConnectorAccounts(userId)).toHaveLength(0);
+    expect((await getAuditEventsForUser(userId, 10)).some((event) =>
+      event.action === "connector_connection_requested"
+    )).toBe(false);
   });
 });

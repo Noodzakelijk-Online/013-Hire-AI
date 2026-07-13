@@ -153,6 +153,24 @@ function assertJobCurrentForPreparation(job: Awaited<ReturnType<typeof import(".
   }
 }
 
+function resolveConnectorScopes(
+  provider: z.infer<typeof connectorProvider>,
+  requestedScopes?: string[]
+) {
+  const allowedScopes = defaultConnectorScopes(provider);
+  const requested = requestedScopes?.length
+    ? Array.from(new Set(requestedScopes.map((scope) => scope.trim()).filter(Boolean)))
+    : allowedScopes;
+  const unsupportedScopes = requested.filter((scope) => !allowedScopes.includes(scope));
+  if (unsupportedScopes.length > 0) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Requested connector scope is not permitted for ${provider}: ${unsupportedScopes.join(", ")}.`,
+    });
+  }
+  return requested;
+}
+
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
   system: systemRouter,
@@ -205,9 +223,7 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         const { requestUserConnectorConnection, createAuditEvent } = await import("./db");
-        const consentScopes = input.consentScopes?.length
-          ? input.consentScopes
-          : defaultConnectorScopes(input.provider);
+        const consentScopes = resolveConnectorScopes(input.provider, input.consentScopes);
         const account = await requestUserConnectorConnection({
           userId: ctx.user.id,
           provider: input.provider,
