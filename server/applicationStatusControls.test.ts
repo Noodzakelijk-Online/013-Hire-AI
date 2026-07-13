@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { TrpcContext } from "./_core/context";
 import { appRouter } from "./routers";
 import { createApplication, getApplicationLedgerArtifacts, getAuditEventsForUser, getUserApplications, listUserApplicationApprovals, resolveApplicationApproval, updateApplicationStatus } from "./db";
-import { createFollowUp, getInterviewSchedules, getUpcomingInterviews, markFollowUpSent, scheduleInterview } from "./applicationFeatures";
+import { createFollowUp, getInterviewSchedules, getUpcomingInterviews, markFollowUpSent, recordEmployerResponse, scheduleInterview } from "./applicationFeatures";
 
 function createContext(userId: number): TrpcContext {
   return {
@@ -87,7 +87,7 @@ describe("application status controls", () => {
     expect(audit?.afterState).toContain('"accepted"');
   });
 
-  it("requires an interview-stage application before recording an interview schedule", async () => {
+  it("requires a fresh interview invitation before each interview schedule", async () => {
     const userId = 99304;
     const application = await createApplication({ userId, jobId: 2, status: "applied" });
     const applicationId = Number(application.insertId);
@@ -104,12 +104,47 @@ describe("application status controls", () => {
 
     expect(await getInterviewSchedules(applicationId, userId)).toEqual([]);
     expect((await getUserApplications(userId)).find((item) => item.id === applicationId)?.status).toBe("applied");
+
+    const invitation = await recordEmployerResponse({
+      applicationId,
+      responseType: "interview_invite",
+      source: "email",
+      summary: "Recruiter invited the candidate to schedule a video interview.",
+    }, userId);
+
+    await expect(caller.applications.scheduleInterview({
+      applicationId,
+      interviewType: "video",
+      scheduledAt: new Date(Date.now() + 3 * 86400000).toISOString(),
+    })).resolves.toMatchObject({ id: expect.any(Number) });
+
+    await expect(caller.applications.scheduleInterview({
+      applicationId,
+      interviewType: "technical",
+      scheduledAt: new Date(Date.now() + 5 * 86400000).toISOString(),
+    })).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "Record a new interview invitation before scheduling another interview.",
+    });
+
+    const schedules = await getInterviewSchedules(applicationId, userId);
+    expect(schedules).toHaveLength(1);
+    expect(schedules[0].employerResponseId).toBe(invitation.responseId);
+    const scheduleApproval = (await listUserApplicationApprovals(userId, "all"))
+      .find((approval) => approval.applicationId === applicationId && approval.approvalType === "interview_schedule");
+    expect(scheduleApproval?.payload).toContain(`"sourceResponseId":${invitation.responseId}`);
   });
 
   it("retires stale internal follow-ups and interviews when an offer is accepted", async () => {
     const userId = 99303;
     const application = await createApplication({ userId, jobId: 2, status: "interview" });
     const applicationId = Number(application.insertId);
+    await recordEmployerResponse({
+      applicationId,
+      responseType: "interview_invite",
+      source: "email",
+      summary: "Recruiter invited the candidate to a video interview.",
+    }, userId);
     const followUp = await createFollowUp({
       applicationId,
       message: "I wanted to confirm the next step for this application.",

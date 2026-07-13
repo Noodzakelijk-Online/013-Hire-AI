@@ -945,15 +945,17 @@ export default function Dashboard() {
                           <p className="text-sm font-medium text-white">
                             {item.job?.title || `Application #${item.applicationId}`}
                           </p>
-                          <Badge variant="outline" className="border-blue-500/40 text-blue-300">
-                            Interview invite
+                          <Badge variant="outline" className={item.schedulingRequirement === "cancelled_schedule" ? "border-amber-500/40 text-amber-300" : "border-blue-500/40 text-blue-300"}>
+                            {item.schedulingRequirement === "cancelled_schedule" ? "Schedule cancelled" : item.schedulingRequirement === "new_invite" ? "New interview round" : "Interview invite"}
                           </Badge>
                         </div>
                         <p className="mt-1 text-xs text-slate-500">
                           {item.job?.company || "Employer"}{item.job?.location ? ` - ${item.job.location}` : ""}
                         </p>
                         <p className="mt-2 line-clamp-2 text-sm text-slate-300">
-                          Add time, channel, interviewer, and notes before Hire.AI continues interview follow-up work.
+                          {item.schedulingRequirement === "cancelled_schedule"
+                            ? "Record a fresh employer invitation before scheduling another interview time."
+                            : "Add time, channel, interviewer, and notes before Hire.AI continues interview follow-up work."}
                         </p>
                         <Button
                           variant="outline"
@@ -962,7 +964,7 @@ export default function Dashboard() {
                           onClick={() => setLocation(getApplicationDeepLink(item.applicationId, "schedule-interview"))}
                         >
                           <Calendar className="mr-2 h-4 w-4" />
-                          Schedule Interview
+                          {item.schedulingRequirement === "cancelled_schedule" ? "Review Interview" : "Schedule Interview"}
                         </Button>
                       </div>
                     ))}

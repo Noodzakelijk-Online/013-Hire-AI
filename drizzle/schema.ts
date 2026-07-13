@@ -651,6 +651,7 @@ export const applicationNotes = mysqlTable("application_notes", {
 export const interviewSchedules = mysqlTable("interview_schedules", {
   id: int("id").autoincrement().primaryKey(),
   applicationId: int("application_id").notNull(),
+  employerResponseId: int("employer_response_id"),
   interviewType: mysqlEnum("interview_type", ["phone", "video", "onsite", "technical", "behavioral", "panel"]).notNull(),
   scheduledAt: timestamp("scheduled_at").notNull(),
   duration: int("duration"),

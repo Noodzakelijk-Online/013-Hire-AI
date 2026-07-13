@@ -27,6 +27,15 @@ import {
   upsertUserProfile,
 } from "./db";
 
+async function recordInterviewInvite(applicationId: number, userId: number) {
+  await recordEmployerResponse({
+    applicationId,
+    responseType: "interview_invite",
+    source: "email",
+    summary: "Recruiter invited the candidate to a video interview.",
+  }, userId);
+}
+
 describe("application campaign operating ledger", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -442,6 +451,7 @@ describe("application campaign operating ledger", () => {
       notes: "Employer invited the candidate to interview.",
     });
     const applicationId = Number(application.insertId);
+    await recordInterviewInvite(applicationId, userId);
     const scheduled = await scheduleInterview({
       applicationId,
       interviewType: "video",
@@ -499,6 +509,7 @@ describe("application campaign operating ledger", () => {
       lastActivity: new Date(Date.now() - 7 * 86400000),
       notes: "Employer invited candidate to schedule a video interview.",
     });
+    await recordInterviewInvite(Number(application.insertId), userId);
 
     const ledger = await getUserOperatingLedger(userId);
 
@@ -532,6 +543,7 @@ describe("application campaign operating ledger", () => {
       notes: "A scheduled interview was later cancelled.",
     });
     const applicationId = Number(application.insertId);
+    await recordInterviewInvite(applicationId, userId);
     const interview = await scheduleInterview({
       applicationId,
       interviewType: "video",
@@ -559,6 +571,7 @@ describe("application campaign operating ledger", () => {
       notes: "The first interview round was completed.",
     });
     const applicationId = Number(application.insertId);
+    await recordInterviewInvite(applicationId, userId);
     const firstRound = await scheduleInterview({
       applicationId,
       interviewType: "video",
@@ -602,6 +615,7 @@ describe("application campaign operating ledger", () => {
       notes: "A completed interview needs a result in the operating ledger.",
     });
     const applicationId = Number(application.insertId);
+    await recordInterviewInvite(applicationId, userId);
     const interview = await scheduleInterview({
       applicationId,
       interviewType: "video",
@@ -640,6 +654,7 @@ describe("application campaign operating ledger", () => {
       notes: "The first round progressed and the second round still needs an outcome.",
     });
     const applicationId = Number(application.insertId);
+    await recordInterviewInvite(applicationId, userId);
     const firstRound = await scheduleInterview({
       applicationId,
       interviewType: "video",

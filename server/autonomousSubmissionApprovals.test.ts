@@ -34,7 +34,7 @@ import {
   upsertUser,
   upsertUserProfile,
 } from "./db";
-import { getFollowUps, recordInterviewOutcome, scheduleInterview, updateInterviewStatus } from "./applicationFeatures";
+import { getFollowUps, recordEmployerResponse, recordInterviewOutcome, scheduleInterview, updateInterviewStatus } from "./applicationFeatures";
 import { runAutonomousForUser } from "./autonomousService";
 import { sampleJobs } from "./sampleData";
 
@@ -49,6 +49,15 @@ async function createEligibleTestUser(label: string) {
   const user = await getUserByOpenId(openId);
   if (!user) throw new Error("Unable to create autonomous test user.");
   return user.id;
+}
+
+async function recordInterviewInvite(applicationId: number, userId: number) {
+  await recordEmployerResponse({
+    applicationId,
+    responseType: "interview_invite",
+    source: "email",
+    summary: "Recruiter invited the candidate to a video interview.",
+  }, userId);
 }
 
 describe("autonomous submission approval gates", () => {
@@ -399,12 +408,14 @@ describe("autonomous submission approval gates", () => {
       notes: "Interview was later cancelled.",
     });
     const applicationId = Number(application.insertId);
+    await recordInterviewInvite(applicationId, userId);
     const interview = await scheduleInterview({
       applicationId,
       interviewType: "video",
       scheduledAt: new Date(Date.now() + 3 * 86400000),
     }, userId);
     await updateInterviewStatus(interview.id, "cancelled", userId);
+    await touchApplicationActivity(applicationId, userId, staleDate);
 
     const result = await runAutonomousForUser(userId, {
       createFollowUps: true,
@@ -450,6 +461,7 @@ describe("autonomous submission approval gates", () => {
       notes: "The interview completed but its result has not been recorded.",
     });
     const applicationId = Number(application.insertId);
+    await recordInterviewInvite(applicationId, userId);
     const interview = await scheduleInterview({
       applicationId,
       interviewType: "video",
@@ -502,6 +514,7 @@ describe("autonomous submission approval gates", () => {
       notes: "The first interview round was completed and a second was invited.",
     });
     const applicationId = Number(application.insertId);
+    await recordInterviewInvite(applicationId, userId);
     const firstRound = await scheduleInterview({
       applicationId,
       interviewType: "video",

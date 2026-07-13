@@ -550,6 +550,13 @@ export default function Applications() {
   const selectedInterviewSummary = selectedApplication
     ? getInterviewOperatingSummary(selectedApplication, interviews || [])
     : null;
+  const selectedInterviewSchedulingItem = selectedApplication
+    ? operatingLedger?.queues.interviewScheduling.find((item) => item.applicationId === selectedApplication.id)
+    : null;
+  const canScheduleSelectedInterview = selectedInterviewSchedulingItem?.schedulingRequirement === "new_invite";
+  const selectedInterviewSummaryForActions = selectedInterviewSummary
+    ? { ...selectedInterviewSummary, canSchedule: canScheduleSelectedInterview }
+    : null;
   const selectedOfferSummary = selectedApplication
     ? getOfferOperatingSummary(selectedApplication, selectedOfferAttributionReview, selectedSuccessFee)
     : null;
@@ -566,7 +573,7 @@ export default function Applications() {
     ? getApplicationNextActions({
       application: selectedApplication,
       ledgerSummary: selectedLedgerSummary,
-      interviewSummary: selectedInterviewSummary,
+      interviewSummary: selectedInterviewSummaryForActions,
       offerSummary: selectedOfferSummary,
       canGenerateFollowUp: canGenerateFollowUp(selectedApplication.status),
       approvedFollowUpReadyToSend,
@@ -1494,7 +1501,7 @@ export default function Applications() {
                           )}
                         </div>
 
-                        {selectedInterviewSummary.canSchedule && (
+                        {canScheduleSelectedInterview && (
                           <Button
                             data-testid="schedule-interview-open"
                             variant="outline"

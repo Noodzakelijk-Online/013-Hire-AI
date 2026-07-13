@@ -2,7 +2,7 @@ import type { TrpcContext } from "./_core/context";
 import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
 import { createAdminReviewItem, createApplication, createApplicationApproval, getApplicationLedgerArtifacts, getUserApplications, listAdminReviewItems, listUserApplicationApprovals, resolveApplicationApproval } from "./db";
-import { createFollowUp, getInterviewSchedules, getUpcomingInterviews, markFollowUpSent, scheduleInterview } from "./applicationFeatures";
+import { createFollowUp, getInterviewSchedules, getUpcomingInterviews, markFollowUpSent, recordEmployerResponse, scheduleInterview } from "./applicationFeatures";
 
 function createContext(userId: number): TrpcContext {
   return {
@@ -163,6 +163,12 @@ describe("application withdrawal", () => {
       notes: "Candidate needs to withdraw before the scheduled interview.",
     });
     const applicationId = Number(application.insertId);
+    await recordEmployerResponse({
+      applicationId,
+      responseType: "interview_invite",
+      source: "email",
+      summary: "Recruiter invited the candidate to a video interview.",
+    }, userId);
     const interview = await scheduleInterview({
       applicationId,
       interviewType: "video",

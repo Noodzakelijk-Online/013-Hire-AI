@@ -21,6 +21,15 @@ import {
   resolveApplicationApproval,
 } from "./db";
 
+async function recordInterviewInvite(applicationId: number, userId: number) {
+  await recordEmployerResponse({
+    applicationId,
+    responseType: "interview_invite",
+    source: "email",
+    summary: "Recruiter invited the candidate to a video interview.",
+  }, userId);
+}
+
 describe("response and interview memory fallback", () => {
   it("records employer responses, status transitions, offer attribution approvals, and admin review work", async () => {
     const userId = 98201;
@@ -208,6 +217,7 @@ describe("response and interview memory fallback", () => {
       notes: "Interview was scheduled before the employer rejected the application.",
     });
     const applicationId = Number(application.insertId);
+    await recordInterviewInvite(applicationId, userId);
     const scheduled = await scheduleInterview({
       applicationId,
       interviewType: "video",
@@ -300,6 +310,7 @@ describe("response and interview memory fallback", () => {
     });
     const applicationId = Number(application.insertId);
     const scheduledAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+    await recordInterviewInvite(applicationId, userId);
 
     const scheduled = await scheduleInterview({
       applicationId,
@@ -363,6 +374,7 @@ describe("response and interview memory fallback", () => {
       notes: "Employer invited the candidate to interview.",
     });
     const applicationId = Number(application.insertId);
+    await recordInterviewInvite(applicationId, userId);
     const scheduled = await scheduleInterview({
       applicationId,
       interviewType: "video",
@@ -390,13 +402,14 @@ describe("response and interview memory fallback", () => {
     expect(userApplications.find((item) => item.id === applicationId)?.status).toBe("rejected");
 
     const artifacts = await getApplicationLedgerArtifacts(applicationId, userId);
-    expect(artifacts.employerResponses[0]).toMatchObject({
+    expect(artifacts.employerResponses.find((response) => response.id === outcome.responseId)).toMatchObject({
       id: outcome.responseId,
       interviewId: scheduled.id,
       responseType: "rejection",
       statusAfter: "rejected",
     });
-    expect(artifacts.employerResponses[0].summary).toContain("Interview outcome recorded: rejection.");
+    expect(artifacts.employerResponses.find((response) => response.id === outcome.responseId)?.summary)
+      .toContain("Interview outcome recorded: rejection.");
     expect(artifacts.auditEvents.some((event) =>
       event.action === "interview_outcome_recorded" &&
       event.afterState?.includes(`"responseId":${outcome.responseId}`)
@@ -412,6 +425,7 @@ describe("response and interview memory fallback", () => {
       notes: "Interview completed without a recruiter reply yet.",
     });
     const applicationId = Number(application.insertId);
+    await recordInterviewInvite(applicationId, userId);
     const scheduled = await scheduleInterview({
       applicationId,
       interviewType: "video",
@@ -446,7 +460,7 @@ describe("response and interview memory fallback", () => {
 
     expect(outcome.responseType).toBe("no_response");
     expect(outcome.status).toBe("interview");
-    expect(artifacts.employerResponses[0]).toMatchObject({
+    expect(artifacts.employerResponses.find((response) => response.id === outcome.responseId)).toMatchObject({
       id: outcome.responseId,
       interviewId: scheduled.id,
       responseType: "no_response",

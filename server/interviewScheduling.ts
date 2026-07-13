@@ -7,34 +7,60 @@ export type InterviewSchedulingRequirement =
 interface InterviewScheduleState {
   status: string | null;
   createdAt: Date;
+  employerResponseId?: number | null;
 }
 
-interface EmployerResponseState {
+export interface InterviewInvitationState {
+  id?: number;
   responseType: string;
   receivedAt: Date;
 }
 
-function latestInterviewInvite(responses: EmployerResponseState[]) {
-  return responses
+export function getLatestSchedulableInterviewInvite(
+  schedules: InterviewScheduleState[],
+  responses: InterviewInvitationState[]
+) {
+  const latestInvite = responses
     .filter((response) => response.responseType === "interview_invite")
-    .reduce<EmployerResponseState | null>((latest, response) => {
-      if (!latest || response.receivedAt.getTime() > latest.receivedAt.getTime()) {
+    .reduce<InterviewInvitationState | null>((latest, response) => {
+      const isNewerTimestamp = !latest || response.receivedAt.getTime() > latest.receivedAt.getTime();
+      const isNewerSequence = Boolean(
+        latest &&
+        response.receivedAt.getTime() === latest.receivedAt.getTime() &&
+        typeof response.id === "number" &&
+        (typeof latest.id !== "number" || response.id > latest.id)
+      );
+      if (isNewerTimestamp || isNewerSequence) {
         return response;
       }
       return latest;
     }, null);
+
+  if (!latestInvite || hasScheduleConsumedInvite(schedules, latestInvite)) {
+    return null;
+  }
+
+  return latestInvite;
 }
 
-function hasScheduleCreatedAfter(schedules: InterviewScheduleState[], receivedAt: Date) {
-  return schedules.some((schedule) => schedule.createdAt.getTime() > receivedAt.getTime());
+function hasScheduleConsumedInvite(
+  schedules: InterviewScheduleState[],
+  invite: InterviewInvitationState
+) {
+  if (typeof invite.id === "number") {
+    return schedules.some((schedule) => schedule.employerResponseId === invite.id) || schedules.some(
+      (schedule) => schedule.employerResponseId == null && schedule.createdAt.getTime() > invite.receivedAt.getTime()
+    );
+  }
+
+  return schedules.some((schedule) => schedule.createdAt.getTime() > invite.receivedAt.getTime());
 }
 
 export function getInterviewSchedulingRequirement(
   schedules: InterviewScheduleState[],
-  responses: EmployerResponseState[]
+  responses: InterviewInvitationState[]
 ): InterviewSchedulingRequirement {
-  const latestInvite = latestInterviewInvite(responses);
-  if (latestInvite && !hasScheduleCreatedAfter(schedules, latestInvite.receivedAt)) {
+  if (getLatestSchedulableInterviewInvite(schedules, responses)) {
     return "new_invite";
   }
 

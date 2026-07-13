@@ -46,6 +46,7 @@ import {
   normalizeEmployerResponseSourceReference,
   type EmployerResponseInput,
 } from "./applicationResponses";
+import { getLatestSchedulableInterviewInvite } from "./interviewScheduling";
 
 async function assertUserOwnsApplication(applicationId: number, userId: number) {
   const db = await getDb();
@@ -1434,8 +1435,15 @@ export async function scheduleInterview(input: ScheduleInterviewInput, userId: n
     if (currentStatus !== "interview") {
       throw new Error("Record an interview invitation before scheduling an interview.");
     }
+    const invitation = getLatestSchedulableInterviewInvite(
+      memoryInterviewSchedules.filter((schedule) => schedule.applicationId === input.applicationId),
+      await getEmployerResponses(input.applicationId, userId)
+    );
+    if (!invitation) {
+      throw new Error("Record a new interview invitation before scheduling another interview.");
+    }
 
-    const now = new Date();
+    const now = new Date(Math.max(Date.now(), invitation.receivedAt.getTime() + 1));
     const record = {
       id: nextMemoryInterviewId(),
       applicationId: input.applicationId,
@@ -1448,6 +1456,7 @@ export async function scheduleInterview(input: ScheduleInterviewInput, userId: n
       interviewerTitle: input.interviewerTitle || null,
       notes: input.notes || null,
       status: "scheduled" as const,
+      employerResponseId: invitation.id ?? null,
       createdAt: now,
       updatedAt: now,
     };
@@ -1472,6 +1481,7 @@ export async function scheduleInterview(input: ScheduleInterviewInput, userId: n
         duration: input.duration || 60,
         location: input.location || null,
         meetingLink: input.meetingLink || null,
+        sourceResponseId: invitation.id ?? null,
       }),
       decisionNote: "User accepted this interview time.",
       requestedAt: now,
@@ -1492,6 +1502,7 @@ export async function scheduleInterview(input: ScheduleInterviewInput, userId: n
         interviewId: record.id,
         interviewType: input.interviewType,
         scheduledAt: input.scheduledAt.toISOString(),
+        sourceResponseId: invitation.id ?? null,
       }),
       riskLevel: "high",
       approvalId,
@@ -1511,7 +1522,29 @@ export async function scheduleInterview(input: ScheduleInterviewInput, userId: n
     if (application[0].status !== "interview") {
       throw new Error("Record an interview invitation before scheduling an interview.");
     }
+    const [schedules, responses] = await Promise.all([
+      tx
+        .select({
+          status: interviewSchedules.status,
+          createdAt: interviewSchedules.createdAt,
+          employerResponseId: interviewSchedules.employerResponseId,
+        })
+        .from(interviewSchedules)
+        .where(eq(interviewSchedules.applicationId, input.applicationId)),
+      tx
+        .select({ id: employerResponses.id, responseType: employerResponses.responseType, receivedAt: employerResponses.receivedAt })
+        .from(employerResponses)
+        .where(and(
+          eq(employerResponses.applicationId, input.applicationId),
+          eq(employerResponses.userId, userId)
+        )),
+    ]);
+    const invitation = getLatestSchedulableInterviewInvite(schedules, responses);
+    if (!invitation) {
+      throw new Error("Record a new interview invitation before scheduling another interview.");
+    }
 
+    const createdAt = new Date(Math.max(Date.now(), invitation.receivedAt.getTime() + 1));
     const result = await tx.insert(interviewSchedules).values({
       applicationId: input.applicationId,
       interviewType: input.interviewType,
@@ -1523,6 +1556,8 @@ export async function scheduleInterview(input: ScheduleInterviewInput, userId: n
       interviewerTitle: input.interviewerTitle || null,
       notes: input.notes || null,
       status: "scheduled",
+      employerResponseId: invitation.id ?? null,
+      createdAt,
     });
     const interviewId = Number(result[0].insertId);
     const approval = await tx.insert(applicationApprovals).values({
@@ -1544,10 +1579,11 @@ export async function scheduleInterview(input: ScheduleInterviewInput, userId: n
         duration: input.duration || 60,
         location: input.location || null,
         meetingLink: input.meetingLink || null,
+        sourceResponseId: invitation.id ?? null,
       }),
       decisionNote: "User accepted this interview time.",
-      requestedAt: new Date(),
-      decidedAt: new Date(),
+      requestedAt: createdAt,
+      decidedAt: createdAt,
     });
     const approvalId = Number(approval[0].insertId);
 
@@ -1576,6 +1612,7 @@ export async function scheduleInterview(input: ScheduleInterviewInput, userId: n
         interviewId,
         interviewType: input.interviewType,
         scheduledAt: input.scheduledAt.toISOString(),
+        sourceResponseId: invitation.id ?? null,
       }),
       riskLevel: "high",
       approvalId,

@@ -705,7 +705,7 @@ export default function ReviewQueue() {
                           </div>
                           <p className="text-sm text-muted-foreground">
                             {cancelledSchedule
-                              ? "The recorded interview schedule was cancelled. Review the application before recording a new time or closing the interview stage."
+                              ? "The recorded interview schedule was cancelled. Record a fresh employer invitation before a new time, or close the interview stage."
                               : newInvite
                                 ? "A later interview invite was recorded after the prior round. Capture the new time, channel, and interviewer details before follow-up automation continues."
                               : "This employer response has moved to interview status, but no interview time, channel, or interviewer context has been recorded yet."}
