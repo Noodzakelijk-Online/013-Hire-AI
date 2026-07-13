@@ -48,7 +48,7 @@ export const defaultJobSearchFilters: JobSearchFilterState = {
   jobType: "all",
   platformId: "all",
   salaryRange: [0, 300000],
-  salaryCurrency: "all",
+  salaryCurrency: "USD",
   remoteOnly: true,
   experienceLevel: "all",
   applicationProcess: "all",
