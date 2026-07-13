@@ -23,8 +23,12 @@ function dependencies(): GitHubProfileDiscoveryDependencies {
       lastVerifiedAt: now,
       disconnectedAt: null,
     }]),
+    upsertConnectorAuthorization: vi.fn().mockResolvedValue(undefined),
     upsertUserConnectorAccount: vi.fn().mockResolvedValue(undefined),
     decryptConnectorToken: vi.fn().mockReturnValue("github-access-token"),
+    encryptConnectorToken: vi.fn((value: string) => `encrypted-${value}`),
+    getConnectorOAuthConfig: vi.fn().mockReturnValue({ provider: "github" }),
+    refreshConnectorAccessToken: vi.fn(),
   } as unknown as GitHubProfileDiscoveryDependencies;
 }
 
@@ -77,6 +81,46 @@ describe("GitHub profile discovery", () => {
     await expect(discoverGitHubProfile(18, { fetcher, now, dependencies: deps }))
       .rejects.toThrow("freshly authorized");
     expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("renews an expiring GitHub grant before reading public profile metadata", async () => {
+    const deps = dependencies();
+    (deps.getConnectorAuthorization as ReturnType<typeof vi.fn>).mockResolvedValue({
+      encryptedAccessToken: "expired-access-token",
+      encryptedRefreshToken: "encrypted-refresh-token",
+      accessTokenExpiresAt: new Date("2026-07-13T11:59:00.000Z"),
+    });
+    (deps.decryptConnectorToken as ReturnType<typeof vi.fn>)
+      .mockReturnValueOnce("expired-access-token")
+      .mockReturnValueOnce("github-refresh-token");
+    (deps.refreshConnectorAccessToken as ReturnType<typeof vi.fn>).mockResolvedValue({
+      accessToken: "renewed-github-token",
+      refreshToken: "renewed-github-refresh-token",
+      expiresAt: new Date("2026-07-13T13:00:00.000Z"),
+      tokenType: "Bearer",
+      grantedScopes: ["read:user"],
+    });
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        login: "octavia",
+        html_url: "https://github.com/octavia",
+        public_repos: 0,
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }));
+
+    await discoverGitHubProfile(18, { fetcher, now, dependencies: deps });
+
+    expect(deps.refreshConnectorAccessToken).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "github" }),
+      "github-refresh-token",
+      fetcher
+    );
+    expect(deps.upsertConnectorAuthorization).toHaveBeenCalledWith(expect.objectContaining({
+      provider: "github",
+      encryptedAccessToken: "encrypted-renewed-github-token",
+      encryptedRefreshToken: "encrypted-renewed-github-refresh-token",
+    }));
+    expect(fetcher.mock.calls[0][1].headers.Authorization).toBe("Bearer renewed-github-token");
   });
 
   it("merges source-supported skills without duplicate casing", () => {

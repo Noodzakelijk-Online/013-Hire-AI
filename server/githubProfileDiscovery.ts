@@ -1,8 +1,15 @@
 import { isConnectorAuthorizationStale } from "@shared/profileEvidence";
-import { decryptConnectorToken } from "./connectorOAuth";
+import {
+  decryptConnectorToken,
+  encryptConnectorToken,
+  getConnectorOAuthConfig,
+  refreshConnectorAccessToken,
+  type OAuthConnectorProvider,
+} from "./connectorOAuth";
 import {
   getConnectorAuthorization,
   listUserConnectorAccounts,
+  upsertConnectorAuthorization,
   upsertUserConnectorAccount,
 } from "./db";
 
@@ -30,21 +37,30 @@ export type GitHubProfileCandidate = {
 };
 
 const MAX_REPOSITORIES = 10;
+const TOKEN_EXPIRY_SKEW_MS = 60_000;
 
 type ConnectorAccount = Awaited<ReturnType<typeof listUserConnectorAccounts>>[number];
 
 export type GitHubProfileDiscoveryDependencies = {
   getConnectorAuthorization: typeof getConnectorAuthorization;
   listUserConnectorAccounts: typeof listUserConnectorAccounts;
+  upsertConnectorAuthorization: typeof upsertConnectorAuthorization;
   upsertUserConnectorAccount: typeof upsertUserConnectorAccount;
   decryptConnectorToken: typeof decryptConnectorToken;
+  encryptConnectorToken: typeof encryptConnectorToken;
+  getConnectorOAuthConfig: typeof getConnectorOAuthConfig;
+  refreshConnectorAccessToken: typeof refreshConnectorAccessToken;
 };
 
 const defaults: GitHubProfileDiscoveryDependencies = {
   getConnectorAuthorization,
   listUserConnectorAccounts,
+  upsertConnectorAuthorization,
   upsertUserConnectorAccount,
   decryptConnectorToken,
+  encryptConnectorToken,
+  getConnectorOAuthConfig,
+  refreshConnectorAccessToken,
 };
 
 function stringValue(value: unknown, maxLength: number) {
@@ -79,6 +95,7 @@ function hasGitHubProfileConsent(account: ConnectorAccount | undefined) {
 async function getGitHubAccessToken(
   userId: number,
   now: Date,
+  fetcher: typeof fetch,
   dependencies: GitHubProfileDiscoveryDependencies
 ) {
   const account = (await dependencies.listUserConnectorAccounts(userId))
@@ -93,14 +110,37 @@ async function getGitHubAccessToken(
   }
 
   const authorization = await dependencies.getConnectorAuthorization(userId, "github");
-  if (
-    !authorization ||
-    (authorization.accessTokenExpiresAt && authorization.accessTokenExpiresAt.getTime() <= now.getTime() + 60_000)
-  ) {
+  if (!authorization) {
+    throw new Error("GitHub authorization is unavailable. Reauthorize before profile discovery.");
+  }
+  const accessToken = dependencies.decryptConnectorToken(authorization.encryptedAccessToken);
+  const expiresAt = authorization.accessTokenExpiresAt?.getTime() ?? null;
+  if (expiresAt === null || expiresAt > now.getTime() + TOKEN_EXPIRY_SKEW_MS) {
+    return { account, accessToken };
+  }
+  if (!authorization.encryptedRefreshToken) {
     throw new Error("GitHub authorization has expired. Reauthorize before profile discovery.");
   }
+  const config = dependencies.getConnectorOAuthConfig("github" as OAuthConnectorProvider);
+  if (!config) {
+    throw new Error("GitHub token renewal is not configured in this deployment.");
+  }
+  const refreshed = await dependencies.refreshConnectorAccessToken(
+    config,
+    dependencies.decryptConnectorToken(authorization.encryptedRefreshToken),
+    fetcher
+  );
+  await dependencies.upsertConnectorAuthorization({
+    userId,
+    provider: "github",
+    encryptedAccessToken: dependencies.encryptConnectorToken(refreshed.accessToken),
+    encryptedRefreshToken: refreshed.refreshToken ? dependencies.encryptConnectorToken(refreshed.refreshToken) : null,
+    accessTokenExpiresAt: refreshed.expiresAt,
+    tokenType: refreshed.tokenType,
+    grantedScopes: JSON.stringify(refreshed.grantedScopes),
+  });
 
-  return { account, accessToken: dependencies.decryptConnectorToken(authorization.encryptedAccessToken) };
+  return { account, accessToken: refreshed.accessToken };
 }
 
 function parseUser(payload: unknown) {
@@ -165,7 +205,7 @@ export async function discoverGitHubProfile(
   const fetcher = options.fetcher ?? fetch;
   const now = options.now ?? new Date();
   const dependencies = options.dependencies ?? defaults;
-  const { account, accessToken } = await getGitHubAccessToken(userId, now, dependencies);
+  const { account, accessToken } = await getGitHubAccessToken(userId, now, fetcher, dependencies);
   const headers = githubHeaders(accessToken);
   const userResponse = await fetcher("https://api.github.com/user", { headers });
   if (!userResponse.ok) throw new Error("GitHub profile discovery is temporarily unavailable.");
