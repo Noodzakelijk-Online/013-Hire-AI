@@ -3458,6 +3458,7 @@ export const appRouter = router({
         lastCycleAt: persistedRunAt || userStatus?.lastRunAt || null,
         lastStatus: persistedRunState?.lastStatus || null,
         lastError: persistedRunState?.lastError || null,
+        lastOutcomeDetail: persistedRunState?.lastOutcomeDetail || null,
         nextCycleAt: status.nextCycleAt,
         nextEligibleAt,
         isDue: Boolean(nextEligibleAt && nextEligibleAt.getTime() <= Date.now()),

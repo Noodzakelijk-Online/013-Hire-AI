@@ -621,7 +621,7 @@ export default function AIPreferences() {
                       </span>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
-                      <span>{schedulerStatus.lastStatus === "failed" ? "Run failed" : schedulerStatus.lastStatus === "running" ? "Run in progress" : "Run completed"}</span>
+                      <span>{schedulerStatus.lastStatus === "failed" ? "Run failed" : schedulerStatus.lastStatus === "skipped" ? "Run skipped" : schedulerStatus.lastStatus === "running" ? "Run in progress" : "Run completed"}</span>
                       <span>{schedulerStatus.jobsQueued || 0} job task{schedulerStatus.jobsQueued === 1 ? "" : "s"}</span>
                       <span>{schedulerStatus.followUpDraftsQueued || 0} follow-up draft{schedulerStatus.followUpDraftsQueued === 1 ? "" : "s"}</span>
                       <span>{schedulerStatus.duplicateFollowUpsSkipped || 0} duplicate follow-up{schedulerStatus.duplicateFollowUpsSkipped === 1 ? "" : "s"} skipped</span>
@@ -649,6 +649,9 @@ export default function AIPreferences() {
                   <p className="text-xs text-red-300">
                     {schedulerStatus.lastError || `Latest scheduler cycle reported ${schedulerStatus.errorCount} error${schedulerStatus.errorCount === 1 ? "" : "s"}.`}
                   </p>
+                ) : null}
+                {schedulerStatus?.lastStatus === "skipped" && schedulerStatus.lastOutcomeDetail ? (
+                  <p className="text-xs text-amber-300">{schedulerStatus.lastOutcomeDetail}</p>
                 ) : null}
               </CardContent>
             </Card>

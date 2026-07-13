@@ -137,8 +137,9 @@ const memoryAutonomousRuns = new Map<number, {
   leaseExpiresAt: number;
   lastCompletedAt: number;
   lastStartedAt: number | null;
-  lastStatus: "running" | "completed" | "failed" | null;
+  lastStatus: "running" | "completed" | "failed" | "skipped" | null;
   lastError: string | null;
+  lastOutcomeDetail: string | null;
   lastRunSummary: string | null;
 }>();
 
@@ -165,8 +166,9 @@ export interface AutonomousRunSummaryRecord {
 export interface AutonomousRunStateSnapshot {
   lastStartedAt: Date | null;
   lastCompletedAt: Date | null;
-  lastStatus: "running" | "completed" | "failed" | null;
+  lastStatus: "running" | "completed" | "failed" | "skipped" | null;
   lastError: string | null;
+  lastOutcomeDetail: string | null;
   lastRunSummary: AutonomousRunSummaryRecord | null;
 }
 
@@ -983,6 +985,7 @@ export async function acquireAutonomousRunLease(
       lastStartedAt: now.getTime(),
       lastStatus: "running",
       lastError: null,
+      lastOutcomeDetail: null,
       lastRunSummary: state?.lastRunSummary || null,
     });
     return true;
@@ -1009,6 +1012,7 @@ export async function acquireAutonomousRunLease(
         lastStartedAt: sql`IF(${canAcquire}, ${now}, ${autonomousRunStates.lastStartedAt})`,
         lastStatus: sql`IF(${canAcquire}, 'running', ${autonomousRunStates.lastStatus})`,
         lastError: sql`IF(${canAcquire}, NULL, ${autonomousRunStates.lastError})`,
+        lastOutcomeDetail: sql`IF(${canAcquire}, NULL, ${autonomousRunStates.lastOutcomeDetail})`,
       },
     });
 
@@ -1037,6 +1041,7 @@ export async function completeAutonomousRunLease(
       lastStartedAt: state.lastStartedAt,
       lastStatus: error ? "failed" : "completed",
       lastError: error?.slice(0, 2000) || null,
+      lastOutcomeDetail: null,
       lastRunSummary: lastRunSummary ? JSON.stringify(lastRunSummary) : state.lastRunSummary,
     });
     return true;
@@ -1050,9 +1055,50 @@ export async function completeAutonomousRunLease(
       lastCompletedAt: error ? sql`${autonomousRunStates.lastCompletedAt}` : new Date(),
       lastStatus: error ? "failed" : "completed",
       lastError: error?.slice(0, 2000) || null,
+      lastOutcomeDetail: null,
       lastRunSummary: lastRunSummary
         ? JSON.stringify(lastRunSummary)
         : sql`${autonomousRunStates.lastRunSummary}`,
+    })
+    .where(and(
+      eq(autonomousRunStates.userId, userId),
+      eq(autonomousRunStates.leaseToken, leaseToken)
+    ));
+  return Number(result[0].affectedRows) > 0;
+}
+
+/** Release a claimed run that was disabled or paused before any autonomous work began. */
+export async function skipAutonomousRunLease(
+  userId: number,
+  leaseToken: string,
+  detail: string
+) {
+  const db = await getDb();
+  const outcomeDetail = detail.slice(0, 2000);
+  if (!db) {
+    const state = memoryAutonomousRuns.get(userId);
+    if (state?.leaseToken !== leaseToken) return false;
+    memoryAutonomousRuns.set(userId, {
+      leaseToken: null,
+      leaseExpiresAt: 0,
+      lastCompletedAt: state.lastCompletedAt,
+      lastStartedAt: state.lastStartedAt,
+      lastStatus: "skipped",
+      lastError: null,
+      lastOutcomeDetail: outcomeDetail,
+      lastRunSummary: state.lastRunSummary,
+    });
+    return true;
+  }
+
+  const result = await db
+    .update(autonomousRunStates)
+    .set({
+      leaseToken: null,
+      leaseExpiresAt: null,
+      lastStatus: "skipped",
+      lastError: null,
+      lastOutcomeDetail: outcomeDetail,
     })
     .where(and(
       eq(autonomousRunStates.userId, userId),
@@ -1109,6 +1155,7 @@ export async function getAutonomousRunState(userId: number): Promise<AutonomousR
       lastCompletedAt: state.lastCompletedAt ? new Date(state.lastCompletedAt) : null,
       lastStatus: state.lastStatus,
       lastError: state.lastError,
+      lastOutcomeDetail: state.lastOutcomeDetail,
       lastRunSummary: parseAutonomousRunSummary(state.lastRunSummary),
     };
   }
@@ -1119,6 +1166,7 @@ export async function getAutonomousRunState(userId: number): Promise<AutonomousR
       lastCompletedAt: autonomousRunStates.lastCompletedAt,
       lastStatus: autonomousRunStates.lastStatus,
       lastError: autonomousRunStates.lastError,
+      lastOutcomeDetail: autonomousRunStates.lastOutcomeDetail,
       lastRunSummary: autonomousRunStates.lastRunSummary,
     })
     .from(autonomousRunStates)
@@ -1131,6 +1179,7 @@ export async function getAutonomousRunState(userId: number): Promise<AutonomousR
     lastCompletedAt: state.lastCompletedAt,
     lastStatus: state.lastStatus,
     lastError: state.lastError,
+    lastOutcomeDetail: state.lastOutcomeDetail,
     lastRunSummary: parseAutonomousRunSummary(state.lastRunSummary),
   };
 }

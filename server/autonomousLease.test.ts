@@ -3,6 +3,7 @@ import {
   acquireAutonomousRunLease,
   completeAutonomousRunLease,
   getAutonomousRunState,
+  skipAutonomousRunLease,
 } from "./db";
 
 describe("autonomous run leases", () => {
@@ -40,13 +41,19 @@ describe("autonomous run leases", () => {
     await completeAutonomousRunLease(userId, "retry");
   });
 
-  it("allows an opted-out preflight run to release without starting its interval", async () => {
+  it("records an opted-out preflight run as skipped without starting its interval", async () => {
     const userId = 91004;
 
     expect(await acquireAutonomousRunLease(userId, "preflight", 60_000)).toBe(true);
     expect(
-      await completeAutonomousRunLease(userId, "preflight", "Autonomous scheduling was disabled.")
+      await skipAutonomousRunLease(userId, "preflight", "Autonomous scheduling was disabled.")
     ).toBe(true);
+    expect(await getAutonomousRunState(userId)).toMatchObject({
+      lastStatus: "skipped",
+      lastError: null,
+      lastOutcomeDetail: "Autonomous scheduling was disabled.",
+      lastCompletedAt: null,
+    });
     expect(await acquireAutonomousRunLease(userId, "reenabled", 60_000)).toBe(true);
     await completeAutonomousRunLease(userId, "reenabled");
   });

@@ -4,6 +4,7 @@ import {
   acquireAutonomousRunLease,
   completeAutonomousRunLease,
   getAutonomousRunState,
+  skipAutonomousRunLease,
 } from "./db";
 import { getAutonomousScanIntervalMs } from "./autonomousOrchestrator";
 import { appRouter } from "./routers";
@@ -100,6 +101,27 @@ describe("autonomous scheduler status", () => {
       jobsQueued: 0,
       followUpDraftsQueued: 0,
       errorCount: 1,
+    });
+    expect(status.lastCycleAt?.getTime()).toBe(persisted?.lastStartedAt?.getTime());
+  });
+
+  it("reports a user-controlled preflight stop as skipped instead of a worker error", async () => {
+    const userId = 91009;
+    expect(await acquireAutonomousRunLease(userId, "skipped", 0)).toBe(true);
+    await skipAutonomousRunLease(userId, "skipped", "Campaign was paused before the scheduled run started.");
+    const persisted = await getAutonomousRunState(userId);
+
+    const status = await appRouter
+      .createCaller(createContext(userId))
+      .automation.schedulerStatus();
+
+    expect(status).toMatchObject({
+      lastStatus: "skipped",
+      lastError: null,
+      lastOutcomeDetail: "Campaign was paused before the scheduled run started.",
+      usersRun: 0,
+      jobsQueued: 0,
+      errorCount: 0,
     });
     expect(status.lastCycleAt?.getTime()).toBe(persisted?.lastStartedAt?.getTime());
   });

@@ -30,6 +30,7 @@ import {
   getUserSkills,
   getWorkExperiences,
   renewAutonomousRunLease,
+  skipAutonomousRunLease,
 } from "./db";
 import {
   createFollowUp,
@@ -943,7 +944,7 @@ async function runWithLease(
 
   const campaignBlockAfterLease = await getCampaignExecutionBlock(userId);
   if (campaignBlockAfterLease) {
-    await completeAutonomousRunLease(userId, leaseToken, campaignBlockAfterLease);
+    await skipAutonomousRunLease(userId, leaseToken, campaignBlockAfterLease);
     if (skipIfUnavailable) return null;
     throw new Error(campaignBlockAfterLease);
   }
@@ -953,7 +954,7 @@ async function runWithLease(
       const profile = await getUserProfile(userId);
       const preferences = parseAutonomousPreferences(profile?.preferences);
       if (!preferences.autonomousEnabled) {
-        await completeAutonomousRunLease(
+        await skipAutonomousRunLease(
           userId,
           leaseToken,
           "Autonomous scheduling was disabled before execution started."
