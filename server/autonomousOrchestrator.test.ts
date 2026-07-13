@@ -112,6 +112,40 @@ describe("autonomous orchestrator", () => {
     expect(plan.decisions[0].blockers).toContain("Location does not match the user's stated preferences");
   });
 
+  it("keeps hybrid and on-site roles out of the remote-only campaign by default", () => {
+    const hybridJob: Job = {
+      ...baseJob,
+      location: "Hybrid - Amsterdam, Netherlands",
+    };
+    const plan = buildAutonomousPlan([hybridJob], profile, [], {
+      minMatchScore: 0,
+      dailyApplicationLimit: 2,
+    });
+
+    expect(plan.decisions[0]).toMatchObject({ action: "skip", reviewRequired: true });
+    expect(plan.decisions[0].blockers).toContain("Remote-only policy excludes hybrid and on-site roles");
+    expect(plan.nextActions).toContain("Excluded 1 hybrid or on-site role under the remote-only campaign policy.");
+  });
+
+  it("keeps an unclassified location review-required under the remote-only campaign policy", () => {
+    const locationUnknownJob: Job = {
+      ...baseJob,
+      location: "Amsterdam, Netherlands",
+    };
+    const plan = buildAutonomousPlan([locationUnknownJob], profile, [], {
+      mode: "auto_apply",
+      requireHumanReview: false,
+      minMatchScore: 0,
+      dailyApplicationLimit: 2,
+    });
+
+    expect(plan.decisions[0].reviewRequired).toBe(true);
+    expect(plan.decisions[0].automationNotes).toContain(
+      "Remote eligibility is not explicit in the listing and requires review before preparation."
+    );
+    expect(plan.nextActions).toContain("Review 1 role with unverified remote eligibility before preparation.");
+  });
+
   it("enforces daily limits for review preparation", () => {
     const todayApplication: Application = {
       id: 20,

@@ -246,6 +246,10 @@ export function buildAutonomousPlan(
   const mode = preferences.mode || "review_first";
   const minMatchScore = Math.min(100, Math.max(0, Math.round(preferences.minMatchScore ?? 70)));
   const dailyLimit = Math.min(25, Math.max(1, Math.round(preferences.dailyApplicationLimit ?? 12)));
+  // Campaign persistence treats an omitted preference as remote-only. Keep the
+  // planning layer aligned so legacy preference records cannot prepare hybrid
+  // or on-site roles by accident.
+  const remoteOnly = preferences.remoteOnly !== false;
   const requireHumanReview = preferences.requireHumanReview ?? true;
   const allowUnsupportedATS = preferences.allowUnsupportedATS ?? false;
   const now = new Date();
@@ -329,6 +333,8 @@ export function buildAutonomousPlan(
   const rankedDecisions = currentJobs
     .map((job) => {
       const { score, reasons, blockers } = scoreJobForProfile(job, profile);
+      const normalizedLocation = normalizeLocation(job.location);
+      const remoteEligibilityUnknown = remoteOnly && normalizedLocation.remoteType === "unknown";
       const support = job.applicationUrl
         ? isAutomationSupported(job.applicationUrl)
         : {
@@ -343,8 +349,12 @@ export function buildAutonomousPlan(
         blockers.push("Already applied to this job");
       }
 
-      if (preferences.remoteOnly && !normalizeLocation(job.location).isRemote) {
-        blockers.push("Remote-only mode is enabled");
+      if (remoteOnly && ["hybrid", "onsite"].includes(normalizedLocation.remoteType)) {
+        blockers.push("Remote-only policy excludes hybrid and on-site roles");
+      }
+
+      if (remoteEligibilityUnknown) {
+        automationNotes.push("Remote eligibility is not explicit in the listing and requires review before preparation.");
       }
 
       if (!hasResumeEvidence) {
@@ -365,6 +375,8 @@ export function buildAutonomousPlan(
         if (resumeMissing) {
           action = "blocked";
           automationNotes.push("An active versioned resume is required before Hire.AI can prepare application materials for this role.");
+        } else if (remoteEligibilityUnknown) {
+          action = "queue_for_review";
         } else if (!support.supported && allowUnsupportedATS) {
           action = "manual_apply";
         } else if (mode === "auto_apply" && support.supported && !requireHumanReview) {
@@ -392,7 +404,7 @@ export function buildAutonomousPlan(
         priority: score >= 85 ? "urgent" : score >= 75 ? "high" : score >= minMatchScore ? "normal" : "low",
         reasons: reasons.slice(0, 4),
         blockers,
-        reviewRequired: requireHumanReview || !support.supported || blockers.length > 0,
+        reviewRequired: requireHumanReview || !support.supported || remoteEligibilityUnknown || blockers.length > 0,
         automationNotes,
         userDecisionLocked,
       } satisfies AutonomousJobDecision;
@@ -442,6 +454,18 @@ export function buildAutonomousPlan(
   }
   if (followUpsDue > 0) {
     nextActions.push(`Draft ${followUpsDue} timely follow-up message${followUpsDue === 1 ? "" : "s"}.`);
+  }
+  const nonRemoteExcluded = decisions.filter((decision) =>
+    decision.blockers.includes("Remote-only policy excludes hybrid and on-site roles")
+  ).length;
+  if (nonRemoteExcluded > 0) {
+    nextActions.push(`Excluded ${nonRemoteExcluded} hybrid or on-site role${nonRemoteExcluded === 1 ? "" : "s"} under the remote-only campaign policy.`);
+  }
+  const remoteEligibilityReviews = decisions.filter((decision) =>
+    decision.automationNotes.includes("Remote eligibility is not explicit in the listing and requires review before preparation.")
+  ).length;
+  if (remoteEligibilityReviews > 0) {
+    nextActions.push(`Review ${remoteEligibilityReviews} role${remoteEligibilityReviews === 1 ? "" : "s"} with unverified remote eligibility before preparation.`);
   }
   if (expiredJobsSkipped > 0) {
     nextActions.push(`Excluded ${expiredJobsSkipped} expired or stale job posting${expiredJobsSkipped === 1 ? "" : "s"} from autonomous preparation.`);
