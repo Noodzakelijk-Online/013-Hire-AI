@@ -70,12 +70,14 @@ export function getEmploymentEndControlSummary(
     canReport: true,
     label: "Final obligation review",
     headline: "Report employment ended and open final billing review.",
-    detail: `Hire.AI will record ${endDateLabel} as the employment end date, cancel the linked subscription when present, and send the closure package to admin review.`,
+    detail: hasSubscription
+      ? `Hire.AI will record ${endDateLabel} only after Stripe confirms cancellation of the linked subscription, then send the closure package to admin review.`
+      : `Hire.AI will record ${endDateLabel} as the employment end date and send the closure package to admin review.`,
     risk: hasSubscription ? "high" : "medium",
     checkpoints: [
       "Employment end date is explicitly recorded.",
       hasSubscription
-        ? "Linked Stripe subscription cancellation will be attempted."
+        ? "Linked Stripe subscription cancellation must be confirmed before the local fee ledger changes."
         : "No linked Stripe subscription is recorded for cancellation.",
       "Success-fee status will move to ended.",
       "Audit event and admin review item will be created for final billing and verification context.",

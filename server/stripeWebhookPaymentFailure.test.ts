@@ -157,4 +157,39 @@ describe("Stripe payment failure webhook", () => {
     }));
     expect(mocks.completeStripeWebhookEvent).toHaveBeenCalledWith("evt_subscription_past_due_701");
   });
+
+  it("links a hosted Checkout subscription to the existing success-fee ledger", async () => {
+    mocks.selectLimit.mockResolvedValueOnce([{
+      id: 701,
+      userId: 81,
+      employerName: "Example Employer",
+      jobTitle: "Remote Engineer",
+      status: "pending_verification",
+      stripeSubscriptionId: null,
+    }]);
+
+    const response = await postWebhook({
+      id: "evt_checkout_completed_701",
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          id: "cs_test_701",
+          status: "complete",
+          client_reference_id: "701",
+          metadata: { successFeeId: "701" },
+          subscription: "sub_checkout_701",
+        },
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.mockDb.update).toHaveBeenCalled();
+    expect(mocks.createAuditEvent).toHaveBeenCalledWith(expect.objectContaining({
+      entityType: "success_fee",
+      entityId: 701,
+      action: "stripe_checkout_subscription_linked",
+      riskLevel: "critical",
+    }));
+    expect(mocks.completeStripeWebhookEvent).toHaveBeenCalledWith("evt_checkout_completed_701");
+  });
 });

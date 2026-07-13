@@ -55,7 +55,7 @@ export interface ReportHireResultLike {
   monthlyFeeAmount?: number | null;
   subscriptionStatus?: string | null;
   stripeSubscriptionId?: string | null;
-  clientSecret?: string | null;
+  checkoutUrl?: string | null;
   ledger?: {
     offerProofStatus?: string | null;
     offerAttributionStatus?: string | null;
@@ -202,9 +202,9 @@ export function getReportHireCompletionSummary(
   result?: ReportHireResultLike | null
 ): ReportHireCompletionSummary {
   const ledger = result?.ledger;
-  const paymentActionRequired = Boolean(result?.clientSecret) ||
-    ledger?.billingSetupStatus === "payment_setup_required" ||
-    result?.subscriptionStatus === "incomplete";
+  const paymentActionRequired = Boolean(result?.checkoutUrl) ||
+    ledger?.billingSetupStatus === "checkout_required" ||
+    result?.subscriptionStatus === "checkout_open";
   const adminReviewRequired = ledger?.adminReviewRequired !== false;
   const feeId = typeof result?.feeId === "number" ? result.feeId : null;
   const monthlyFeeCents = result?.monthlyFeeAmount || 0;
@@ -237,15 +237,15 @@ export function getReportHireCompletionSummary(
       label: "Payment setup",
       state: paymentActionRequired ? "pending" : "complete",
       detail: paymentActionRequired
-        ? "Stripe payment setup still needs to be completed before charges can succeed."
-        : "Stripe subscription metadata was created for the reported success fee.",
+        ? "Continue in secure Stripe Checkout before recurring billing can start."
+        : "Stripe subscription metadata was linked to the reported success fee.",
     },
   ];
 
   if (paymentActionRequired) {
     return {
       label: "Hire report recorded",
-      nextAction: "Complete Stripe payment setup, then watch the admin review and verification queues.",
+      nextAction: "Continue in secure Stripe Checkout, then watch the admin review and verification queues.",
       feeId,
       monthlyFeeCents,
       paymentActionRequired,

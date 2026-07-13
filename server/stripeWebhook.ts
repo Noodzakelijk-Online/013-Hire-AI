@@ -69,6 +69,48 @@ export function registerStripeWebhook(app: Express) {
 
       try {
         switch (event.type) {
+          case "checkout.session.completed": {
+            const session = event.data.object as Stripe.Checkout.Session;
+            const feeId = Number(session.metadata?.successFeeId || session.client_reference_id);
+            const subscriptionId = typeof session.subscription === "string"
+              ? session.subscription
+              : session.subscription?.id;
+            if (!Number.isInteger(feeId) || feeId <= 0 || !subscriptionId) break;
+
+            const [fee] = await db
+              .select()
+              .from(successFees)
+              .where(eq(successFees.id, feeId))
+              .limit(1);
+            if (!fee) break;
+
+            if (fee.stripeSubscriptionId && fee.stripeSubscriptionId !== subscriptionId) {
+              throw new Error("Checkout subscription does not match the existing success-fee ledger record.");
+            }
+
+            if (!fee.stripeSubscriptionId) {
+              await db.update(successFees)
+                .set({ stripeSubscriptionId: subscriptionId })
+                .where(eq(successFees.id, fee.id));
+              await createAuditEvent({
+                userId: fee.userId,
+                entityType: "success_fee",
+                entityId: fee.id,
+                action: "stripe_checkout_subscription_linked",
+                actor: "system",
+                source: `stripe:${event.type}`,
+                afterState: JSON.stringify({
+                  stripeEventId: event.id,
+                  checkoutSessionId: session.id,
+                  stripeSubscriptionId: subscriptionId,
+                  checkoutStatus: session.status,
+                }),
+                riskLevel: "critical",
+              });
+            }
+            break;
+          }
+
           case "invoice.paid": {
             const invoice = event.data.object as Stripe.Invoice & { subscription?: string };
             const subscriptionId = invoice.subscription as string;

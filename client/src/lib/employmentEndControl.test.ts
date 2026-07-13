@@ -16,9 +16,9 @@ describe("employment end control", () => {
     expect(summary.canReport).toBe(true);
     expect(summary.label).toBe("Final obligation review");
     expect(summary.risk).toBe("high");
-    expect(summary.detail).toContain("cancel the linked subscription");
+    expect(summary.detail).toContain("only after Stripe confirms cancellation");
     expect(summary.checkpoints).toEqual(expect.arrayContaining([
-      "Linked Stripe subscription cancellation will be attempted.",
+      "Linked Stripe subscription cancellation must be confirmed before the local fee ledger changes.",
       "Audit event and admin review item will be created for final billing and verification context.",
     ]));
   });

@@ -14,7 +14,6 @@ import { eq, desc, and, inArray } from "drizzle-orm";
 import { isAcceptedOfferApplicationStatus } from "@shared/offerEligibility";
 import { storagePut } from "../storage";
 import { scanSensitiveUpload, validateUploadedFile, VERIFICATION_MIME_TYPES } from "../uploadValidation";
-import Stripe from "stripe";
 import { getStripeClient } from "../stripeClient";
 import { calculateNextVerificationDue } from "../successFeeDates";
 
@@ -27,6 +26,7 @@ const UNRESOLVED_SUCCESS_FEE_STATUSES = [
   "suspended",
   "disputed",
 ] as const;
+const EMPLOYMENT_END_REPORTABLE_STATUSES = new Set(["pending_verification", "active"]);
 
 // Helper: get or create Stripe customer for user
 async function getOrCreateStripeCustomer(userId: number, email: string, name: string | null) {
@@ -52,6 +52,15 @@ async function getOrCreateStripeCustomer(userId: number, email: string, name: st
 // Helper: calculate monthly fee amount in cents
 function calculateMonthlyFee(monthlySalary: number): number {
   return Math.round((monthlySalary * FEE_PERCENT) / 100 * 100); // in cents
+}
+
+function billingReturnUrl(params: Record<string, string>) {
+  const baseUrl = process.env.VITE_FRONTEND_FORGE_API_URL?.trim() || "http://localhost:3000";
+  const url = new URL("/billing", baseUrl);
+  for (const [key, value] of Object.entries(params)) {
+    url.searchParams.set(key, value);
+  }
+  return url.toString();
 }
 
 export const successFeesRouter = router({
@@ -373,44 +382,52 @@ export const successFeesRouter = router({
         },
       });
 
-      // Create Stripe subscription
-      const subscription = await stripe.subscriptions.create({
+      // Hosted Checkout owns payment-method collection and subscription creation.
+      // A payment-intent client secret is not a navigable checkout URL.
+      const checkoutSession = await stripe.checkout.sessions.create({
+        mode: "subscription",
         customer: stripeCustomerId,
-        items: [{ price: price.id }],
+        line_items: [{ price: price.id, quantity: 1 }],
+        client_reference_id: String(fee.id),
         metadata: {
           userId: userId.toString(),
           successFeeId: fee.id.toString(),
           employerName: input.employerName,
         },
-        payment_behavior: "default_incomplete",
-        payment_settings: { save_default_payment_method: "on_subscription" },
-        expand: ["latest_invoice.payment_intent"],
+        subscription_data: {
+          metadata: {
+            userId: userId.toString(),
+            successFeeId: fee.id.toString(),
+            employerName: input.employerName,
+          },
+        },
+        success_url: billingReturnUrl({ checkout: "success", session_id: "{CHECKOUT_SESSION_ID}" }),
+        cancel_url: billingReturnUrl({ checkout: "cancelled" }),
       });
+      if (!checkoutSession.url) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Stripe did not return a secure checkout URL for this success fee.",
+        });
+      }
 
-      // Update fee with Stripe subscription ID
+      // The subscription ID is linked from the signed checkout.session.completed webhook.
       await db.update(successFees)
         .set({
-          stripeSubscriptionId: subscription.id,
           stripePriceId: price.id,
         })
         .where(eq(successFees.id, fee.id));
 
-      const invoice = subscription.latest_invoice as Stripe.Invoice & { payment_intent?: Stripe.PaymentIntent };
-      const paymentIntent = invoice?.payment_intent as Stripe.PaymentIntent | undefined;
-
       return {
         feeId: fee.id,
         monthlyFeeAmount,
-        stripeSubscriptionId: subscription.id,
-        clientSecret: paymentIntent?.client_secret,
-        subscriptionStatus: subscription.status,
+        checkoutUrl: checkoutSession.url,
+        subscriptionStatus: "checkout_open" as const,
         ledger: {
           offerProofStatus: "stored" as const,
           offerAttributionStatus: "admin_review_open" as const,
           verificationStatus: "pending_review" as const,
-          billingSetupStatus: paymentIntent?.client_secret
-            ? "payment_setup_required" as const
-            : "subscription_created" as const,
+          billingSetupStatus: "checkout_required" as const,
           adminReviewRequired: true,
           offerAttributionApprovalId,
           billingApprovalId,
@@ -525,7 +542,7 @@ export const successFeesRouter = router({
   reportEmploymentEnded: protectedProcedure
     .input(z.object({
       successFeeId: z.number(),
-      endDate: z.string(),
+      endDate: z.string().datetime({ offset: true }),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -542,6 +559,13 @@ export const successFeesRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "Success fee not found." });
       }
 
+      if (!EMPLOYMENT_END_REPORTABLE_STATUSES.has(fee.status)) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Only active or pending-verification success fees can be reported as employment ended.",
+        });
+      }
+
       const endDate = new Date(input.endDate);
       const decidedAt = new Date();
       const previousState = {
@@ -551,6 +575,47 @@ export const successFeesRouter = router({
         employerName: fee.employerName,
         jobTitle: fee.jobTitle,
       };
+
+      // A timeout can still leave the provider in an uncertain state. Do not
+      // record a completed local billing action unless Stripe confirms it.
+      let stripeSubscriptionCancelled = false;
+      if (fee.stripeSubscriptionId) {
+        try {
+          await getStripeClient().subscriptions.cancel(fee.stripeSubscriptionId);
+          stripeSubscriptionCancelled = true;
+        } catch {
+          console.error("[SuccessFees] Stripe synchronization blocked employment-end reporting.");
+          await createAuditEvent({
+            userId,
+            entityType: "success_fee",
+            entityId: input.successFeeId,
+            action: "employment_end_blocked_stripe_sync",
+            actor: "user",
+            source: "successFees.reportEmploymentEnded",
+            beforeState: JSON.stringify(previousState),
+            afterState: JSON.stringify({
+              requestedStatus: "ended",
+              endDate,
+              stripeSynchronization: "failed",
+              localStateChanged: false,
+            }),
+            riskLevel: "critical",
+          });
+          await createAdminReviewItem({
+            userId,
+            entityType: "success_fee",
+            entityId: input.successFeeId,
+            category: "payment_failed",
+            priority: "critical",
+            title: "Employment end blocked by Stripe",
+            description: "Stripe did not confirm cancellation of the linked subscription. Local fee status and billing approval were not changed; verify the provider before retrying because cancellation may have succeeded.",
+          });
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "Stripe could not confirm subscription cancellation. The local fee status and billing approval were not changed.",
+          });
+        }
+      }
 
       const billingApproval = await db.insert(applicationApprovals).values({
         userId,
@@ -577,13 +642,6 @@ export const successFeesRouter = router({
         decidedAt,
       });
       const billingApprovalId = Number(billingApproval[0].insertId);
-
-      // Cancel Stripe subscription
-      let stripeSubscriptionCancelled = false;
-      if (fee.stripeSubscriptionId) {
-        await getStripeClient().subscriptions.cancel(fee.stripeSubscriptionId);
-        stripeSubscriptionCancelled = true;
-      }
 
       // Update fee status
       await db.update(successFees)

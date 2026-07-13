@@ -150,4 +150,60 @@ describe("success fee employment-ended reporting", () => {
       title: "Employment ended report needs review",
     }));
   });
+
+  it("does not record local closure or billing approval when Stripe cancellation is uncertain", async () => {
+    mocks.stripeCancel.mockRejectedValueOnce(new Error("provider unavailable"));
+    const caller = successFeesRouter.createCaller(createContext(99117));
+
+    await expect(caller.reportEmploymentEnded({
+      successFeeId: 77,
+      endDate: "2026-07-15T00:00:00.000Z",
+    })).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: "Stripe could not confirm subscription cancellation. The local fee status and billing approval were not changed.",
+    });
+
+    expect(mocks.insertValues).not.toHaveBeenCalled();
+    expect(mocks.updateSet).not.toHaveBeenCalled();
+    expect(mocks.createAuditEvent).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 99117,
+      entityType: "success_fee",
+      entityId: 77,
+      action: "employment_end_blocked_stripe_sync",
+      riskLevel: "critical",
+    }));
+    expect(mocks.createAdminReviewItem).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 99117,
+      entityType: "success_fee",
+      entityId: 77,
+      category: "payment_failed",
+      priority: "critical",
+    }));
+  });
+
+  it("rejects repeated employment-end reports before contacting Stripe", async () => {
+    mocks.selectLimit.mockResolvedValueOnce([{
+      id: 77,
+      userId: 99117,
+      applicationId: 441,
+      employerName: "FinalLedger",
+      jobTitle: "Remote Revenue Analyst",
+      status: "ended",
+      endDate: new Date("2026-07-15T00:00:00.000Z"),
+      stripeSubscriptionId: "sub_final_123",
+    }]);
+    const caller = successFeesRouter.createCaller(createContext(99117));
+
+    await expect(caller.reportEmploymentEnded({
+      successFeeId: 77,
+      endDate: "2026-07-16T00:00:00.000Z",
+    })).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: expect.stringContaining("Only active or pending-verification"),
+    });
+
+    expect(mocks.stripeCancel).not.toHaveBeenCalled();
+    expect(mocks.insertValues).not.toHaveBeenCalled();
+    expect(mocks.updateSet).not.toHaveBeenCalled();
+  });
 });

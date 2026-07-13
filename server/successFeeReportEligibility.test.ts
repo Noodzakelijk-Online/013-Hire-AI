@@ -56,6 +56,9 @@ vi.mock("./stripeClient", () => ({
     customers: { create: vi.fn() },
     products: { create: vi.fn().mockResolvedValue({ id: "prod_test" }) },
     prices: { create: vi.fn().mockResolvedValue({ id: "price_test" }) },
+    checkout: {
+      sessions: { create: vi.fn().mockResolvedValue({ id: "cs_test", url: "https://checkout.stripe.com/c/pay/cs_test" }) },
+    },
     subscriptions: {
       create: vi.fn().mockResolvedValue({
         id: "sub_test",
@@ -213,7 +216,11 @@ describe("success fee report-hire eligibility", () => {
       offerLetterMimeType: "application/pdf",
       offerLetterFileName: "offer.pdf",
       termsAccepted: true,
-    })).resolves.toMatchObject({ feeId: 77 });
+    })).resolves.toMatchObject({
+      feeId: 77,
+      checkoutUrl: "https://checkout.stripe.com/c/pay/cs_test",
+      subscriptionStatus: "checkout_open",
+    });
 
     expect(mocks.dismissOfferAttributionAdminReviews).toHaveBeenCalledWith(
       190094,

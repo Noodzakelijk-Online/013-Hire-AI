@@ -76,13 +76,12 @@ export function ReportHireDialog({ open, onOpenChange, applicationId, onSuccess 
 
   const reportHire = trpc.successFees.reportHire.useMutation({
     onSuccess: (data) => {
-      if (data.clientSecret) {
-        // Redirect to Stripe payment setup
-        window.open(`https://checkout.stripe.com/pay/${data.clientSecret}`, "_blank");
+      if (data.checkoutUrl) {
+        window.open(data.checkoutUrl, "_blank", "noopener,noreferrer");
       }
       setStep("success");
       onSuccess?.();
-      toast.success("Hire report recorded. Proof, billing, and review state are now in the operating ledger.");
+      toast.success("Hire report recorded. Continue in Stripe Checkout to authorize billing; proof and review state are in the operating ledger.");
     },
     onError: (err) => {
       toast.error(err.message || "Failed to report hire. Please try again.");

@@ -88,13 +88,13 @@ describe("report hire evidence summary", () => {
     const summary = getReportHireCompletionSummary({
       feeId: 42,
       monthlyFeeAmount: 25_000,
-      subscriptionStatus: "incomplete",
-      clientSecret: "pi_secret",
+      subscriptionStatus: "checkout_open",
+      checkoutUrl: "https://checkout.stripe.com/c/pay/cs_test",
       ledger: {
         offerProofStatus: "stored",
         offerAttributionStatus: "admin_review_open",
         verificationStatus: "pending_review",
-        billingSetupStatus: "payment_setup_required",
+        billingSetupStatus: "checkout_required",
         adminReviewRequired: true,
       },
     });
