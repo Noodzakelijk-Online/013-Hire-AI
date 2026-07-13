@@ -2587,7 +2587,9 @@ export const appRouter = router({
       .input(z.object({
         intervalMinutes: z.number().min(5).max(1440).optional(),
         maxJobsPerRun: z.number().min(10).max(1000).optional(),
-        enabledPlatforms: z.array(z.string().trim().min(1).max(255)).max(100).optional(),
+        // `null` deliberately enables every ready source. An empty array is
+        // ambiguous and must not silently broaden an autonomous scan.
+        enabledPlatforms: z.array(z.string().trim().min(1).max(255)).min(1).max(100).nullable().optional(),
       }).optional())
       .mutation(async ({ input }) => {
         const { getScheduler } = await import("./scrapers/scheduler");
@@ -2601,7 +2603,9 @@ export const appRouter = router({
           });
         }
         const currentScheduler = getScheduler();
-        const requestedPlatforms = input?.enabledPlatforms ?? currentScheduler.getStatus().enabledPlatforms;
+        const requestedPlatforms = input?.enabledPlatforms === undefined
+          ? currentScheduler.getStatus().enabledPlatforms
+          : input.enabledPlatforms;
         const unsupportedPlatforms = requestedPlatforms?.filter(
           (platformName) => !readyPlatforms.has(platformName)
         ) ?? [];

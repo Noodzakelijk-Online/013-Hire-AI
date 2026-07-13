@@ -217,6 +217,13 @@ describe("Scraping API", () => {
       });
       expect(indeed).toMatchObject({ readiness: "ready", freshness: "awaiting_first_scan" });
     });
+
+    it("rejects an empty source selection instead of widening a scheduled scan", async () => {
+      const caller = appRouter.createCaller(createAuthContext("admin"));
+
+      await expect(caller.scraping.startScheduler({ enabledPlatforms: [] }))
+        .rejects.toMatchObject({ code: "BAD_REQUEST" });
+    });
   });
 });
 
