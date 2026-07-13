@@ -185,6 +185,7 @@ describe("Scraping API", () => {
         configuredDedicatedAdapterSources: expect.any(Number),
         configuredGenericRssAdapterSources: expect.any(Number),
         configuredGenericHtmlAdapterSources: expect.any(Number),
+        zeroListingSources: expect.any(Number),
         readySources: expect.any(Number),
         freshReadySources: expect.any(Number),
         staleReadySources: expect.any(Number),
@@ -225,6 +226,7 @@ describe("Scraping API", () => {
         configuredDedicatedAdapterSources: 10,
         configuredGenericRssAdapterSources: 2,
         configuredGenericHtmlAdapterSources: 36,
+        zeroListingSources: 0,
         readySources: 48,
         unconfiguredSources: 0,
       });

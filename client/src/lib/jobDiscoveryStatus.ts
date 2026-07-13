@@ -14,6 +14,7 @@ export interface JobDiscoveryStatusInput {
   sourcesWithStaleScrape?: number | null;
   sourcesWithFailedLatestScrape?: number | null;
   sourcesWithPartialLatestScrape?: number | null;
+  sourcesWithEmptyLatestScrape?: number | null;
   latestSuccessfulScrapeAt?: Date | string | null;
   canonicalJobs?: number | null;
 }
@@ -28,6 +29,7 @@ export interface JobDiscoveryStatusSummary {
   sourcesWithStaleScrape: number;
   sourcesWithFailedLatestScrape: number;
   sourcesWithPartialLatestScrape: number;
+  sourcesWithEmptyLatestScrape: number;
   canonicalJobs: number;
   latestSuccessfulScrapeAt: Date | null;
 }
@@ -60,6 +62,7 @@ export function getJobDiscoveryStatusSummary(
   const sourcesWithStaleScrape = positiveInteger(input?.sourcesWithStaleScrape);
   const sourcesWithFailedLatestScrape = positiveInteger(input?.sourcesWithFailedLatestScrape);
   const sourcesWithPartialLatestScrape = positiveInteger(input?.sourcesWithPartialLatestScrape);
+  const sourcesWithEmptyLatestScrape = positiveInteger(input?.sourcesWithEmptyLatestScrape);
   const latestSuccessfulScrapeAt = parseDate(input?.latestSuccessfulScrapeAt);
   const base = {
     activeSources,
@@ -68,6 +71,7 @@ export function getJobDiscoveryStatusSummary(
     sourcesWithStaleScrape,
     sourcesWithFailedLatestScrape,
     sourcesWithPartialLatestScrape,
+    sourcesWithEmptyLatestScrape,
     canonicalJobs,
     latestSuccessfulScrapeAt,
   };
@@ -81,18 +85,18 @@ export function getJobDiscoveryStatusSummary(
     };
   }
 
-  const degradedSources = sourcesWithFailedLatestScrape + sourcesWithPartialLatestScrape;
+  const degradedSources = sourcesWithFailedLatestScrape + sourcesWithPartialLatestScrape + sourcesWithEmptyLatestScrape;
   if (degradedSources > 0) {
-    const failureDetail = sourcesWithFailedLatestScrape > 0 && sourcesWithPartialLatestScrape > 0
-      ? `${plural(sourcesWithFailedLatestScrape, "source")} failed and ${plural(sourcesWithPartialLatestScrape, "source")} completed only partially`
-      : sourcesWithFailedLatestScrape > 0
-        ? `${plural(sourcesWithFailedLatestScrape, "source")} failed`
-        : `${plural(sourcesWithPartialLatestScrape, "source")} completed only partially`;
+    const issueDetails = [
+      sourcesWithFailedLatestScrape > 0 ? `${plural(sourcesWithFailedLatestScrape, "source")} failed` : "",
+      sourcesWithPartialLatestScrape > 0 ? `${plural(sourcesWithPartialLatestScrape, "source")} completed only partially` : "",
+      sourcesWithEmptyLatestScrape > 0 ? `${plural(sourcesWithEmptyLatestScrape, "source")} returned no listings` : "",
+    ].filter(Boolean);
     return {
       ...base,
       status: "degraded",
       label: "Discovery needs attention",
-      detail: `${failureDetail} on their latest scan. Hire.AI will not represent discovery coverage as current until those sources complete a clean scan. ${plural(canonicalJobs, "canonical job")} remain in the index; confirm a listing is still open before preparing materials.`,
+      detail: `${issueDetails.join(", ")} on their latest scan. Hire.AI will not represent discovery coverage as current until those sources produce a reviewed outcome. ${plural(canonicalJobs, "canonical job")} remain in the index; confirm a listing is still open before preparing materials.`,
     };
   }
 

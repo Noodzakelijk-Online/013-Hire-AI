@@ -37,18 +37,32 @@ describe("scraper source health", () => {
     });
   });
 
-  it("counts partial and failed sources as attention items", () => {
+  it("does not treat a zero-listing success as discovery coverage", () => {
+    expect(getScraperSourceHealthSummary({
+      lastScrapeStatus: "success",
+      lastScrapeJobCount: 0,
+    })).toMatchObject({
+      outcome: "empty",
+      label: "No listings observed",
+      jobCount: 0,
+      error: null,
+    });
+  });
+
+  it("counts empty, partial, and failed sources as attention items", () => {
     expect(getScraperSourceOutcomeCounts([
-      { lastScrapeStatus: "success" },
+      { lastScrapeStatus: "success", lastScrapeJobCount: 4 },
+      { lastScrapeStatus: "success", lastScrapeJobCount: 0 },
       { lastScrapeStatus: "partial" },
       { lastScrapeStatus: "failed" },
       {},
     ])).toEqual({
       success: 1,
+      empty: 1,
       partial: 1,
       failed: 1,
       awaiting: 1,
-      issues: 2,
+      issues: 3,
     });
   });
 });

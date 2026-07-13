@@ -2633,6 +2633,9 @@ export const appRouter = router({
       const configuredDedicatedAdapterSources = platforms.filter((platform) => platform.adapter.kind === "dedicated").length;
       const configuredGenericRssAdapterSources = platforms.filter((platform) => platform.adapter.kind === "generic_rss").length;
       const configuredGenericHtmlAdapterSources = platforms.filter((platform) => platform.adapter.kind === "generic_html").length;
+      const zeroListingSources = platforms.filter((platform) =>
+        platform.lastScrapeStatus === "success" && platform.lastScrapeJobCount === 0
+      ).length;
 
       return {
         initialized: true,
@@ -2646,6 +2649,7 @@ export const appRouter = router({
           configuredDedicatedAdapterSources,
           configuredGenericRssAdapterSources,
           configuredGenericHtmlAdapterSources,
+          zeroListingSources,
           readySources: readySources.length,
           freshReadySources: freshReadySources.length,
           staleReadySources: readySources.filter((platform) => platform.freshness === "stale").length,
@@ -2656,7 +2660,7 @@ export const appRouter = router({
           unsupportedConfiguredSources,
         },
         scheduler: schedulerStatus,
-        message: `${readySources.length} configured source${readySources.length === 1 ? " is" : "s are"} ready for discovery. ${configuredDedicatedAdapterSources} use source-specific parsers and ${configuredGenericRssAdapterSources + configuredGenericHtmlAdapterSources} use generic extraction; inspect source health and scan outcomes before relying on coverage. ${unconfiguredSources.length} registered source${unconfiguredSources.length === 1 ? " is" : "s are"} not configured.`,
+        message: `${readySources.length} configured source${readySources.length === 1 ? " is" : "s are"} ready for discovery. ${configuredDedicatedAdapterSources} use source-specific parsers and ${configuredGenericRssAdapterSources + configuredGenericHtmlAdapterSources} use generic extraction. ${zeroListingSources} latest source scan${zeroListingSources === 1 ? " returned" : "s returned"} no listings; inspect source health and scan outcomes before relying on coverage. ${unconfiguredSources.length} registered source${unconfiguredSources.length === 1 ? " is" : "s are"} not configured.`,
       };
     }),
 

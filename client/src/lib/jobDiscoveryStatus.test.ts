@@ -93,4 +93,22 @@ describe("job discovery status summary", () => {
     expect(summary.status).toBe("degraded");
     expect(summary.detail).toContain("1 source completed only partially");
   });
+
+  it("surfaces a clean source scan with no observed listings as coverage attention", () => {
+    const summary = getJobDiscoveryStatusSummary({
+      activeSources: 2,
+      sourcesWithSuccessfulScrape: 2,
+      sourcesWithFreshScrape: 2,
+      sourcesWithEmptyLatestScrape: 1,
+      canonicalJobs: 9,
+      latestSuccessfulScrapeAt: "2026-07-12T06:00:00.000Z",
+    }, now);
+
+    expect(summary).toMatchObject({
+      status: "degraded",
+      label: "Discovery needs attention",
+      sourcesWithEmptyLatestScrape: 1,
+    });
+    expect(summary.detail).toContain("1 source returned no listings");
+  });
 });

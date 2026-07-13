@@ -1,4 +1,4 @@
-export type ScraperSourceOutcome = "success" | "partial" | "failed" | "awaiting";
+export type ScraperSourceOutcome = "success" | "empty" | "partial" | "failed" | "awaiting";
 
 export interface ScraperSourceHealthInput {
   lastScrapeStatus?: "success" | "partial" | "failed" | null;
@@ -16,6 +16,7 @@ export interface ScraperSourceHealthSummary {
 
 export interface ScraperSourceOutcomeCounts {
   success: number;
+  empty: number;
   partial: number;
   failed: number;
   awaiting: number;
@@ -39,6 +40,15 @@ export function getScraperSourceHealthSummary(
 
   switch (source.lastScrapeStatus) {
     case "success":
+      if (jobCount === 0) {
+        return {
+          outcome: "empty",
+          label: "No listings observed",
+          tone: "border-amber-500/30 text-amber-300",
+          jobCount,
+          error: null,
+        };
+      }
       return {
         outcome: "success",
         label: "Succeeded",
@@ -78,6 +88,7 @@ export function getScraperSourceOutcomeCounts(
 ): ScraperSourceOutcomeCounts {
   const counts: ScraperSourceOutcomeCounts = {
     success: 0,
+    empty: 0,
     partial: 0,
     failed: 0,
     awaiting: 0,
@@ -88,6 +99,6 @@ export function getScraperSourceOutcomeCounts(
     const outcome = getScraperSourceHealthSummary(source).outcome;
     counts[outcome] += 1;
   }
-  counts.issues = counts.partial + counts.failed;
+  counts.issues = counts.empty + counts.partial + counts.failed;
   return counts;
 }
