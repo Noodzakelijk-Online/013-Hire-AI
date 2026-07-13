@@ -222,7 +222,8 @@ function professionalProviderState(
   requestedDetail: string,
   missingDetail: string,
   needsReauthDetail: string,
-  missingScopeDetail: string
+  missingScopeDetail: string,
+  identityOnlyDetail?: string
 ) {
   const connector = connectorForProvider(accounts, providerId);
   const scopes = parseScopes(connector?.consentScopes);
@@ -239,11 +240,30 @@ function professionalProviderState(
     };
   }
 
-  if (hasSavedUrl || (connector?.status === "connected" && scopes.includes(requiredScope))) {
+  if (hasSavedUrl) {
     return {
       status: "connected" as const,
       connectionStatus: connector?.status ?? (hasSavedUrl ? "connected" as const : undefined),
       accountLabel: connector?.externalAccountLabel || null,
+      consentScopes: scopes,
+      detail: connectedDetail,
+    };
+  }
+
+  if (connector?.status === "connected" && scopes.includes(requiredScope)) {
+    if (identityOnlyDetail) {
+      return {
+        status: "missing" as const,
+        connectionStatus: connector.status,
+        accountLabel: connector.externalAccountLabel || null,
+        consentScopes: scopes,
+        detail: identityOnlyDetail,
+      };
+    }
+    return {
+      status: "connected" as const,
+      connectionStatus: connector.status,
+      accountLabel: connector.externalAccountLabel || null,
       consentScopes: scopes,
       detail: connectedDetail,
     };
@@ -308,7 +328,8 @@ export function getProfileEvidenceControlSummary(
     "LinkedIn connection request is recorded; OAuth authorization or a saved profile URL is still required before Hire.AI can import profile evidence.",
     "Add LinkedIn to strengthen claims and recruiter-facing context.",
     "LinkedIn authorization needs renewal before Hire.AI can import professional profile evidence.",
-    "LinkedIn is connected, but profile-read consent is incomplete before Hire.AI can import professional profile evidence."
+    "LinkedIn is connected, but profile-read consent is incomplete before Hire.AI can import professional profile evidence.",
+    "LinkedIn account identity is connected, but it does not provide career evidence. Add a LinkedIn URL or reviewed profile text before Hire.AI uses it for claims."
   );
   const github = professionalProviderState(
     input.connectorAccounts,

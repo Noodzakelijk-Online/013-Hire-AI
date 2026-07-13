@@ -327,7 +327,7 @@ export default function Profile() {
     provider.id === "github" && provider.status === "connected"
   );
   const linkedInConnected = evidenceControl.providers.some((provider) =>
-    provider.id === "linkedin" && provider.status === "connected"
+    provider.id === "linkedin" && provider.connectionStatus === "connected"
   );
 
   useEffect(() => {

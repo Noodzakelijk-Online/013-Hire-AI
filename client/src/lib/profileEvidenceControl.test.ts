@@ -213,4 +213,34 @@ describe("profile evidence control", () => {
     expect(summary.missingCount).toBe(1);
     expect(summary.consentRequiredCount).toBe(6);
   });
+
+  it("does not treat LinkedIn OIDC identity consent as professional evidence", () => {
+    const summary = getProfileEvidenceControlSummary({
+      profile: {
+        resumeUrl: "https://storage.example.local/resumes/1/current.pdf",
+        resumeFileKey: "resumes/1/current.pdf",
+      },
+      readiness: {
+        score: 84,
+        autoApplyEligible: true,
+        blockers: [],
+        warnings: [],
+      },
+      connectorAccounts: [{
+        provider: "linkedin",
+        status: "connected",
+        externalAccountLabel: "Avery Example <avery@example.test>",
+        consentScopes: ["profile.basic.read"],
+        lastVerifiedAt: new Date(),
+      }],
+    });
+
+    const linkedIn = summary.providers.find((provider) => provider.id === "linkedin");
+    expect(linkedIn).toMatchObject({
+      status: "missing",
+      connectionStatus: "connected",
+      accountLabel: "Avery Example <avery@example.test>",
+    });
+    expect(linkedIn?.detail).toContain("does not provide career evidence");
+  });
 });
