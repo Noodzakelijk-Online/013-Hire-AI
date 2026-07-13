@@ -693,7 +693,7 @@ export default function JobSearch() {
                       ? ` ${autonomousPlan.summary.blocked} high-fit role${autonomousPlan.summary.blocked === 1 ? " is" : "s are"} blocked by missing profile evidence.`
                       : ""}
                     {autonomousPlan.summary.expiredJobsSkipped > 0
-                      ? ` Excluded ${autonomousPlan.summary.expiredJobsSkipped} expired posting${autonomousPlan.summary.expiredJobsSkipped === 1 ? "" : "s"}.`
+                      ? ` Excluded ${autonomousPlan.summary.expiredJobsSkipped} expired or stale posting${autonomousPlan.summary.expiredJobsSkipped === 1 ? "" : "s"}.`
                       : ""}
                   </p>
                   {autonomousPlan.policyWarnings?.length > 0 && (
@@ -764,7 +764,7 @@ export default function JobSearch() {
                   </div>
                   <div className="rounded-md bg-slate-800 px-3 py-2">
                     <p className="text-lg font-bold text-slate-300">{autonomousPlan.summary.expiredJobsSkipped || 0}</p>
-                    <p className="text-xs text-slate-400">Expired</p>
+                    <p className="text-xs text-slate-400">Stale</p>
                   </div>
                 </div>
               </div>

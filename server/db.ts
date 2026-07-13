@@ -65,6 +65,7 @@ import {
   type JobSearchFilterState,
 } from "@shared/jobSearchFilters";
 import { isOfferEligibleApplicationStatus } from "@shared/offerEligibility";
+import { getListingObservationCutoff, isJobListingCurrent } from "@shared/jobListingFreshness";
 
 type InsertJob = InferInsertModel<typeof jobs>;
 type InsertUserProfile = InferInsertModel<typeof userProfiles>;
@@ -337,6 +338,14 @@ const canonicalJobCondition = sql`NOT EXISTS (
   WHERE ${jobDuplicates.duplicateJobId} = ${jobs.id}
 )`;
 
+function currentListingCondition(now: Date) {
+  const observationCutoff = getListingObservationCutoff(now);
+  return or(
+    and(isNotNull(jobs.expiryDate), gt(jobs.expiryDate, now)),
+    and(isNull(jobs.expiryDate), gt(jobs.updatedAt, observationCutoff))
+  )!;
+}
+
 const sampleDuplicateJobIds = new Set(sampleJobDuplicateLinks.map((link) => link.duplicateJobId));
 
 /**
@@ -351,9 +360,7 @@ export async function getJobDiscoveryStatus() {
   if (!db) {
     const activePlatforms = samplePlatforms.filter((platform) => platform.isActive === 1);
     const canonicalJobs = sampleJobs.filter((job) =>
-      job.isActive === 1 &&
-      !sampleDuplicateJobIds.has(job.id) &&
-      (!job.expiryDate || job.expiryDate > now)
+      isJobListingCurrent(job, now) && !sampleDuplicateJobIds.has(job.id)
     );
     const successfulScrapes = activePlatforms
       .map((platform) => platform.lastScraped)
@@ -383,7 +390,7 @@ export async function getJobDiscoveryStatus() {
       .from(jobs)
       .where(and(
         eq(jobs.isActive, 1),
-        or(isNull(jobs.expiryDate), gt(jobs.expiryDate, now))!,
+        currentListingCondition(now),
         canonicalJobCondition,
       )),
   ]);
@@ -500,9 +507,7 @@ export async function getActiveJobs(limit = 100, offset = 0, filters: Partial<Jo
   if (!db) {
     return filterJobListings(sampleJobs
       .filter((job) =>
-        job.isActive === 1 &&
-        !sampleDuplicateJobIds.has(job.id) &&
-        (!job.expiryDate || job.expiryDate > now)
+        isJobListingCurrent(job, now) && !sampleDuplicateJobIds.has(job.id)
       ), resolvedFilters, now)
       .sort((a, b) => (b.postedDate?.getTime() || 0) - (a.postedDate?.getTime() || 0))
       .slice(boundedOffset, boundedOffset + boundedLimit);
@@ -551,7 +556,7 @@ export async function searchJobs(filters: {
     const boundedOffset = Math.max(filters.offset || 0, 0);
 
     return sampleJobs
-      .filter((job) => job.isActive === 1 && (!job.expiryDate || job.expiryDate > now))
+      .filter((job) => isJobListingCurrent(job, now))
       .filter((job) => !sampleDuplicateJobIds.has(job.id))
       .filter((job) => !title || job.title.toLowerCase().includes(title))
       .filter((job) => !company || job.company.toLowerCase().includes(company))
@@ -562,7 +567,7 @@ export async function searchJobs(filters: {
 
   const conditions: SQL[] = [
     eq(jobs.isActive, 1),
-    or(isNull(jobs.expiryDate), gt(jobs.expiryDate, now))!,
+    currentListingCondition(now),
     canonicalJobCondition,
   ];
 

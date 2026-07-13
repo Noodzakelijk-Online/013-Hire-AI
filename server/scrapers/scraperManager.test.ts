@@ -171,4 +171,58 @@ describe("scraper manager platform restrictions", () => {
       isActive: 1,
     }));
   });
+
+  it("refreshes a canonical listing when a duplicate source re-observes a no-expiry listing past its observation window", async () => {
+    const duplicate = {
+      id: 716,
+      externalId: "source-job-716",
+      platformId: 7,
+      title: "Staff Platform Engineer",
+      company: "Source Co",
+      expiryDate: null,
+      isActive: 1,
+      updatedAt: new Date(Date.now() - 15 * 86400000),
+      createdAt: new Date(Date.now() - 16 * 86400000),
+    };
+    const primary = {
+      ...duplicate,
+      id: 715,
+      externalId: "canonical-job-715",
+      platformId: 6,
+      applicationUrl: "https://old-source.example.com/715",
+    };
+    const where = vi.fn().mockResolvedValue([{ affectedRows: 1 }]);
+    const set = vi.fn(() => ({ where }));
+    const update = vi.fn(() => ({ set }));
+    const selectResponses = [
+      [duplicate],
+      [{ primaryJobId: primary.id }],
+      [primary],
+    ];
+    const select = vi.fn(() => ({
+      from: () => ({
+        where: () => ({
+          limit: vi.fn().mockImplementation(() => Promise.resolve(selectResponses.shift() || [])),
+        }),
+      }),
+    }));
+    mocks.getDb.mockResolvedValue({ select, update });
+
+    const result = await new ScraperManager().saveJobs([{
+      externalId: "source-job-716",
+      platformId: 7,
+      title: "Staff Platform Engineer",
+      company: "Source Co",
+      applicationUrl: "https://fresh-source.example.com/715",
+      isActive: 1,
+    }]);
+
+    expect(result).toEqual({ saved: 0, refreshed: 1, duplicates: 0, errors: 0 });
+    expect(update).toHaveBeenCalledTimes(2);
+    expect(set).toHaveBeenLastCalledWith(expect.objectContaining({
+      applicationUrl: "https://fresh-source.example.com/715",
+      updatedAt: expect.any(Date),
+      isActive: 1,
+    }));
+  });
 });

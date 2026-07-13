@@ -1209,7 +1209,7 @@ export default function Dashboard() {
                   ["Blocked", autonomousPlan.summary.blocked || 0],
                   ["Follow-ups", autonomousPlan.summary.followUpsDue],
                   ["Gates", autonomousPlan.evidenceGates?.length || 0],
-                  ["Expired", autonomousPlan.summary.expiredJobsSkipped || 0],
+                  ["Stale", autonomousPlan.summary.expiredJobsSkipped || 0],
                 ].map(([label, value]) => (
                   <div key={label} className="border-l border-slate-700 pl-3">
                     <p className="text-xs text-slate-500">{label}</p>
@@ -1228,7 +1228,7 @@ export default function Dashboard() {
                 )}
                 {autonomousPlan.summary.expiredJobsSkipped > 0 && (
                   <Badge variant="outline" className="w-fit border-slate-700 text-slate-300">
-                    {autonomousPlan.summary.expiredJobsSkipped} expired posting{autonomousPlan.summary.expiredJobsSkipped === 1 ? "" : "s"} excluded
+                    {autonomousPlan.summary.expiredJobsSkipped} expired or stale posting{autonomousPlan.summary.expiredJobsSkipped === 1 ? "" : "s"} excluded
                   </Badge>
                 )}
               </div>

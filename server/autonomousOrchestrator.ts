@@ -2,6 +2,7 @@ import type { Application, Job, UserProfile } from "../drizzle/schema";
 import { detectATSType, isAutomationSupported } from "./applicationAutomation";
 import { normalizeExperienceLevel, normalizeLocation } from "./jobNormalization";
 import { getLocationPreferenceFit } from "../shared/locationEligibility";
+import { isJobListingCurrent } from "../shared/jobListingFreshness";
 
 export type AutonomousMode = "review_first" | "auto_apply";
 
@@ -69,11 +70,7 @@ export interface AutonomousPlan {
  * not yet refreshed its `isActive` flag.
  */
 export function isJobCurrentForAutonomousProcessing(job: Job, now = new Date()): boolean {
-  if (job.isActive !== 1) return false;
-  if (!job.expiryDate) return true;
-
-  const expiryMs = new Date(job.expiryDate).getTime();
-  return Number.isFinite(expiryMs) && expiryMs > now.getTime();
+  return isJobListingCurrent(job, now);
 }
 
 function splitList(value?: string | null): string[] {
@@ -251,7 +248,7 @@ export function buildAutonomousPlan(
   const allowUnsupportedATS = preferences.allowUnsupportedATS ?? false;
   const now = new Date();
   const expiredJobsSkipped = jobs.filter((job) =>
-    job.isActive === 1 && job.expiryDate !== null && !isJobCurrentForAutonomousProcessing(job, now)
+    job.isActive === 1 && !isJobCurrentForAutonomousProcessing(job, now)
   ).length;
   const currentJobs = jobs.filter((job) => isJobCurrentForAutonomousProcessing(job, now));
   // A pending application is only a preparation record. It can be reconciled
@@ -437,7 +434,7 @@ export function buildAutonomousPlan(
     nextActions.push(`Draft ${followUpsDue} timely follow-up message${followUpsDue === 1 ? "" : "s"}.`);
   }
   if (expiredJobsSkipped > 0) {
-    nextActions.push(`Excluded ${expiredJobsSkipped} expired job posting${expiredJobsSkipped === 1 ? "" : "s"} from autonomous preparation.`);
+    nextActions.push(`Excluded ${expiredJobsSkipped} expired or stale job posting${expiredJobsSkipped === 1 ? "" : "s"} from autonomous preparation.`);
   }
   if (nextActions.length === 0) {
     nextActions.push("Keep scouting and wait for stronger matches.");

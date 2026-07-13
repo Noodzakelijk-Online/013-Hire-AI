@@ -254,7 +254,28 @@ describe("autonomous orchestrator", () => {
     expect(plan.summary.scanned).toBe(1);
     expect(plan.summary.expiredJobsSkipped).toBe(1);
     expect(plan.decisions.map((decision) => decision.jobId)).toEqual([baseJob.id]);
-    expect(plan.nextActions).toContain("Excluded 1 expired job posting from autonomous preparation.");
+    expect(plan.nextActions).toContain("Excluded 1 expired or stale job posting from autonomous preparation.");
+  });
+
+  it("excludes an active no-expiry listing after its source observation window", () => {
+    const staleJob: Job = {
+      ...baseJob,
+      id: 3,
+      externalId: "stale-observation-job",
+      expiryDate: null,
+      updatedAt: new Date(Date.now() - 15 * 86400000),
+    };
+
+    expect(isJobCurrentForAutonomousProcessing(staleJob)).toBe(false);
+
+    const plan = buildAutonomousPlan([staleJob, baseJob], profile, [], {
+      minMatchScore: 0,
+      dailyApplicationLimit: 2,
+    });
+
+    expect(plan.summary.scanned).toBe(1);
+    expect(plan.summary.expiredJobsSkipped).toBe(1);
+    expect(plan.decisions.map((decision) => decision.jobId)).toEqual([baseJob.id]);
   });
 
   it("marks high-fit roles as blocked instead of prepared when no resume is connected", () => {

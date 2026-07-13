@@ -5,6 +5,7 @@ import { jobDuplicates, jobs, jobPlatforms } from "../../drizzle/schema";
 import { and, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { samplePlatforms } from "../sampleData";
 import { findBestJobDuplicateCandidate } from "../jobDeduplication";
+import { isJobListingCurrent } from "../../shared/jobListingFreshness";
 
 export interface ScrapeOptions {
   keywords?: string;
@@ -13,8 +14,8 @@ export interface ScrapeOptions {
   platformNames?: string[];
 }
 
-function isCurrentListing(job: { isActive?: number | null; expiryDate?: Date | null }, now: Date) {
-  return job.isActive === 1 && (!job.expiryDate || job.expiryDate.getTime() > now.getTime());
+function isCurrentListing(job: { isActive?: number | null; expiryDate?: Date | null; updatedAt?: Date | null; createdAt?: Date | null }, now: Date) {
+  return isJobListingCurrent(job, now);
 }
 
 function refreshedListingValues(job: any, current: any, now: Date) {

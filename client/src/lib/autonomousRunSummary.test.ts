@@ -71,10 +71,10 @@ describe("autonomous run summary", () => {
     );
   });
 
-  it("reports expired postings excluded from preparation", () => {
+  it("reports expired or stale postings excluded from preparation", () => {
     expect(formatAutonomousRunSummary({
       summary: { expiredJobsSkipped: 2 },
-    })).toBe("Autonomous run completed with no new tasks; 2 expired job postings excluded");
+    })).toBe("Autonomous run completed with no new tasks; 2 expired or stale job postings excluded");
   });
 
   it("reports jobs that became stale after planning", () => {

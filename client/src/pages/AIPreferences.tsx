@@ -498,7 +498,7 @@ export default function AIPreferences() {
                     ["Blocked", autonomousPlan?.summary.blocked || 0],
                     ["Follow-ups", autonomousPlan?.summary.followUpsDue || 0],
                     ["Gates", evidenceGateSummary.total],
-                    ["Expired", autonomousPlan?.summary.expiredJobsSkipped || 0],
+                    ["Stale", autonomousPlan?.summary.expiredJobsSkipped || 0],
                   ].map(([label, value]) => (
                     <div key={String(label)} className="rounded-md border border-slate-800 bg-slate-950/40 p-3">
                       <p className="text-xs text-slate-500">{label}</p>

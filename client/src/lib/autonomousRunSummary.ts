@@ -77,7 +77,7 @@ export function formatAutonomousRunSummary(result: AutonomousRunSummaryInput) {
     notes.push(`${plural(counts.evidenceGates, "evidence gate")} active`);
   }
   if (counts.expiredJobsSkipped > 0) {
-    notes.push(`${plural(counts.expiredJobsSkipped, "expired job posting")} excluded`);
+    notes.push(`${plural(counts.expiredJobsSkipped, "expired or stale job posting")} excluded`);
   }
   if (counts.staleJobActionsSkipped > 0) {
     notes.push(`${plural(counts.staleJobActionsSkipped, "job preparation")} blocked after a final listing freshness check`);

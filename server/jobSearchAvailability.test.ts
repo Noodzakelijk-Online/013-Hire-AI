@@ -30,4 +30,23 @@ describe("job search availability", () => {
 
     expect(results.some((job) => job.id === expiredJob.id)).toBe(false);
   });
+
+  it("does not return a no-expiry listing that its source has not re-observed", async () => {
+    const staleJob = {
+      ...sampleJobs[0],
+      id: 989902,
+      externalId: "stale-search-regression",
+      title: "Stale Search Regression Engineer",
+      company: "Stale Search Co",
+      expiryDate: null,
+      createdAt: new Date(Date.now() - 16 * 86400000),
+      updatedAt: new Date(Date.now() - 15 * 86400000),
+    };
+    sampleJobs.push(staleJob);
+    injectedJobIds.push(staleJob.id);
+
+    const results = await searchJobs({ title: "Stale Search Regression" });
+
+    expect(results.some((job) => job.id === staleJob.id)).toBe(false);
+  });
 });
