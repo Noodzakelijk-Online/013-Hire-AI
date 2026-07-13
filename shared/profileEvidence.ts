@@ -32,6 +32,17 @@ export type ProfileEvidenceControlSection =
   | "work-experience"
   | "skills";
 
+export const CONNECTOR_VERIFICATION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+export function isConnectorAuthorizationStale(
+  lastVerifiedAt: Date | string | null | undefined,
+  now = new Date()
+): boolean {
+  if (!lastVerifiedAt) return false;
+  const verifiedAt = new Date(lastVerifiedAt).getTime();
+  return !Number.isFinite(verifiedAt) || now.getTime() - verifiedAt > CONNECTOR_VERIFICATION_MAX_AGE_MS;
+}
+
 export interface ProfileEvidenceProvider {
   id: ProfileEvidenceProviderId;
   label: string;
@@ -40,6 +51,8 @@ export interface ProfileEvidenceProvider {
   connectionStatus?: ProfileConnectorAccountStatus;
   /** A connector exists but lacks the minimum consent needed for this evidence use. */
   authorizationIncomplete?: boolean;
+  /** The authorization was connected but has not been verified recently enough for external evidence use. */
+  authorizationStale?: boolean;
   accountLabel?: string | null;
   consentScopes?: string[];
   detail: string;
@@ -67,6 +80,7 @@ export interface ProfileEvidenceControlInput {
     status: ProfileConnectorAccountStatus;
     externalAccountLabel?: string | null;
     consentScopes?: string[] | string | null;
+    lastVerifiedAt?: Date | string | null;
   }> | null;
 }
 
@@ -135,6 +149,18 @@ function externalProviderState(
   const connector = connectorForProvider(accounts, providerId);
   const scopes = parseScopes(connector?.consentScopes);
 
+  if (connector?.status === "connected" && isConnectorAuthorizationStale(connector.lastVerifiedAt)) {
+    return {
+      status: "consent_required" as const,
+      connectionStatus: "needs_reauth" as const,
+      authorizationIncomplete: true,
+      authorizationStale: true,
+      accountLabel: connector.externalAccountLabel || null,
+      consentScopes: scopes,
+      detail: needsReauthDetail,
+    };
+  }
+
   if (connector?.status === "connected" && scopes.includes(requiredScope)) {
     return {
       status: "connected" as const,
@@ -198,6 +224,18 @@ function professionalProviderState(
 ) {
   const connector = connectorForProvider(accounts, providerId);
   const scopes = parseScopes(connector?.consentScopes);
+
+  if (!hasSavedUrl && connector?.status === "connected" && isConnectorAuthorizationStale(connector.lastVerifiedAt)) {
+    return {
+      status: "consent_required" as const,
+      connectionStatus: "needs_reauth" as const,
+      authorizationIncomplete: true,
+      authorizationStale: true,
+      accountLabel: connector.externalAccountLabel || null,
+      consentScopes: scopes,
+      detail: needsReauthDetail,
+    };
+  }
 
   if (hasSavedUrl || (connector?.status === "connected" && scopes.includes(requiredScope))) {
     return {

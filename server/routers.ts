@@ -9,6 +9,7 @@ import { users } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { normalizeSalary, normalizeLocation, normalizeJobType, normalizeExperienceLevel, extractSkills, extractBenefits, getDeduplicator } from "./jobNormalization";
 import { isJobCurrentForAutonomousProcessing } from "./autonomousOrchestrator";
+import { isConnectorAuthorizationStale } from "@shared/profileEvidence";
 import { getRecentJobs, searchJobs, getDiscoveryStats, getSubscriptionManager } from "./realTimeDiscovery";
 import { successFeesRouter } from "./routers/successFees";
 import { adminRouter } from "./routers/admin";
@@ -447,6 +448,7 @@ export const appRouter = router({
           status: account.status,
           externalAccountLabel: account.externalAccountLabel,
           consentScopes: account.consentScopes,
+          lastVerifiedAt: account.lastVerifiedAt,
         })),
       });
     }),
@@ -1603,10 +1605,14 @@ export const appRouter = router({
         } catch {
           scopes = [];
         }
-        if (account?.status !== "connected" || !scopes.includes(requiredScope)) {
+        if (
+          account?.status !== "connected" ||
+          !scopes.includes(requiredScope) ||
+          isConnectorAuthorizationStale(account.lastVerifiedAt)
+        ) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
-            message: `${input.provider === "gmail" ? "Gmail" : "Outlook"} must be connected with recruiting-message read consent before inbox responses can be ingested.`,
+            message: `${input.provider === "gmail" ? "Gmail" : "Outlook"} must be currently verified with recruiting-message read consent before inbox responses can be ingested.`,
           });
         }
 

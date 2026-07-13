@@ -140,4 +140,42 @@ describe("connector account tRPC procedures", () => {
       event.action === "connector_connection_requested"
     )).toBe(false);
   });
+
+  it("requires renewed connector verification before stale inbox evidence is ingested", async () => {
+    const userId = 99654;
+    const application = await createApplication({
+      userId,
+      jobId: 1,
+      status: "applied",
+      notes: "Application awaiting an inbox response from an old connection.",
+    });
+    await upsertUserConnectorAccount({
+      userId,
+      provider: "gmail",
+      status: "connected",
+      consentScopes: JSON.stringify(["email.metadata.read", "email.messages.read_recruiting"]),
+      externalAccountLabel: "candidate@example.com",
+      lastVerifiedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000),
+    });
+
+    const caller = appRouter.createCaller(createContext(userId));
+    await expect(caller.applications.ingestInboxResponse({
+      applicationId: Number(application.insertId),
+      provider: "gmail",
+      messageId: "gmail-stale-99654",
+      responseType: "interview_invite",
+      summary: "Recruiter invited the candidate to an interview through a stale connection.",
+    })).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: "Gmail must be currently verified with recruiting-message read consent before inbox responses can be ingested.",
+    });
+
+    const summary = await caller.profile.getEvidenceReadiness();
+    expect(summary.providers.find((provider) => provider.id === "gmail")).toMatchObject({
+      status: "consent_required",
+      connectionStatus: "needs_reauth",
+      authorizationStale: true,
+    });
+    expect(await getEmployerResponses(Number(application.insertId), userId)).toHaveLength(0);
+  });
 });

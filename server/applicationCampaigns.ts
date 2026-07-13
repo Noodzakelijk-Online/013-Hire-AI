@@ -515,6 +515,7 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
       status: account.status,
       externalAccountLabel: account.externalAccountLabel,
       consentScopes: account.consentScopes,
+      lastVerifiedAt: account.lastVerifiedAt,
     })),
   });
   const preferences = parseAutonomousPreferences(profile?.preferences);
