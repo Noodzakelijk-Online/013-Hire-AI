@@ -115,6 +115,9 @@ export default function Applications() {
   const [followUpSourceResponseId, setFollowUpSourceResponseId] = useState<number | null>(null);
   const [confirmingFollowUpSentId, setConfirmingFollowUpSentId] = useState<number | null>(null);
   const [followUpDeliveryConfirmation, setFollowUpDeliveryConfirmation] = useState("");
+  const [followUpMailProvider, setFollowUpMailProvider] = useState<"gmail" | "outlook">("gmail");
+  const [followUpMailRecipient, setFollowUpMailRecipient] = useState("");
+  const [pendingFollowUpSendApplicationId, setPendingFollowUpSendApplicationId] = useState<number | null>(null);
   const [pendingEmployerReplyApplicationId, setPendingEmployerReplyApplicationId] = useState<number | null>(null);
   const [confirmingApplication, setConfirmingApplication] = useState<any>(null);
   const [submissionSource, setSubmissionSource] = useState<SubmissionEvidenceSource>("employer_portal");
@@ -277,6 +280,19 @@ export default function Applications() {
       refetchOperatingLedger();
     },
     onError: (error) => toast.error(error.message || "Failed to update follow-up"),
+  });
+  const sendFollowUpMutation = trpc.applications.sendFollowUp.useMutation({
+    onSuccess: (result) => {
+      toast.success(result.existing ? "Follow-up was already sent" : `Follow-up sent through ${result.provider === "gmail" ? "Gmail" : "Outlook"}`);
+      setConfirmingFollowUpSentId(null);
+      setFollowUpDeliveryConfirmation("");
+      setFollowUpMailRecipient("");
+      refetchFollowUps();
+      refetchApprovals();
+      refetch();
+      refetchOperatingLedger();
+    },
+    onError: (error) => toast.error(error.message || "Unable to send follow-up"),
   });
   const markFollowUpResponseMutation = trpc.applications.markFollowUpResponse.useMutation({
     onSuccess: () => {
@@ -749,6 +765,8 @@ export default function Applications() {
     setSelectedApplication(application);
     if (deepLink.action === "record-interview-outcome" && deepLink.interviewId) {
       setPendingOutcomeInterviewId(deepLink.interviewId);
+    } else if (deepLink.action === "send-follow-up") {
+      setPendingFollowUpSendApplicationId(application.id);
     } else if (deepLink.action === "follow-up" && canGenerateFollowUp(application.status)) {
       generateFollowUpMutation.mutate({
         applicationId: application.id,
@@ -758,6 +776,31 @@ export default function Applications() {
       setPendingEmployerReplyApplicationId(application.id);
     }
   }, [applications, handledDeepLink, location]);
+
+  useEffect(() => {
+    if (
+      pendingFollowUpSendApplicationId === null ||
+      selectedApplication?.id !== pendingFollowUpSendApplicationId ||
+      !followUps
+    ) {
+      return;
+    }
+
+    const followUp = followUps.find((item: any) => !item.sentDate);
+    const approval = followUp
+      ? approvals?.find((item: any) => item.entityType === "follow_up" && item.entityId === followUp.id && item.approvalType === "follow_up_send")
+      : null;
+
+    setPendingFollowUpSendApplicationId(null);
+    if (!followUp || approval?.status !== "approved") {
+      toast.info("An approved follow-up draft is required before mailbox delivery can start.");
+      return;
+    }
+
+    setFollowUpDeliveryConfirmation("");
+    setFollowUpMailRecipient("");
+    setConfirmingFollowUpSentId(followUp.id);
+  }, [approvals, followUps, pendingFollowUpSendApplicationId, selectedApplication?.id]);
 
   useEffect(() => {
     if (pendingOutcomeInterviewId === null || !selectedApplication || !interviews) {
@@ -1912,6 +1955,19 @@ export default function Applications() {
                                     >
                                       {followUp.responseReceived ? "Response" : followUp.sentDate ? "Sent" : "Draft"}
                                     </Badge>
+                                    {followUp.deliveryState && followUp.deliveryState !== "draft" && (
+                                      <Badge
+                                        data-testid="follow-up-delivery-state"
+                                        variant="outline"
+                                        className={followUp.deliveryState === "sent"
+                                          ? "border-emerald-500/30 text-emerald-300"
+                                          : followUp.deliveryState === "failed" || followUp.deliveryState === "unknown"
+                                            ? "border-red-500/30 text-red-300"
+                                            : "border-amber-500/30 text-amber-300"}
+                                      >
+                                        {followUp.deliveryProvider ? `${followUp.deliveryProvider} ` : ""}{followUp.deliveryState}
+                                      </Badge>
+                                    )}
                                     {!followUp.sentDate && (
                                       <Badge
                                         variant="outline"
@@ -1986,6 +2042,12 @@ export default function Applications() {
                                   <div className="rounded border border-emerald-500/20 bg-emerald-500/5 p-2 text-xs text-emerald-100">
                                     <span className="font-medium">Delivery confirmation: </span>
                                     {followUp.deliveryConfirmation}
+                                  </div>
+                                )}
+                                {followUp.deliveryFailureMessage && (
+                                  <div className="rounded border border-red-500/20 bg-red-500/5 p-2 text-xs text-red-100">
+                                    <span className="font-medium">Delivery needs review: </span>
+                                    {followUp.deliveryFailureMessage}
                                   </div>
                                 )}
                               </div>
@@ -2639,21 +2701,22 @@ export default function Applications() {
         <Dialog
           open={confirmingFollowUpSentId !== null}
           onOpenChange={(open) => {
-            if (!open && !markFollowUpSentMutation.isPending) {
+            if (!open && !markFollowUpSentMutation.isPending && !sendFollowUpMutation.isPending) {
               setConfirmingFollowUpSentId(null);
               setFollowUpDeliveryConfirmation("");
+              setFollowUpMailRecipient("");
             }
           }}
         >
           <DialogContent className="bg-slate-900 border-slate-700">
             <DialogHeader>
-              <DialogTitle className="text-white">Confirm External Follow-up Delivery</DialogTitle>
+              <DialogTitle className="text-white">Complete Approved Follow-up Delivery</DialogTitle>
               <DialogDescription className="text-slate-400">
-                Confirm that you sent the approved draft outside Hire.AI. This creates a delivery attestation in the application ledger.
+                Send the approved draft through an authorized mailbox below, or record a separately completed manual delivery in the application ledger.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-300">Delivery confirmation</label>
+              <label className="text-sm font-medium text-slate-300">Manual delivery confirmation</label>
               <Textarea
                 value={followUpDeliveryConfirmation}
                 onChange={(event) => setFollowUpDeliveryConfirmation(event.target.value)}
@@ -2662,13 +2725,61 @@ export default function Applications() {
                 placeholder="For example: Sent via my email account to the recruiter on 13 July."
               />
             </div>
+            <div className="space-y-3 rounded-md border border-slate-700 bg-slate-950/40 p-3">
+              <div>
+                <p className="text-sm font-medium text-slate-200">Send through a connected mailbox</p>
+                <p className="mt-1 text-xs leading-5 text-slate-400">Uses the approved draft exactly as shown. A freshly authorized mailbox with send consent is required.</p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-[150px_1fr]">
+                <Select value={followUpMailProvider} onValueChange={(value) => setFollowUpMailProvider(value as "gmail" | "outlook")}>
+                  <SelectTrigger className="border-slate-700 bg-slate-800 text-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="gmail">Gmail</SelectItem>
+                    <SelectItem value="outlook">Outlook</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="email"
+                  value={followUpMailRecipient}
+                  onChange={(event) => setFollowUpMailRecipient(event.target.value)}
+                  className="border-slate-700 bg-slate-800 text-white"
+                  placeholder="recruiter@company.com"
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="border-cyan-500/40 text-cyan-200 hover:bg-cyan-500/10"
+                disabled={
+                  confirmingFollowUpSentId === null ||
+                  followUpMailRecipient.trim().length < 3 ||
+                  sendFollowUpMutation.isPending ||
+                  markFollowUpSentMutation.isPending
+                }
+                onClick={() => {
+                  if (confirmingFollowUpSentId === null) return;
+                  sendFollowUpMutation.mutate({
+                    followUpId: confirmingFollowUpSentId,
+                    provider: followUpMailProvider,
+                    recipient: followUpMailRecipient,
+                  });
+                }}
+              >
+                {sendFollowUpMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                <Mail className="mr-2 h-4 w-4" />
+                Send Approved Draft
+              </Button>
+            </div>
             <div className="flex justify-end gap-2">
               <Button
                 variant="outline"
-                disabled={markFollowUpSentMutation.isPending}
+                disabled={markFollowUpSentMutation.isPending || sendFollowUpMutation.isPending}
                 onClick={() => {
                   setConfirmingFollowUpSentId(null);
                   setFollowUpDeliveryConfirmation("");
+                  setFollowUpMailRecipient("");
                 }}
               >
                 Cancel
@@ -2677,7 +2788,8 @@ export default function Applications() {
                 disabled={
                   confirmingFollowUpSentId === null ||
                   followUpDeliveryConfirmation.trim().length < 8 ||
-                  markFollowUpSentMutation.isPending
+                  markFollowUpSentMutation.isPending ||
+                  sendFollowUpMutation.isPending
                 }
                 onClick={() => {
                   if (confirmingFollowUpSentId === null) return;
@@ -2688,7 +2800,7 @@ export default function Applications() {
                 }}
               >
                 {markFollowUpSentMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                Confirm Sent
+                Record Manual Send
               </Button>
             </div>
           </DialogContent>

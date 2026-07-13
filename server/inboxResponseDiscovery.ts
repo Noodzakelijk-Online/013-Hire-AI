@@ -117,7 +117,11 @@ async function getInboxAccess(
     userId,
     provider,
     encryptedAccessToken: dependencies.encryptConnectorToken(refreshed.accessToken),
-    encryptedRefreshToken: refreshed.refreshToken ? dependencies.encryptConnectorToken(refreshed.refreshToken) : null,
+    // Providers often omit the unchanged refresh token during renewal. Retain
+    // the encrypted grant so the next access-token refresh remains possible.
+    encryptedRefreshToken: refreshed.refreshToken
+      ? dependencies.encryptConnectorToken(refreshed.refreshToken)
+      : authorization.encryptedRefreshToken,
     accessTokenExpiresAt: refreshed.expiresAt,
     tokenType: refreshed.tokenType,
     grantedScopes: JSON.stringify(refreshed.grantedScopes),

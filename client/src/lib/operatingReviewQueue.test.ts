@@ -134,11 +134,11 @@ describe("operating review queue helpers", () => {
       applicationId: 7,
       riskLevel: "medium",
     })).toMatchObject({
-      label: "Approved send handoff",
-      cta: "Open send handoff",
+      label: "Approved delivery",
+      cta: "Open delivery",
       route: "/applications?applicationId=7&action=send-follow-up",
       approvalGated: false,
-      externalAction: "manual_handoff",
+      externalAction: "approved_delivery",
     });
   });
 
@@ -292,7 +292,7 @@ describe("operating review queue helpers", () => {
     expect(summary).toMatchObject({
       status: "handoff",
       section: "send-handoffs",
-      externalAction: "manual_handoff",
+      externalAction: "approved_delivery",
       approvalGated: false,
     });
   });

@@ -185,7 +185,7 @@ describe("inbox response discovery", () => {
     expect(mocks.upsertConnectorAuthorization).toHaveBeenCalledWith(expect.objectContaining({
       provider: "gmail",
       encryptedAccessToken: "renewed-encrypted-access",
-      encryptedRefreshToken: null,
+      encryptedRefreshToken: "encrypted-refresh",
     }));
     expect(fetcher).toHaveBeenCalledWith(
       expect.stringContaining("gmail.googleapis.com"),

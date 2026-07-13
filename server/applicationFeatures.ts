@@ -2341,6 +2341,13 @@ export async function createFollowUp(input: FollowUpInput, userId: number) {
       message,
       sentDate: null,
       deliveryConfirmation: null,
+      deliveryProvider: null,
+      deliveryState: "draft" as const,
+      deliveryRecipient: null,
+      deliverySubject: null,
+      deliveryMessageId: null,
+      deliveryAttemptKey: null,
+      deliveryFailureMessage: null,
       responseReceived: 0,
       createdAt: new Date(),
     };
@@ -2956,6 +2963,8 @@ export async function markFollowUpSent(followUpId: number, userId: number, deliv
     const sentAt = new Date();
     followUp.sentDate = sentAt;
     followUp.deliveryConfirmation = normalizedConfirmation;
+    followUp.deliveryState = "sent";
+    followUp.deliveryFailureMessage = null;
     await createAuditEvent({
       userId,
       entityType: "application",
@@ -3013,7 +3022,12 @@ export async function markFollowUpSent(followUpId: number, userId: number, deliv
     const sentAt = new Date();
     await tx
       .update(followUps)
-      .set({ sentDate: sentAt, deliveryConfirmation: normalizedConfirmation })
+      .set({
+        sentDate: sentAt,
+        deliveryState: "sent",
+        deliveryConfirmation: normalizedConfirmation,
+        deliveryFailureMessage: null,
+      })
       .where(eq(followUps.id, followUpId));
     await tx
       .update(applications)

@@ -88,9 +88,9 @@ const socialProfileText = z.string().trim().min(1).max(30_000);
 function defaultConnectorScopes(provider: z.infer<typeof connectorProvider>) {
   switch (provider) {
     case "gmail":
-      return ["email.metadata.read", "email.messages.read_recruiting"];
+      return ["email.metadata.read", "email.messages.read_recruiting", "email.messages.send"];
     case "outlook":
-      return ["mail.metadata.read", "mail.messages.read_recruiting"];
+      return ["mail.metadata.read", "mail.messages.read_recruiting", "mail.messages.send"];
     case "google_drive":
       return ["files.metadata.read", "files.content.read_resume_candidates"];
     case "dropbox":
@@ -2211,6 +2211,23 @@ export const appRouter = router({
             code: message === "Follow-up not found." ? "NOT_FOUND" : "CONFLICT",
             message,
           });
+        }
+      }),
+
+    sendFollowUp: protectedProcedure
+      .input(z.object({
+        followUpId: z.number().int().positive(),
+        provider: z.enum(["gmail", "outlook"]),
+        recipient: z.string().trim().min(3).max(320),
+      }).strict())
+      .mutation(async ({ ctx, input }) => {
+        assertJobSearchTermsAccepted(ctx.user);
+        const { sendApprovedFollowUp } = await import("./followUpMailDelivery");
+        try {
+          return await sendApprovedFollowUp({ ...input, userId: ctx.user.id });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unable to send follow-up.";
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message });
         }
       }),
 

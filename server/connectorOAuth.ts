@@ -75,7 +75,10 @@ const providerDefinitions: Record<OAuthConnectorProvider, OAuthProviderDefinitio
     tokenEndpoint: "https://oauth2.googleapis.com/token",
     clientIdEnv: "GOOGLE_OAUTH_CLIENT_ID",
     clientSecretEnv: "GOOGLE_OAUTH_CLIENT_SECRET",
-    scopes: ["https://www.googleapis.com/auth/gmail.metadata"],
+    scopes: [
+      "https://www.googleapis.com/auth/gmail.metadata",
+      "https://www.googleapis.com/auth/gmail.send",
+    ],
     authorizationParams: { access_type: "offline", prompt: "consent" },
   },
   google_drive: {
@@ -99,7 +102,7 @@ const providerDefinitions: Record<OAuthConnectorProvider, OAuthProviderDefinitio
     tokenEndpoint: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
     clientIdEnv: "MICROSOFT_OAUTH_CLIENT_ID",
     clientSecretEnv: "MICROSOFT_OAUTH_CLIENT_SECRET",
-    scopes: ["offline_access", "Mail.Read"],
+    scopes: ["offline_access", "Mail.Read", "Mail.Send"],
   },
   linkedin: {
     authorizationEndpoint: "https://www.linkedin.com/oauth/v2/authorization",

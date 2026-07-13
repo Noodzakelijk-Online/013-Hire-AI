@@ -284,9 +284,9 @@ export default function ReviewQueue() {
                       Approval gated
                     </Badge>
                   )}
-                  {queueControl.externalAction === "manual_handoff" && (
+                  {queueControl.externalAction === "approved_delivery" && (
                     <Badge variant="outline" className="border-blue-500/40 text-blue-300">
-                      Manual handoff
+                      Delivery ready
                     </Badge>
                   )}
                   {queueControl.externalAction === "blocked_until_evidence" && (
@@ -450,8 +450,8 @@ export default function ReviewQueue() {
                             </Badge>
                           </div>
                           <p className="text-sm text-muted-foreground">
-                            This draft has been approved. Send it through the intended external channel,
-                            then mark it sent in the application ledger so Hire.AI can track responses.
+                            This draft is approved. Deliver it through a connected Gmail or Outlook mailbox,
+                            or record a separately completed manual delivery in the application ledger.
                           </p>
                           {item.messagePreview && (
                             <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
@@ -477,7 +477,7 @@ export default function ReviewQueue() {
                               ) : (
                                 <CheckCircle className="mr-2 h-4 w-4" />
                               )}
-                              Mark Sent
+                              Record Manual Send
                             </Button>
                             <Button
                               variant="outline"
@@ -485,7 +485,7 @@ export default function ReviewQueue() {
                               onClick={() => setLocation(getApplicationDeepLink(item.applicationId, "send-follow-up"))}
                             >
                               <Mail className="mr-2 h-4 w-4" />
-                              Open Application
+                              Send via Connected Mailbox
                             </Button>
                           </div>
                         </CardContent>
@@ -924,7 +924,7 @@ export default function ReviewQueue() {
                               onClick={() => setLocation(getApplicationDeepLink(candidate.applicationId, "view"))}
                             >
                               <Briefcase className="mr-2 h-4 w-4" />
-                              Open Application
+                              Send via Connected Mailbox
                             </Button>
                           </div>
                         </CardContent>
@@ -1256,7 +1256,7 @@ export default function ReviewQueue() {
           <DialogHeader>
             <DialogTitle className="text-white">Confirm External Delivery</DialogTitle>
             <DialogDescription className="text-slate-400">
-              Confirm that you sent this {sendHandoff?.label || "follow-up"} through the external channel. Hire.AI does not send it for you.
+              Record a manual delivery for this {sendHandoff?.label || "follow-up"}. To deliver through a connected Gmail or Outlook mailbox, use Send via Connected Mailbox from the queue card.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -1296,7 +1296,7 @@ export default function ReviewQueue() {
               }}
             >
               {markFollowUpSent.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-2 h-4 w-4" />}
-              Confirm Sent
+              Record Manual Send
             </Button>
           </div>
         </DialogContent>
@@ -1323,7 +1323,9 @@ function QueueActionStrip({
   className?: string;
   showAction?: boolean;
 }) {
-  const externalLabel = summary.externalAction === "manual_handoff"
+  const externalLabel = summary.externalAction === "approved_delivery"
+    ? "Approved delivery"
+    : summary.externalAction === "manual_handoff"
     ? "Manual handoff"
     : summary.externalAction === "blocked_until_approved"
       ? "Blocked until approved"

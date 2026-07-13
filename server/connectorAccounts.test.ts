@@ -169,23 +169,24 @@ describe("connector account tRPC procedures", () => {
     expect(disconnectResult.account.status).toBe("disabled");
   });
 
-  it("rejects connector scopes outside Hire.AI's least-privilege inventory", async () => {
+  it("allows the explicit follow-up send scope but rejects scopes outside Hire.AI's inventory", async () => {
     const userId = 99653;
     const caller = appRouter.createCaller(createContext(userId));
 
-    await expect(caller.connectors.requestConnection({
+    const result = await caller.connectors.requestConnection({
       provider: "gmail",
       consentScopes: [
         "email.metadata.read",
         "email.messages.read_recruiting",
         "email.messages.send",
       ],
-    })).rejects.toThrow(/not permitted/i);
+    });
+    expect(result.account.consentScopes).toContain("email.messages.send");
 
-    expect(await listUserConnectorAccounts(userId)).toHaveLength(0);
-    expect((await getAuditEventsForUser(userId, 10)).some((event) =>
-      event.action === "connector_connection_requested"
-    )).toBe(false);
+    await expect(caller.connectors.requestConnection({
+      provider: "gmail",
+      consentScopes: ["mail.send.everything"],
+    })).rejects.toThrow(/not permitted/i);
   });
 
   it("fails closed when a deployment has not provisioned OAuth credentials", async () => {

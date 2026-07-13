@@ -25,7 +25,7 @@ export interface ReviewQueueActionSummary {
   route: string;
   risk: ReviewQueueActionRisk;
   approvalGated: boolean;
-  externalAction: "none" | "manual_handoff" | "blocked_until_approved" | "blocked_until_evidence";
+  externalAction: "none" | "manual_handoff" | "approved_delivery" | "blocked_until_approved" | "blocked_until_evidence";
 }
 
 export type ReviewQueueControlStatus =
@@ -167,13 +167,13 @@ export function getReviewQueueActionSummary(
     }
     case "send_handoff":
       return {
-        label: "Approved send handoff",
-        detail: "The draft is approved, but Hire.AI still needs a manual send confirmation before response tracking continues.",
-        cta: "Open send handoff",
+        label: "Approved delivery",
+        detail: "The draft is approved. Deliver through a connected Gmail or Outlook mailbox, or record a separately completed manual delivery before response tracking continues.",
+        cta: "Open delivery",
         route: applicationRoute(typeof item.applicationId === "number" ? item.applicationId : null, "send-follow-up"),
         risk: coerceRisk(typeof item.riskLevel === "string" ? item.riskLevel : "medium"),
         approvalGated: false,
-        externalAction: "manual_handoff",
+        externalAction: "approved_delivery",
       };
     case "evidence_gate":
       return {
@@ -474,15 +474,15 @@ export function getReviewQueueControlSummary(
   if (counts.approvedFollowUpsReadyToSend > 0) {
     return controlSummary({
       status: "handoff",
-      label: "Send handoff",
-      headline: `${counts.approvedFollowUpsReadyToSend} approved follow-up draft${counts.approvedFollowUpsReadyToSend === 1 ? "" : "s"} need send confirmation.`,
-      detail: "Send through the intended external channel, then record the handoff so response tracking continues from ledger state.",
-      cta: "Open send handoffs",
+      label: "Approved delivery",
+      headline: `${counts.approvedFollowUpsReadyToSend} approved follow-up draft${counts.approvedFollowUpsReadyToSend === 1 ? "" : "s"} need delivery.`,
+      detail: "Deliver through a connected Gmail or Outlook mailbox, or record a separately completed manual delivery so response tracking continues from ledger state.",
+      cta: "Open delivery",
       section: "send-handoffs",
       count: counts.approvedFollowUpsReadyToSend,
       risk: "medium",
       approvalGated: false,
-      externalAction: "manual_handoff",
+      externalAction: "approved_delivery",
     });
   }
 

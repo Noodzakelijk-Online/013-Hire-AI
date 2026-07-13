@@ -558,9 +558,19 @@ export const followUps = mysqlTable("follow_ups", {
   message: text("message"),
   sentDate: timestamp("sent_date"),
   deliveryConfirmation: text("delivery_confirmation"),
+  deliveryProvider: mysqlEnum("delivery_provider", ["gmail", "outlook"]),
+  deliveryState: mysqlEnum("delivery_state", ["draft", "sending", "sent", "failed", "unknown"]).default("draft").notNull(),
+  deliveryRecipient: varchar("delivery_recipient", { length: 320 }),
+  deliverySubject: varchar("delivery_subject", { length: 500 }),
+  deliveryMessageId: varchar("delivery_message_id", { length: 320 }),
+  deliveryAttemptKey: varchar("delivery_attempt_key", { length: 64 }),
+  deliveryFailureMessage: varchar("delivery_failure_message", { length: 500 }),
   responseReceived: int("response_received").default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  uniqueIndex("follow_ups_delivery_attempt_key_unique").on(table.deliveryAttemptKey),
+  index("follow_ups_delivery_state_idx").on(table.deliveryState),
+]);
 
 /**
  * Inbox Response Candidates

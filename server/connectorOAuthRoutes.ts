@@ -21,9 +21,9 @@ function getQueryParam(req: Request, key: string): string | undefined {
 function connectorConsentScopes(provider: "gmail" | "google_drive" | "dropbox" | "outlook" | "linkedin" | "github") {
   switch (provider) {
     case "gmail":
-      return ["email.metadata.read", "email.messages.read_recruiting"];
+      return ["email.metadata.read", "email.messages.read_recruiting", "email.messages.send"];
     case "outlook":
-      return ["mail.metadata.read", "mail.messages.read_recruiting"];
+      return ["mail.metadata.read", "mail.messages.read_recruiting", "mail.messages.send"];
     case "google_drive":
     case "dropbox":
       return ["files.metadata.read", "files.content.read_resume_candidates"];
@@ -32,6 +32,12 @@ function connectorConsentScopes(provider: "gmail" | "google_drive" | "dropbox" |
     case "github":
       return ["profile.basic.read", "repositories.metadata.read"];
   }
+}
+
+function hasRequiredOutboundScope(provider: "gmail" | "google_drive" | "dropbox" | "outlook" | "linkedin" | "github", grantedScopes: string[]) {
+  if (provider === "gmail") return grantedScopes.includes("https://www.googleapis.com/auth/gmail.send");
+  if (provider === "outlook") return grantedScopes.includes("Mail.Send");
+  return true;
 }
 
 function completeRedirect(provider: string, status: "connected" | "denied" | "failed") {
@@ -91,6 +97,9 @@ export function registerConnectorOAuthRoutes(app: Express) {
 
     try {
       const token = await exchangeConnectorAuthorizationCode(config, code);
+      if (!hasRequiredOutboundScope(provider, token.grantedScopes)) {
+        throw new Error("Required mailbox send consent was not granted.");
+      }
       await upsertConnectorAuthorization({
         userId: verifiedState.userId,
         provider,
