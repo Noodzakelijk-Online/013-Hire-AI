@@ -24,4 +24,16 @@ describe("Drizzle migration journal", () => {
     );
     expect(journal.entries.map((entry) => entry.tag)).toEqual(migrationTags);
   });
+
+  it("keeps migration generation separate from deployment", () => {
+    const packageJson = JSON.parse(
+      readFileSync(resolve(process.cwd(), "package.json"), "utf8")
+    ) as { scripts?: Record<string, string> };
+
+    expect(packageJson.scripts).toMatchObject({
+      "db:generate": "drizzle-kit generate",
+      "db:migrate": "drizzle-kit migrate",
+      "db:push": "drizzle-kit migrate",
+    });
+  });
 });

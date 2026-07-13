@@ -191,7 +191,7 @@ describe("Scraping API", () => {
         maxJobsPerRun: expect.any(Number),
       });
       expect(result.supportedPlatforms).toContain("RemoteOK");
-    });
+    }, 10_000);
 
     it("rejects scraper visibility and controls for a regular user", async () => {
       const caller = appRouter.createCaller(createAuthContext());

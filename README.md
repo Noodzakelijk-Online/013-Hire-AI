@@ -223,8 +223,11 @@ cd 013-Hire-AI
 # Install dependencies
 pnpm install
 
-# Push the database schema
-pnpm db:push
+# Apply committed database migrations
+pnpm db:migrate
+
+# Generate a new migration after an intentional schema change
+pnpm db:generate
 
 # Start the development server
 pnpm dev
@@ -265,7 +268,9 @@ All secrets are injected at runtime via the platform. Do **not** commit `.env` f
 | `pnpm build` | Build for production |
 | `pnpm start` | Start production server |
 | `pnpm test` | Run all Vitest tests |
-| `pnpm db:push` | Generate and apply database migrations |
+| `pnpm db:generate` | Generate a migration after an intentional schema change |
+| `pnpm db:migrate` | Apply committed database migrations |
+| `pnpm db:push` | Backward-compatible alias for applying committed migrations |
 | `pnpm check` | TypeScript type checking |
 | `pnpm format` | Format code with Prettier |
 
