@@ -1,4 +1,5 @@
 import { BaseScraper, type ScrapeResult } from "./baseScraper";
+import { normalizeSalary } from "../jobNormalization";
 
 /**
  * Remotive scraper
@@ -52,6 +53,7 @@ export class RemotiveScraper extends BaseScraper {
 
       for (const rawJob of rawJobs) {
         try {
+          const salary = normalizeSalary(rawJob.salary);
           const normalizedJob = this.normalizeJob({
             title: rawJob.title,
             company: rawJob.company_name,
@@ -62,8 +64,9 @@ export class RemotiveScraper extends BaseScraper {
             applicationUrl: rawJob.url,
             externalId: rawJob.id?.toString(),
             postedDate: rawJob.publication_date ? new Date(rawJob.publication_date) : undefined,
-            salaryMin: this.extractSalary(rawJob.salary, "min"),
-            salaryMax: this.extractSalary(rawJob.salary, "max"),
+            salaryMin: salary.normalizedYearly.min ?? undefined,
+            salaryMax: salary.normalizedYearly.max ?? undefined,
+            salaryCurrency: salary.currency,
           });
 
           jobs.push(normalizedJob);
@@ -90,27 +93,5 @@ export class RemotiveScraper extends BaseScraper {
       errors,
       scrapedAt: new Date(),
     };
-  }
-
-  private extractSalary(salaryStr: string | undefined, type: "min" | "max"): number | undefined {
-    if (!salaryStr) return undefined;
-
-    // Parse salary strings like "$100,000 - $150,000" or "$120k"
-    const numbers = salaryStr.match(/[\d,]+k?/gi);
-    if (!numbers || numbers.length === 0) return undefined;
-
-    const parseNum = (str: string): number => {
-      const cleaned = str.replace(/,/g, "").toLowerCase();
-      if (cleaned.endsWith("k")) {
-        return parseFloat(cleaned.slice(0, -1)) * 1000;
-      }
-      return parseFloat(cleaned);
-    };
-
-    if (type === "min") {
-      return parseNum(numbers[0]);
-    } else {
-      return numbers.length > 1 ? parseNum(numbers[1]) : parseNum(numbers[0]);
-    }
   }
 }
