@@ -30,3 +30,15 @@ export function shouldShowProfileOnboarding(input: {
     signals?.hasEducation
   );
 }
+
+/**
+ * The dashboard welcome state must not fall back to legacy profile fields.
+ * It is a first-application state, backed by the same readiness evidence as
+ * the onboarding prompt.
+ */
+export function shouldShowNewUserDashboard(input: {
+  totalApplications: number;
+  onboarding: Parameters<typeof shouldShowProfileOnboarding>[0];
+}): boolean {
+  return input.totalApplications === 0 && shouldShowProfileOnboarding(input.onboarding);
+}

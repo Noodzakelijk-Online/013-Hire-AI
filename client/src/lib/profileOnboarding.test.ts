@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shouldShowProfileOnboarding } from "./profileOnboarding";
+import { shouldShowNewUserDashboard, shouldShowProfileOnboarding } from "./profileOnboarding";
 
 describe("profile onboarding", () => {
   it("does not prompt a candidate with structured work history or skills", () => {
@@ -25,6 +25,27 @@ describe("profile onboarding", () => {
       isAuthenticated: true,
       tosAccepted: false,
       readiness: noEvidence,
+    })).toBe(false);
+  });
+
+  it("shows the first-time dashboard state only when readiness confirms there is no candidate evidence", () => {
+    const onboarding = {
+      loading: false,
+      isAuthenticated: true,
+      tosAccepted: true,
+    };
+
+    expect(shouldShowNewUserDashboard({
+      totalApplications: 0,
+      onboarding: { ...onboarding, readiness: { signals: { hasSkills: true } } },
+    })).toBe(false);
+    expect(shouldShowNewUserDashboard({
+      totalApplications: 0,
+      onboarding: { ...onboarding, readiness: { signals: {} } },
+    })).toBe(true);
+    expect(shouldShowNewUserDashboard({
+      totalApplications: 1,
+      onboarding: { ...onboarding, readiness: { signals: {} } },
     })).toBe(false);
   });
 });

@@ -16,7 +16,7 @@ import { getCommandCenterSummary } from "@/lib/commandCenterSummary";
 import { formatDashboardActivityTarget } from "@/lib/dashboardActivity";
 import { getSuccessFeeComplianceAction, getSuccessFeeComplianceSummary } from "@/lib/successFeeCompliance";
 import { getApplicationPerformanceSummary } from "@/lib/applicationPerformance";
-import { shouldShowProfileOnboarding } from "@/lib/profileOnboarding";
+import { shouldShowNewUserDashboard, shouldShowProfileOnboarding } from "@/lib/profileOnboarding";
 import {
   formatApplicationDecision,
   formatApprovalType,
@@ -51,7 +51,6 @@ export default function Dashboard() {
 
   // Fetch real data from API
   const { data: applications, isLoading: appsLoading, refetch: refetchApplications } = trpc.applications.list.useQuery();
-  const { data: profile } = trpc.profile.get.useQuery();
   const { data: profileReadiness } = trpc.profile.getReadiness.useQuery(undefined, {
     enabled: isAuthenticated,
   });
@@ -207,7 +206,15 @@ export default function Dashboard() {
     return null;
   }
 
-  const isNewUser = totalApplications === 0 && !profile?.skills;
+  const isNewUser = shouldShowNewUserDashboard({
+    totalApplications,
+    onboarding: {
+      loading,
+      isAuthenticated,
+      tosAccepted: Boolean((user as any)?.tosAcceptedAt),
+      readiness: profileReadiness,
+    },
+  });
   const reviewQueueCount = getOperatingReviewQueueCounts(operatingLedger).total;
   const canReviewAdminItems = operatingLedger?.canReviewAdminItems === true;
   const successFeeCompliance = getSuccessFeeComplianceSummary(successFees, offerAttributionReviews);
