@@ -34,6 +34,9 @@ export interface NormalizedEmployerResponse {
   noteContent: string;
 }
 
+export const INTERVIEW_INVITE_SOURCE_REFERENCE_REQUIRED_MESSAGE =
+  "Interview invites require a stable source reference before Hire.AI can create an interview notification.";
+
 export function normalizeEmployerResponseSourceReference(value?: string | null): string | null {
   if (value == null) return null;
 
@@ -106,6 +109,9 @@ export function normalizeEmployerResponse(
   if (summary.length > 5000) {
     throw new Error("Employer response summary is too long.");
   }
+  if (input.responseType === "interview_invite" && !sourceReference) {
+    throw new Error(INTERVIEW_INVITE_SOURCE_REFERENCE_REQUIRED_MESSAGE);
+  }
 
   const receivedAt = input.receivedAt || now;
   if (receivedAt.getTime() > now.getTime() + 60_000) {
@@ -120,6 +126,9 @@ export function normalizeEmployerResponse(
   ];
   if (nextStatus) {
     lines.push(`Ledger status recommendation: ${nextStatus}.`);
+  }
+  if (sourceReference) {
+    lines.push(`Source reference: ${sourceReference}`);
   }
 
   return {

@@ -32,6 +32,7 @@ async function recordInterviewInvite(applicationId: number, userId: number) {
     applicationId,
     responseType: "interview_invite",
     source: "email",
+    sourceReference: `gmail-campaign-interview-${applicationId}`,
     summary: "Recruiter invited the candidate to a video interview.",
   }, userId);
 }
@@ -612,6 +613,7 @@ describe("application campaign operating ledger", () => {
       interviewId: firstRound.id,
       outcome: "next_round",
       source: "email",
+      sourceReference: `gmail-campaign-next-round-${firstRound.id}`,
       summary: "The recruiter invited the candidate to a technical interview next week.",
     }, userId);
 
@@ -695,6 +697,7 @@ describe("application campaign operating ledger", () => {
       interviewId: firstRound.id,
       outcome: "next_round",
       source: "email",
+      sourceReference: `gmail-campaign-next-round-${firstRound.id}`,
       summary: "Recruiter confirmed that the candidate will progress to a technical interview.",
     }, userId);
 

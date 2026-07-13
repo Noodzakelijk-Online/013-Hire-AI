@@ -27,6 +27,7 @@ async function recordInterviewInvite(applicationId: number, userId: number) {
     applicationId,
     responseType: "interview_invite",
     source: "email",
+    sourceReference: `gmail-memory-invite-${applicationId}`,
     summary: "Recruiter invited the candidate to a video interview.",
   }, userId);
 }
@@ -46,6 +47,7 @@ describe("response and interview memory fallback", () => {
       applicationId,
       responseType: "interview_invite",
       source: "email",
+      sourceReference: `gmail-memory-direct-${applicationId}`,
       summary: "Recruiter emailed asking for interview availability next week.",
       receivedAt: new Date(),
     }, userId);
@@ -145,6 +147,7 @@ describe("response and interview memory fallback", () => {
       applicationId,
       responseType: "interview_invite",
       source: "email",
+      sourceReference: `gmail-memory-followup-${applicationId}`,
       summary: "Recruiter replied with an interview invitation for next week.",
       receivedAt: new Date(),
     }, userId);

@@ -58,6 +58,7 @@ async function recordInterviewInvite(applicationId: number, userId: number) {
     applicationId,
     responseType: "interview_invite",
     source: "email",
+    sourceReference: `gmail-autonomous-interview-${applicationId}`,
     summary: "Recruiter invited the candidate to a video interview.",
   }, userId);
 }
@@ -612,6 +613,7 @@ describe("autonomous submission approval gates", () => {
       interviewId: firstRound.id,
       outcome: "next_round",
       source: "email",
+      sourceReference: `gmail-autonomous-next-round-${firstRound.id}`,
       summary: "Recruiter invited the candidate to a technical round after the first interview.",
     }, userId);
     await touchApplicationActivity(applicationId, userId, staleDate);

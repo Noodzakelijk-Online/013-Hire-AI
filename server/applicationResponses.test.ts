@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  INTERVIEW_INVITE_SOURCE_REFERENCE_REQUIRED_MESSAGE,
   normalizeEmployerResponse,
   normalizeEmployerResponseSourceReference,
   resolveEmployerResponseStatus,
@@ -20,6 +21,7 @@ describe("application employer response classification", () => {
       {
         responseType: "interview_invite",
         source: "email",
+        sourceReference: "gmail-interview-availability-701",
         summary: "Recruiter asked for interview availability next week.",
         receivedAt,
       },
@@ -30,6 +32,7 @@ describe("application employer response classification", () => {
     expect(response.nextStatus).toBe("interview");
     expect(response.noteContent).toContain("interview invite via email");
     expect(response.noteContent).toContain("Recruiter asked");
+    expect(response.noteContent).toContain("gmail-interview-availability-701");
   });
 
   it("rejects vague responses before they enter the ledger", () => {
@@ -46,6 +49,17 @@ describe("application employer response classification", () => {
         "pending"
       )
     ).toThrow(/submission/i);
+
+    expect(() =>
+      normalizeEmployerResponse(
+        {
+          responseType: "interview_invite",
+          source: "email",
+          summary: "Recruiter invited the candidate to a technical interview.",
+        },
+        "applied"
+      )
+    ).toThrow(INTERVIEW_INVITE_SOURCE_REFERENCE_REQUIRED_MESSAGE);
   });
 
   it("normalizes stable source references without storing message content", () => {

@@ -141,6 +141,7 @@ export default function Applications() {
   const [pendingOutcomeInterviewId, setPendingOutcomeInterviewId] = useState<number | null>(null);
   const [interviewOutcome, setInterviewOutcome] = useState<InterviewOutcomeType>("next_round");
   const [interviewOutcomeSource, setInterviewOutcomeSource] = useState<EmployerResponseSource>("email");
+  const [interviewOutcomeSourceReference, setInterviewOutcomeSourceReference] = useState("");
   const [interviewOutcomeSummary, setInterviewOutcomeSummary] = useState("");
   const [reportHireOpen, setReportHireOpen] = useState(false);
   const [reportHireApplicationId, setReportHireApplicationId] = useState<number | undefined>(undefined);
@@ -368,6 +369,7 @@ export default function Applications() {
       setOutcomeInterview(null);
       setInterviewOutcome("next_round");
       setInterviewOutcomeSource("email");
+      setInterviewOutcomeSourceReference("");
       setInterviewOutcomeSummary("");
       refetchInterviews();
       refetchLedgerArtifacts();
@@ -2277,12 +2279,14 @@ export default function Applications() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-300">Message or portal reference</label>
+                <label className="text-sm font-medium text-slate-300">
+                  Message or portal reference{employerResponseType === "interview_invite" ? " (required for interview alerts)" : ""}
+                </label>
                 <Input
                   value={employerResponseSourceReference}
                   onChange={(event) => setEmployerResponseSourceReference(event.target.value)}
                   className="bg-slate-800 border-slate-700 text-white"
-                  placeholder="Optional: message or portal ID"
+                  placeholder={employerResponseType === "interview_invite" ? "Required: message, portal, phone, or LinkedIn reference" : "Optional: message or portal ID"}
                 />
               </div>
               <div className="space-y-2 md:col-span-2">
@@ -2307,7 +2311,7 @@ export default function Applications() {
                 Cancel
               </Button>
               <Button
-                disabled={!employerResponseSummary.trim() || recordResponseMutation.isPending}
+                disabled={!employerResponseSummary.trim() || (employerResponseType === "interview_invite" && !employerResponseSourceReference.trim()) || recordResponseMutation.isPending}
                 onClick={() => {
                   if (!responseApplication) return;
                   recordResponseMutation.mutate({
@@ -2333,6 +2337,7 @@ export default function Applications() {
               setOutcomeInterview(null);
               setInterviewOutcome("next_round");
               setInterviewOutcomeSource("email");
+              setInterviewOutcomeSourceReference("");
               setInterviewOutcomeSummary("");
             }
           }}
@@ -2391,6 +2396,17 @@ export default function Applications() {
                 </div>
               )}
               <div className="space-y-2 md:col-span-2">
+                <label className="text-sm font-medium text-slate-300">
+                  Message or portal reference{interviewOutcome === "next_round" ? " (required for a next-round invite)" : ""}
+                </label>
+                <Input
+                  value={interviewOutcomeSourceReference}
+                  onChange={(event) => setInterviewOutcomeSourceReference(event.target.value)}
+                  className="bg-slate-800 border-slate-700 text-white"
+                  placeholder={interviewOutcome === "next_round" ? "Required: message, portal, phone, or LinkedIn reference" : "Optional: message or portal ID"}
+                />
+              </div>
+              <div className="space-y-2 md:col-span-2">
                 <label className="text-sm font-medium text-slate-300">Outcome summary</label>
                 <Textarea
                   value={interviewOutcomeSummary}
@@ -2405,19 +2421,21 @@ export default function Applications() {
                 variant="outline"
                 onClick={() => {
                   setOutcomeInterview(null);
+                  setInterviewOutcomeSourceReference("");
                   setInterviewOutcomeSummary("");
                 }}
               >
                 Cancel
               </Button>
               <Button
-                disabled={!interviewOutcomeSummary.trim() || recordInterviewOutcomeMutation.isPending}
+                disabled={!interviewOutcomeSummary.trim() || (interviewOutcome === "next_round" && !interviewOutcomeSourceReference.trim()) || recordInterviewOutcomeMutation.isPending}
                 onClick={() => {
                   if (!outcomeInterview) return;
                   recordInterviewOutcomeMutation.mutate({
                     interviewId: outcomeInterview.id,
                     outcome: interviewOutcome,
                     source: interviewOutcomeSource,
+                    sourceReference: interviewOutcomeSourceReference.trim() || undefined,
                     summary: interviewOutcomeSummary.trim(),
                   });
                 }}

@@ -39,6 +39,7 @@ describe("application withdrawal", () => {
       applicationId,
       responseType: "interview_invite",
       source: "email",
+      sourceReference: `gmail-withdrawal-invite-${applicationId}`,
       summary: "Recruiter invited the candidate to a first-round video interview.",
     }, userId);
     expect(await listUnreadInterviewNotifications(userId)).toHaveLength(1);
@@ -180,6 +181,7 @@ describe("application withdrawal", () => {
       applicationId,
       responseType: "interview_invite",
       source: "email",
+      sourceReference: `gmail-withdrawal-invite-${applicationId}`,
       summary: "Recruiter invited the candidate to a video interview.",
     }, userId);
     const interview = await scheduleInterview({

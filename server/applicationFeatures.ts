@@ -1955,6 +1955,7 @@ export interface RecordInterviewOutcomeInput {
   interviewId: number;
   outcome: InterviewOutcomeType;
   source: EmployerResponseInput["source"];
+  sourceReference?: string | null;
   summary: string;
   receivedAt?: Date;
 }
@@ -1986,6 +1987,10 @@ function interviewOutcomeSource(input: RecordInterviewOutcomeInput): EmployerRes
   return input.outcome === "no_response" ? "other" : input.source;
 }
 
+function interviewOutcomeSourceReference(input: RecordInterviewOutcomeInput) {
+  return input.outcome === "no_response" ? null : input.sourceReference;
+}
+
 function interviewOutcomeSummary(input: RecordInterviewOutcomeInput) {
   return [
     `Interview outcome recorded: ${INTERVIEW_OUTCOME_LABELS[input.outcome]}.`,
@@ -2013,6 +2018,7 @@ export async function recordInterviewOutcome(input: RecordInterviewOutcomeInput,
       interviewId: input.interviewId,
       responseType: interviewOutcomeResponseType(input.outcome),
       source: interviewOutcomeSource(input),
+      sourceReference: interviewOutcomeSourceReference(input),
       summary: interviewOutcomeSummary(input),
       receivedAt,
     }, userId);
@@ -2065,6 +2071,7 @@ export async function recordInterviewOutcome(input: RecordInterviewOutcomeInput,
     interviewId: input.interviewId,
     responseType: interviewOutcomeResponseType(input.outcome),
     source: interviewOutcomeSource(input),
+    sourceReference: interviewOutcomeSourceReference(input),
     summary: interviewOutcomeSummary(input),
     receivedAt,
   }, userId);

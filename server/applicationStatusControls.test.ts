@@ -109,6 +109,7 @@ describe("application status controls", () => {
       applicationId,
       responseType: "interview_invite",
       source: "email",
+      sourceReference: `gmail-status-invite-${applicationId}`,
       summary: "Recruiter invited the candidate to schedule a video interview.",
     }, userId);
 
@@ -143,6 +144,7 @@ describe("application status controls", () => {
       applicationId,
       responseType: "interview_invite",
       source: "email",
+      sourceReference: `gmail-status-invite-${applicationId}`,
       summary: "Recruiter invited the candidate to a video interview.",
     }, userId);
     const followUp = await createFollowUp({
@@ -197,6 +199,7 @@ describe("application status controls", () => {
       applicationId,
       responseType: "interview_invite",
       source: "email",
+      sourceReference: `gmail-status-invite-${applicationId}`,
       summary: "Recruiter invited the candidate to a final interview.",
     }, userId);
     await updateApplicationStatus(applicationId, "offer", userId);

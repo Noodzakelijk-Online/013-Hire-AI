@@ -2214,6 +2214,7 @@ export const appRouter = router({
         interviewId: z.number(),
         outcome: z.enum(["next_round", "offer", "rejection", "no_response", "other"]),
         source: z.enum(["email", "employer_portal", "linkedin", "phone", "other"]),
+        sourceReference: z.string().trim().min(3).max(320).optional(),
         summary: z.string().trim().min(8).max(5000),
         receivedAt: z.string().datetime().transform((s) => new Date(s)).optional(),
       }))

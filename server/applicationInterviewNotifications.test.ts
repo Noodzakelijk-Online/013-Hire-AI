@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { TrpcContext } from "./_core/context";
 import { recordEmployerResponse, scheduleInterview } from "./applicationFeatures";
+import { INTERVIEW_INVITE_SOURCE_REFERENCE_REQUIRED_MESSAGE } from "./applicationResponses";
 import { getAuditEventsForEntity, createApplication, listUnreadInterviewNotifications, updateApplicationStatus } from "./db";
 import { getUserOperatingLedger } from "./applicationCampaigns";
 import { appRouter } from "./routers";
@@ -27,6 +28,25 @@ function createContext(userId: number): TrpcContext {
 }
 
 describe("interview notification ledger", () => {
+  it("does not create an interview notification from an unreferenced manual invite", async () => {
+    const userId = 99170;
+    const application = await createApplication({ userId, jobId: 1, status: "applied" });
+    const applicationId = Number(application.insertId);
+    const owner = appRouter.createCaller(createContext(userId));
+
+    await expect(owner.applications.recordResponse({
+      applicationId,
+      responseType: "interview_invite",
+      source: "email",
+      summary: "Recruiter invited the candidate to schedule a video interview.",
+    })).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: INTERVIEW_INVITE_SOURCE_REFERENCE_REQUIRED_MESSAGE,
+    });
+
+    expect(await listUnreadInterviewNotifications(userId)).toHaveLength(0);
+  });
+
   it("creates one unread in-app notification only for an evidence-backed interview invite", async () => {
     const userId = 99171;
     const application = await createApplication({
