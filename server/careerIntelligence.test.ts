@@ -204,17 +204,18 @@ describe("Scraping API", () => {
       await expect(caller.scraping.runNow()).rejects.toMatchObject({ code: "FORBIDDEN" });
     });
 
-    it("rejects a registered source that is not configured and ready", async () => {
+    it("configures every registered fallback adapter for source status visibility", async () => {
       const caller = appRouter.createCaller(createAuthContext("admin"));
+      const result = await caller.scraping.status();
+      const indeed = result.platforms.find((platform) => platform.name === "Indeed");
 
-      await expect(caller.scraping.startScheduler({
-        intervalMinutes: 60,
-        maxJobsPerRun: 100,
-        enabledPlatforms: ["Indeed"],
-      })).rejects.toMatchObject({
-        code: "BAD_REQUEST",
-        message: expect.stringContaining("configured, ready scraper"),
+      expect(result.coverage).toMatchObject({
+        registeredSources: 48,
+        configuredActiveSources: 48,
+        readySources: 48,
+        unconfiguredSources: 0,
       });
+      expect(indeed).toMatchObject({ readiness: "ready", freshness: "awaiting_first_scan" });
     });
   });
 });

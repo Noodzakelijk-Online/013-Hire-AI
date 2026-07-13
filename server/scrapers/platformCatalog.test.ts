@@ -4,6 +4,7 @@ import {
   getMissingScraperPlatformCatalog,
   scraperPlatformCatalog,
 } from "./platformCatalog";
+import { samplePlatforms } from "../sampleData";
 
 describe("scraper platform catalog", () => {
   it("covers every registered scraper with stable source metadata", () => {
@@ -13,6 +14,13 @@ describe("scraper platform catalog", () => {
     expect(new Set(catalogNames).size).toBe(catalogNames.length);
     expect(new Set(catalogNames)).toEqual(new Set(getSupportedPlatforms()));
     expect(scraperPlatformCatalog.every((platform) => platform.url.startsWith("https://"))).toBe(true);
+  });
+
+  it("keeps the database-free source configuration aligned with registered adapters", () => {
+    expect(new Set(samplePlatforms.map((platform) => platform.name)))
+      .toEqual(new Set(getSupportedPlatforms()));
+    expect(new Set(samplePlatforms.map((platform) => platform.id)).size)
+      .toBe(samplePlatforms.length);
   });
 
   it("returns only adapter sources that have not been configured yet", () => {
