@@ -69,6 +69,21 @@ describe("inbox response monitoring", () => {
     expect(mocks.createAuditEvent).not.toHaveBeenCalled();
   });
 
+  it("reports connector-account lookup failures without escaping the autonomous monitoring boundary", async () => {
+    const mocks = dependencies();
+    mocks.listUserConnectorAccounts.mockRejectedValue(new Error("Connector account store is unavailable."));
+
+    await expect(monitorInboxResponses(701, { dependencies: mocks })).resolves.toEqual({
+      providersScanned: 0,
+      inboxReauthorizationRequired: 0,
+      candidatesDiscovered: 0,
+      monitoringFailures: 1,
+      errors: ["accounts: Connector account store is unavailable."],
+    });
+    expect(mocks.discoverInboxResponseCandidates).not.toHaveBeenCalled();
+    expect(mocks.createAuditEvent).not.toHaveBeenCalled();
+  });
+
   it("does not treat stale authorization as a monitor failure or read the inbox", async () => {
     const mocks = dependencies();
     mocks.listUserConnectorAccounts.mockResolvedValue([{
@@ -102,6 +117,23 @@ describe("inbox response monitoring", () => {
     expect(mocks.createAuditEvent).toHaveBeenCalledWith(expect.objectContaining({
       action: "inbox_response_monitoring_failed",
       riskLevel: "medium",
+    }));
+  });
+
+  it("keeps a persisted inbox candidate visible when its audit write fails", async () => {
+    const mocks = dependencies();
+    mocks.createAuditEvent.mockRejectedValue(new Error("Audit ledger is unavailable."));
+
+    await expect(monitorInboxResponses(701, { dependencies: mocks })).resolves.toEqual({
+      providersScanned: 1,
+      inboxReauthorizationRequired: 0,
+      candidatesDiscovered: 1,
+      monitoringFailures: 1,
+      errors: ["gmail: unable to record inbox monitoring audit (Audit ledger is unavailable.)"],
+    });
+    expect(mocks.upsertInboxResponseCandidate).toHaveBeenCalledWith(expect.objectContaining({
+      applicationId: 701,
+      messageId: "message-701",
     }));
   });
 });

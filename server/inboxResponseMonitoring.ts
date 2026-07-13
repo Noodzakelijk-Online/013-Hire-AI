@@ -56,6 +56,18 @@ const defaults: InboxResponseMonitoringDependencies = {
   discoverInboxResponseCandidates,
 };
 
+async function recordMonitoringAudit(
+  dependencies: InboxResponseMonitoringDependencies,
+  input: Parameters<InboxResponseMonitoringDependencies["createAuditEvent"]>[0]
+) {
+  try {
+    await dependencies.createAuditEvent(input);
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
 /**
  * Read recruitment-message metadata only after consent. Candidate classifications
  * remain pending until the user confirms them through the application ledger.
@@ -65,23 +77,31 @@ export async function monitorInboxResponses(
   options: { dependencies?: InboxResponseMonitoringDependencies } = {}
 ): Promise<InboxMonitoringResult> {
   const dependencies = options.dependencies ?? defaults;
-  const accounts = await dependencies.listUserConnectorAccounts(userId);
+  const result: InboxMonitoringResult = {
+    providersScanned: 0,
+    inboxReauthorizationRequired: 0,
+    candidatesDiscovered: 0,
+    monitoringFailures: 0,
+    errors: [],
+  };
+  let accounts: Awaited<ReturnType<typeof listUserConnectorAccounts>>;
+  try {
+    accounts = await dependencies.listUserConnectorAccounts(userId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    result.monitoringFailures = 1;
+    result.errors.push(`accounts: ${message}`);
+    return result;
+  }
   const providers = (["gmail", "outlook"] as const).filter((provider) => {
     const account = accounts.find((item) => item.provider === provider);
     return account?.status === "connected" &&
       hasRequiredScope(account.consentScopes, provider) &&
       !isConnectorAuthorizationStale(account.lastVerifiedAt);
   });
-  const inboxReauthorizationRequired = (["gmail", "outlook"] as const).filter((provider) =>
+  result.inboxReauthorizationRequired = (["gmail", "outlook"] as const).filter((provider) =>
     needsInboxReauthorization(accounts.find((item) => item.provider === provider), provider)
   ).length;
-  const result: InboxMonitoringResult = {
-    providersScanned: 0,
-    inboxReauthorizationRequired,
-    candidatesDiscovered: 0,
-    monitoringFailures: 0,
-    errors: [],
-  };
 
   for (const provider of providers) {
     try {
@@ -103,7 +123,7 @@ export async function monitorInboxResponses(
       ));
       const newCandidates = persisted.filter((item) => !item.existing).length;
       result.candidatesDiscovered += newCandidates;
-      await dependencies.createAuditEvent({
+      const auditError = await recordMonitoringAudit(dependencies, {
         userId,
         entityType: "user",
         entityId: userId,
@@ -113,11 +133,15 @@ export async function monitorInboxResponses(
         afterState: JSON.stringify({ provider, candidateCount: newCandidates, externalWritePerformed: false }),
         riskLevel: "low",
       });
+      if (auditError) {
+        result.monitoringFailures += 1;
+        result.errors.push(`${provider}: unable to record inbox monitoring audit (${auditError})`);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       result.monitoringFailures += 1;
       result.errors.push(`${provider}: ${message}`);
-      await dependencies.createAuditEvent({
+      const auditError = await recordMonitoringAudit(dependencies, {
         userId,
         entityType: "user",
         entityId: userId,
@@ -127,6 +151,9 @@ export async function monitorInboxResponses(
         afterState: JSON.stringify({ provider, reason: message, externalWritePerformed: false }),
         riskLevel: "medium",
       });
+      if (auditError) {
+        result.errors.push(`${provider}: unable to record inbox monitoring failure (${auditError})`);
+      }
     }
   }
 
