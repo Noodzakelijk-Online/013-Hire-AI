@@ -34,6 +34,46 @@ export {
 
 // Platform to scraper mapping
 export type ScraperFactory = (platformId: number) => BaseScraper;
+export type ScraperAdapterKind = "dedicated" | "generic_rss" | "generic_html";
+
+export interface ScraperAdapterMetadata {
+  kind: ScraperAdapterKind;
+  label: string;
+  detail: string;
+}
+
+const dedicatedAdapterPlatforms = new Set([
+  "RemoteOK",
+  "We Work Remotely",
+  "FlexJobs",
+  "Indeed",
+  "LinkedIn Jobs",
+  "Remote.co",
+  "Remotive",
+  "JustRemote",
+  "Jobspresso",
+  "Working Nomads",
+]);
+
+const genericRssAdapterPlatforms = new Set(["NoDesk", "ProBlogger"]);
+
+const scraperAdapterMetadata: Record<ScraperAdapterKind, ScraperAdapterMetadata> = {
+  dedicated: {
+    kind: "dedicated",
+    label: "Source-specific adapter",
+    detail: "Uses a source-specific parser. Current source health still determines availability.",
+  },
+  generic_rss: {
+    kind: "generic_rss",
+    label: "Generic RSS adapter",
+    detail: "Uses generic RSS extraction. Review source health and output before relying on coverage.",
+  },
+  generic_html: {
+    kind: "generic_html",
+    label: "Generic HTML adapter",
+    detail: "Uses generic HTML extraction. Review source health and output before relying on coverage.",
+  },
+};
 
 /**
  * Registry of all available scrapers
@@ -380,6 +420,21 @@ export function getScraperForPlatform(platformName: string, platformId: number):
  */
 export function getSupportedPlatforms(): string[] {
   return Object.keys(scraperRegistry);
+}
+
+/**
+ * Describe the parser implementation for a registered source. This is not a
+ * production-coverage guarantee; source health and scan outcomes remain the
+ * evidence for current availability.
+ */
+export function getScraperAdapterMetadata(platformName: string): ScraperAdapterMetadata {
+  const kind: ScraperAdapterKind = dedicatedAdapterPlatforms.has(platformName)
+    ? "dedicated"
+    : genericRssAdapterPlatforms.has(platformName)
+      ? "generic_rss"
+      : "generic_html";
+
+  return { ...scraperAdapterMetadata[kind] };
 }
 
 /**

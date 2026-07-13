@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getSupportedPlatforms } from "./index";
+import { getScraperAdapterMetadata, getSupportedPlatforms } from "./index";
 import {
   getMissingScraperPlatformCatalog,
   scraperPlatformCatalog,
@@ -30,5 +30,17 @@ describe("scraper platform catalog", () => {
     expect(missing.some((platform) => platform.name === "RemoteOK")).toBe(false);
     expect(missing.some((platform) => platform.name === "FlexJobs")).toBe(false);
     expect(missing).toHaveLength(scraperPlatformCatalog.length - 2);
+  });
+
+  it("reports dedicated and generic parser provenance for every registered source", () => {
+    const adapters = getSupportedPlatforms().map((name) => ({ name, adapter: getScraperAdapterMetadata(name) }));
+
+    expect(adapters.filter(({ adapter }) => adapter.kind === "dedicated")).toHaveLength(10);
+    expect(adapters.filter(({ adapter }) => adapter.kind === "generic_rss").map(({ name }) => name))
+      .toEqual(["NoDesk", "ProBlogger"]);
+    expect(adapters.filter(({ adapter }) => adapter.kind === "generic_html")).toHaveLength(36);
+    expect(adapters.every(({ adapter }) => adapter.label.endsWith("adapter"))).toBe(true);
+    expect(adapters.filter(({ adapter }) => adapter.kind !== "dedicated")
+      .every(({ adapter }) => adapter.detail.includes("coverage"))).toBe(true);
   });
 });

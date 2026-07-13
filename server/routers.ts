@@ -2587,7 +2587,7 @@ export const appRouter = router({
       }),
     status: adminProcedure.query(async () => {
       const { getScraperManager } = await import("./scrapers/scraperManager");
-      const { getSupportedPlatforms } = await import("./scrapers/index");
+      const { getScraperAdapterMetadata, getSupportedPlatforms } = await import("./scrapers/index");
       const { getScheduler } = await import("./scrapers/scheduler");
       const { getAllJobPlatforms } = await import("./db");
       const manager = await getScraperManager();
@@ -2607,6 +2607,7 @@ export const appRouter = router({
           category: platform.category,
           tier: platform.tier,
           isActive: platform.isActive === 1,
+          adapter: getScraperAdapterMetadata(platform.name),
           lastScraped: platform.lastScraped,
           lastScrapeAttemptedAt: platform.lastScrapeAttemptedAt,
           lastScrapeStatus: platform.lastScrapeStatus,
@@ -2629,6 +2630,9 @@ export const appRouter = router({
         .map((platform) => platform.name);
       const readySources = platforms.filter((platform) => platform.readiness === "ready");
       const freshReadySources = readySources.filter((platform) => platform.freshness === "fresh");
+      const configuredDedicatedAdapterSources = platforms.filter((platform) => platform.adapter.kind === "dedicated").length;
+      const configuredGenericRssAdapterSources = platforms.filter((platform) => platform.adapter.kind === "generic_rss").length;
+      const configuredGenericHtmlAdapterSources = platforms.filter((platform) => platform.adapter.kind === "generic_html").length;
 
       return {
         initialized: true,
@@ -2639,6 +2643,9 @@ export const appRouter = router({
         coverage: {
           registeredSources: supportedPlatforms.length,
           configuredActiveSources: platforms.length,
+          configuredDedicatedAdapterSources,
+          configuredGenericRssAdapterSources,
+          configuredGenericHtmlAdapterSources,
           readySources: readySources.length,
           freshReadySources: freshReadySources.length,
           staleReadySources: readySources.filter((platform) => platform.freshness === "stale").length,
@@ -2649,7 +2656,7 @@ export const appRouter = router({
           unsupportedConfiguredSources,
         },
         scheduler: schedulerStatus,
-        message: `${readySources.length} configured source${readySources.length === 1 ? " is" : "s are"} ready for discovery. ${unconfiguredSources.length} registered source${unconfiguredSources.length === 1 ? " is" : "s are"} not configured.`,
+        message: `${readySources.length} configured source${readySources.length === 1 ? " is" : "s are"} ready for discovery. ${configuredDedicatedAdapterSources} use source-specific parsers and ${configuredGenericRssAdapterSources + configuredGenericHtmlAdapterSources} use generic extraction; inspect source health and scan outcomes before relying on coverage. ${unconfiguredSources.length} registered source${unconfiguredSources.length === 1 ? " is" : "s are"} not configured.`,
       };
     }),
 

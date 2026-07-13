@@ -515,6 +515,8 @@ export default function AdminPanel() {
                     {[
                       ["Ready sources", scrapingStatus?.coverage.readySources ?? 0],
                       ["Fresh sources", scrapingStatus?.coverage.freshReadySources ?? 0],
+                      ["Source-specific adapters", scrapingStatus?.coverage.configuredDedicatedAdapterSources ?? 0],
+                      ["Generic adapters", (scrapingStatus?.coverage.configuredGenericRssAdapterSources ?? 0) + (scrapingStatus?.coverage.configuredGenericHtmlAdapterSources ?? 0)],
                       ["Failed sources", scraperSourceOutcomes.failed],
                       ["Partial sources", scraperSourceOutcomes.partial],
                       ["Registry sources", scrapingStatus?.coverage.registeredSources ?? 0],
@@ -549,6 +551,9 @@ export default function AdminPanel() {
                       </div>
                     </div>
                   </div>
+                  <p className="mt-4 text-xs leading-5 text-slate-500">
+                    Adapter type describes the parser implementation, not verified production coverage. Use each source's health and latest outcome to assess discovery reliability.
+                  </p>
                   {(scrapingStatus?.coverage.unconfiguredSources ?? 0) > 0 && (
                     <div data-testid="admin-scraping-coverage-gap" className="mt-4 rounded-md border border-blue-500/30 bg-blue-500/10 p-3 text-sm text-blue-100">
                       <div className="font-medium">Source registry needs configuration</div>
@@ -705,6 +710,7 @@ export default function AdminPanel() {
                     <thead>
                       <tr className="border-b border-slate-800 text-slate-400">
                         <th className="py-2 pr-4 text-left">Source</th>
+                        <th className="py-2 pr-4 text-left">Adapter</th>
                         <th className="py-2 pr-4 text-left">Readiness</th>
                         <th className="py-2 pr-4 text-left">Latest outcome</th>
                         <th className="py-2 pr-4 text-left">Freshness</th>
@@ -721,6 +727,17 @@ export default function AdminPanel() {
                           <td className="py-3 pr-4">
                             <div className="font-medium text-white">{platform.name}</div>
                             <div className="mt-0.5 text-xs text-slate-500">{platform.tier} · {platform.category || "General"}</div>
+                          </td>
+                          <td className="py-3 pr-4">
+                            <Badge
+                              variant="outline"
+                              className={platform.adapter.kind === "dedicated"
+                                ? "border-blue-500/30 text-blue-300"
+                                : "border-slate-600 text-slate-300"}
+                            >
+                              {platform.adapter.label}
+                            </Badge>
+                            <p className="mt-1 max-w-sm text-xs leading-5 text-slate-500">{platform.adapter.detail}</p>
                           </td>
                           <td className="py-3 pr-4">
                             <Badge variant="outline" className={platform.readiness === "ready" ? "border-emerald-500/30 text-emerald-300" : "border-amber-500/30 text-amber-300"}>
@@ -760,7 +777,7 @@ export default function AdminPanel() {
                       })}
                       {(!scrapingStatus || scrapingStatus.platforms.length === 0) && (
                         <tr>
-                          <td colSpan={7} className="py-8 text-center text-slate-500">No active configured scraper sources.</td>
+                          <td colSpan={8} className="py-8 text-center text-slate-500">No active configured scraper sources.</td>
                         </tr>
                       )}
                     </tbody>

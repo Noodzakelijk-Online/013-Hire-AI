@@ -182,6 +182,9 @@ describe("Scraping API", () => {
       expect(result.coverage).toMatchObject({
         registeredSources: expect.any(Number),
         configuredActiveSources: expect.any(Number),
+        configuredDedicatedAdapterSources: expect.any(Number),
+        configuredGenericRssAdapterSources: expect.any(Number),
+        configuredGenericHtmlAdapterSources: expect.any(Number),
         readySources: expect.any(Number),
         freshReadySources: expect.any(Number),
         staleReadySources: expect.any(Number),
@@ -189,6 +192,13 @@ describe("Scraping API", () => {
         unconfiguredSources: expect.any(Number),
       });
       expect(result.coverage.readySources).toBe(result.availableScrapers);
+      expect(result.platforms[0]).toMatchObject({
+        adapter: {
+          kind: expect.stringMatching(/^(dedicated|generic_rss|generic_html)$/),
+          label: expect.any(String),
+          detail: expect.any(String),
+        },
+      });
       expect(result.scheduler).toMatchObject({
         intervalMinutes: expect.any(Number),
         maxJobsPerRun: expect.any(Number),
@@ -212,10 +222,17 @@ describe("Scraping API", () => {
       expect(result.coverage).toMatchObject({
         registeredSources: 48,
         configuredActiveSources: 48,
+        configuredDedicatedAdapterSources: 10,
+        configuredGenericRssAdapterSources: 2,
+        configuredGenericHtmlAdapterSources: 36,
         readySources: 48,
         unconfiguredSources: 0,
       });
-      expect(indeed).toMatchObject({ readiness: "ready", freshness: "awaiting_first_scan" });
+      expect(indeed).toMatchObject({
+        readiness: "ready",
+        freshness: "awaiting_first_scan",
+        adapter: { kind: "dedicated", label: "Source-specific adapter" },
+      });
     });
 
     it("rejects an empty source selection instead of widening a scheduled scan", async () => {
