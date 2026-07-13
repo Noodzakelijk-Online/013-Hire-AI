@@ -17,7 +17,6 @@ import { getSafeExternalUrl, openExternalUrl } from "@/lib/externalUrl";
 import { getJobMatchDecisionSummary } from "@/lib/jobMatchDecisionSummary";
 import { getJobSourcingControlSummary } from "@/lib/jobSourcingControl";
 import { getJobDiscoveryStatusSummary } from "@/lib/jobDiscoveryStatus";
-import { getJobListingDate } from "@/lib/jobListingDate";
 import {
   getJobSearchAutonomousPolicy,
   isJobSearchAutonomousPolicyDirty,
@@ -38,23 +37,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
@@ -89,10 +76,8 @@ export default function JobSearch() {
   const [selectedPlatform, setSelectedPlatform] = useState<string>("all");
   const [salaryRange, setSalaryRange] = useState<[number, number]>([0, 300000]);
   const [showRemoteOnly, setShowRemoteOnly] = useState(true);
-  const [selectedExperienceLevel, setSelectedExperienceLevel] =
-    useState<JobExperienceLevel>("all");
-  const [selectedApplicationProcess, setSelectedApplicationProcess] =
-    useState<JobApplicationProcessFilter>("all");
+  const [selectedExperienceLevel, setSelectedExperienceLevel] = useState<JobExperienceLevel>("all");
+  const [selectedApplicationProcess, setSelectedApplicationProcess] = useState<JobApplicationProcessFilter>("all");
   const [postedWithin, setPostedWithin] = useState<JobPostedWithin>("all");
   const [visaSponsorshipOnly, setVisaSponsorshipOnly] = useState(false);
   const [openHiringSupportOnly, setOpenHiringSupportOnly] = useState(false);
@@ -100,51 +85,42 @@ export default function JobSearch() {
   const [salaryDisclosedOnly, setSalaryDisclosedOnly] = useState(false);
   const [selectedJob, setSelectedJob] = useState<any>(null);
   const [activeTab, setActiveTab] = useState("all");
-  const [autonomousMode, setAutonomousMode] = useState<
-    "review_first" | "auto_apply"
-  >("review_first");
+  const [autonomousMode, setAutonomousMode] = useState<"review_first" | "auto_apply">("review_first");
   const [requireHumanReview, setRequireHumanReview] = useState(true);
   const [allowUnsupportedATS, setAllowUnsupportedATS] = useState(false);
   const [createFollowUps, setCreateFollowUps] = useState(false);
 
-  const jobSearchFilters = useMemo<JobSearchFilterState>(
-    () => ({
-      query: searchQuery,
-      jobType: selectedJobType,
-      platformId: selectedPlatform,
-      salaryRange,
-      remoteOnly: showRemoteOnly,
-      experienceLevel: selectedExperienceLevel,
-      applicationProcess: selectedApplicationProcess,
-      visaSponsorshipOnly,
-      openHiringSupportOnly,
-      diversityFriendlyOnly,
-      salaryDisclosedOnly,
-      postedWithin,
-    }),
-    [
-      diversityFriendlyOnly,
-      openHiringSupportOnly,
-      postedWithin,
-      salaryDisclosedOnly,
-      salaryRange,
-      searchQuery,
-      selectedApplicationProcess,
-      selectedExperienceLevel,
-      selectedJobType,
-      selectedPlatform,
-      showRemoteOnly,
-      visaSponsorshipOnly,
-    ]
-  );
+  const jobSearchFilters = useMemo<JobSearchFilterState>(() => ({
+    query: searchQuery,
+    jobType: selectedJobType,
+    platformId: selectedPlatform,
+    salaryRange,
+    remoteOnly: showRemoteOnly,
+    experienceLevel: selectedExperienceLevel,
+    applicationProcess: selectedApplicationProcess,
+    visaSponsorshipOnly,
+    openHiringSupportOnly,
+    diversityFriendlyOnly,
+    salaryDisclosedOnly,
+    postedWithin,
+  }), [
+    diversityFriendlyOnly,
+    openHiringSupportOnly,
+    postedWithin,
+    salaryDisclosedOnly,
+    salaryRange,
+    searchQuery,
+    selectedApplicationProcess,
+    selectedExperienceLevel,
+    selectedJobType,
+    selectedPlatform,
+    showRemoteOnly,
+    visaSponsorshipOnly,
+  ]);
   const deferredJobSearchFilters = useDeferredValue(jobSearchFilters);
 
   // The API applies the same canonical filter contract before pagination.
-  const {
-    data: jobsList,
-    isLoading: jobsLoading,
-    refetch: refetchJobs,
-  } = trpc.jobs.list.useQuery({
+  const { data: jobsList, isLoading: jobsLoading, refetch: refetchJobs } = trpc.jobs.list.useQuery({
     limit: 250,
     offset: 0,
     filters: deferredJobSearchFilters,
@@ -152,43 +128,52 @@ export default function JobSearch() {
 
   // Fetch platforms
   const { data: platformsData } = trpc.platforms.list.useQuery();
-  const { data: discoveryStatus, refetch: refetchDiscoveryStatus } =
-    trpc.jobs.getDiscoveryStatus.useQuery();
+  const {
+    data: discoveryStatus,
+    refetch: refetchDiscoveryStatus,
+  } = trpc.jobs.getDiscoveryStatus.useQuery();
   const { data: selectedJobSources } = trpc.jobs.getSources.useQuery(
     { id: selectedJob?.id ?? 0 },
     { enabled: Boolean(selectedJob?.id) }
   );
 
   // Fetch user profile for matching
-  const { data: profileData, refetch: refetchProfileData } =
-    trpc.profile.get.useQuery();
-  const { data: autonomousPlan, refetch: refetchAutonomousPlan } =
-    trpc.automation.plan.useQuery({
-      mode: autonomousMode,
-      remoteOnly: showRemoteOnly,
-      requireHumanReview,
-      allowUnsupportedATS,
-      createFollowUps,
-    });
+  const {
+    data: profileData,
+    refetch: refetchProfileData,
+  } = trpc.profile.get.useQuery();
+  const { data: autonomousPlan, refetch: refetchAutonomousPlan } = trpc.automation.plan.useQuery({
+    mode: autonomousMode,
+    remoteOnly: showRemoteOnly,
+    requireHumanReview,
+    allowUnsupportedATS,
+    createFollowUps,
+  });
   const {
     data: applicationDecisions = [],
     refetch: refetchApplicationDecisions,
   } = trpc.applications.listDecisions.useQuery(undefined, {
     enabled: Boolean(user),
   });
-  const { data: jobMatches = [], refetch: refetchJobMatches } =
-    trpc.matching.getMatches.useQuery(
-      { minScore: 0 },
-      { enabled: Boolean(user) }
-    );
-  const { data: operatingLedger, refetch: refetchOperatingLedger } =
-    trpc.applications.getOperatingLedger.useQuery(undefined, {
-      enabled: Boolean(user),
-    });
-  const { data: schedulerStatus, refetch: refetchSchedulerStatus } =
-    trpc.automation.schedulerStatus.useQuery(undefined, {
-      enabled: Boolean(user),
-    });
+  const {
+    data: jobMatches = [],
+    refetch: refetchJobMatches,
+  } = trpc.matching.getMatches.useQuery(
+    { minScore: 0 },
+    { enabled: Boolean(user) }
+  );
+  const {
+    data: operatingLedger,
+    refetch: refetchOperatingLedger,
+  } = trpc.applications.getOperatingLedger.useQuery(undefined, {
+    enabled: Boolean(user),
+  });
+  const {
+    data: schedulerStatus,
+    refetch: refetchSchedulerStatus,
+  } = trpc.automation.schedulerStatus.useQuery(undefined, {
+    enabled: Boolean(user),
+  });
   const preparationEvidenceGate = useMemo(() => {
     const summary = getApplicationEvidenceGateSummary(
       { status: "pending" },
@@ -199,9 +184,7 @@ export default function JobSearch() {
 
   const autonomousEnabled = useMemo(() => {
     try {
-      return (
-        JSON.parse(profileData?.preferences || "{}").autonomousEnabled === true
-      );
+      return JSON.parse(profileData?.preferences || "{}").autonomousEnabled === true;
     } catch {
       return false;
     }
@@ -235,9 +218,7 @@ export default function JobSearch() {
     onSuccess: async (data: any) => {
       const score = data.overallScore || data.matchScore || 0;
       if (data.analysisSource === "deterministic_fallback") {
-        toast.info(
-          `Profile-based match score: ${score}%. Review the evidence before acting.`
-        );
+        toast.info(`Profile-based match score: ${score}%. Review the evidence before acting.`);
       } else {
         toast.success(`AI match score: ${score}%`);
       }
@@ -255,9 +236,7 @@ export default function JobSearch() {
       } else if (variables.decision === "ignore") {
         toast.success("Job ignored");
       } else {
-        toast.success(
-          result.existing ? "Decision updated" : "Application decision recorded"
-        );
+        toast.success(result.existing ? "Decision updated" : "Application decision recorded");
       }
       await Promise.all([
         refetchApplicationDecisions(),
@@ -265,7 +244,7 @@ export default function JobSearch() {
         refetchOperatingLedger(),
       ]);
     },
-    onError: error => {
+    onError: (error) => {
       toast.error(error.message || "Failed to record decision");
     },
   });
@@ -297,33 +276,20 @@ export default function JobSearch() {
         refetchOperatingLedger(),
       ]);
     },
-    onError: error =>
-      toast.error(error.message || "Failed to save sourcing policy"),
+    onError: (error) => toast.error(error.message || "Failed to save sourcing policy"),
   });
 
   const autonomousDecisionByJobId = useMemo(() => {
-    return new Map(
-      (autonomousPlan?.decisions || []).map((decision: any) => [
-        decision.jobId,
-        decision,
-      ])
-    );
+    return new Map((autonomousPlan?.decisions || []).map((decision: any) => [decision.jobId, decision]));
   }, [autonomousPlan?.decisions]);
   const applicationDecisionByJobId = useMemo(() => {
-    return new Map(
-      (applicationDecisions || []).map((decision: any) => [
-        decision.jobId,
-        decision,
-      ])
-    );
+    return new Map((applicationDecisions || []).map((decision: any) => [decision.jobId, decision]));
   }, [applicationDecisions]);
   const latestJobMatchByJobId = useMemo(() => {
     const matches = new Map<number, any>();
     for (const match of jobMatches || []) {
       const current = matches.get(match.jobId);
-      const matchUpdatedAt = new Date(
-        match.updatedAt || match.createdAt
-      ).getTime();
+      const matchUpdatedAt = new Date(match.updatedAt || match.createdAt).getTime();
       const currentUpdatedAt = current
         ? new Date(current.updatedAt || current.createdAt).getTime()
         : 0;
@@ -334,10 +300,7 @@ export default function JobSearch() {
     return matches;
   }, [jobMatches]);
   const platformNameById = useMemo(
-    () =>
-      new Map(
-        (platformsData || []).map(platform => [platform.id, platform.name])
-      ),
+    () => new Map((platformsData || []).map((platform) => [platform.id, platform.name])),
     [platformsData]
   );
 
@@ -371,22 +334,14 @@ export default function JobSearch() {
     return filteredJobs.map((job: any) => {
       const persistedMatch = latestJobMatchByJobId.get(job.id);
       const summary = getJobMatchDecisionSummary(
-        persistedMatch
-          ? { ...job, matchScore: persistedMatch.matchScore }
-          : job,
+        persistedMatch ? { ...job, matchScore: persistedMatch.matchScore } : job,
         profileData,
         autonomousDecisionByJobId.get(job.id),
         applicationDecisionByJobId.get(job.id)
       );
       return { ...job, matchScore: summary.matchScore, matchSummary: summary };
     });
-  }, [
-    applicationDecisionByJobId,
-    autonomousDecisionByJobId,
-    filteredJobs,
-    latestJobMatchByJobId,
-    profileData,
-  ]);
+  }, [applicationDecisionByJobId, autonomousDecisionByJobId, filteredJobs, latestJobMatchByJobId, profileData]);
 
   // Group jobs by match score
   const groupedJobs = useMemo(() => {
@@ -404,33 +359,26 @@ export default function JobSearch() {
 
     return { excellent, good, fair, decided, all: scoredJobs };
   }, [scoredJobs]);
-  const sourcingControl = useMemo(
-    () => getJobSourcingControlSummary(scoredJobs),
-    [scoredJobs]
-  );
+  const sourcingControl = useMemo(() => getJobSourcingControlSummary(scoredJobs), [scoredJobs]);
   const discoveryControl = useMemo(
     () => getJobDiscoveryStatusSummary(discoveryStatus),
     [discoveryStatus]
   );
-  const autonomousControl = useMemo(
-    () =>
-      getAutonomousPolicyControlAction({
-        plan: autonomousPlan,
-        scheduler: schedulerStatus,
-        campaign: operatingLedger?.campaign,
-        settings: {
-          autonomousEnabled,
-          requireHumanReview,
-        },
-      }),
-    [
+  const autonomousControl = useMemo(() => getAutonomousPolicyControlAction({
+    plan: autonomousPlan,
+    scheduler: schedulerStatus,
+    campaign: operatingLedger?.campaign,
+    settings: {
       autonomousEnabled,
-      autonomousPlan,
-      operatingLedger?.campaign,
       requireHumanReview,
-      schedulerStatus,
-    ]
-  );
+    },
+  }), [
+    autonomousEnabled,
+    autonomousPlan,
+    operatingLedger?.campaign,
+    requireHumanReview,
+    schedulerStatus,
+  ]);
   const autonomousControlTone = {
     low: "border-slate-700 text-slate-300",
     medium: "border-amber-500/40 text-amber-300",
@@ -441,20 +389,12 @@ export default function JobSearch() {
     if (!selectedJob) return null;
     const persistedMatch = latestJobMatchByJobId.get(selectedJob.id);
     return getJobMatchDecisionSummary(
-      persistedMatch
-        ? { ...selectedJob, matchScore: persistedMatch.matchScore }
-        : selectedJob,
+      persistedMatch ? { ...selectedJob, matchScore: persistedMatch.matchScore } : selectedJob,
       profileData,
       autonomousDecisionByJobId.get(selectedJob.id),
       applicationDecisionByJobId.get(selectedJob.id)
     );
-  }, [
-    applicationDecisionByJobId,
-    autonomousDecisionByJobId,
-    latestJobMatchByJobId,
-    profileData,
-    selectedJob,
-  ]);
+  }, [applicationDecisionByJobId, autonomousDecisionByJobId, latestJobMatchByJobId, profileData, selectedJob]);
 
   const handleApply = async (job: any) => {
     if (!user) {
@@ -462,10 +402,7 @@ export default function JobSearch() {
       return;
     }
     if (preparationEvidenceGate) {
-      toast.info(
-        preparationEvidenceGate.detail ||
-          "Resolve profile evidence before preparing an application."
-      );
+      toast.info(preparationEvidenceGate.detail || "Resolve profile evidence before preparing an application.");
       setLocation(preparationEvidenceGate.route || "/profile");
       return;
     }
@@ -475,9 +412,7 @@ export default function JobSearch() {
       autonomousDecisionByJobId.get(job.id),
       applicationDecisionByJobId.get(job.id)
     );
-    decideMutation.mutate(
-      buildJobPreparationDecisionInput(job, summary, "Job Search")
-    );
+    decideMutation.mutate(buildJobPreparationDecisionInput(job, summary, "Job Search"));
   };
 
   const handleSaveJob = async (job: any) => {
@@ -498,17 +433,13 @@ export default function JobSearch() {
       matchScore: summary.matchScore,
       riskLevel: summary.riskLevel === "high" ? "medium" : summary.riskLevel,
       reviewRequired: true,
-      reviewReason:
-        summary.missingSkills.length > 0
-          ? `Saved to review missing skills: ${summary.missingSkills.join(", ")}.`
-          : "Saved for later review from Job Search.",
+      reviewReason: summary.missingSkills.length > 0
+        ? `Saved to review missing skills: ${summary.missingSkills.join(", ")}.`
+        : "Saved for later review from Job Search.",
     });
   };
 
-  const handleDecisionLifecycleAction = (
-    job: any,
-    action: JobDecisionLifecycleAction
-  ) => {
+  const handleDecisionLifecycleAction = (job: any, action: JobDecisionLifecycleAction) => {
     if (!user) {
       toast.error("Please log in to manage job decisions");
       return;
@@ -552,27 +483,21 @@ export default function JobSearch() {
 
   const handleSaveJobSearchPolicy = () => {
     saveJobSearchPolicyMutation.mutate({
-      preferences: mergeJobSearchAutonomousPolicy(
-        profileData?.preferences,
-        jobSearchPolicyDraft
-      ),
+      preferences: mergeJobSearchAutonomousPolicy(profileData?.preferences, jobSearchPolicyDraft),
     });
   };
 
   const formatSalary = (min?: number | null, max?: number | null) => {
     if (!min && !max) return "Not specified";
-    if (min && max)
-      return `$${(min / 1000).toFixed(0)}k - $${(max / 1000).toFixed(0)}k`;
+    if (min && max) return `$${(min / 1000).toFixed(0)}k - $${(max / 1000).toFixed(0)}k`;
     if (min) return `$${(min / 1000).toFixed(0)}k+`;
     if (max) return `Up to $${(max / 1000).toFixed(0)}k`;
     return "Not specified";
   };
 
   const getMatchBadgeColor = (score: number) => {
-    if (score >= 80)
-      return "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
-    if (score >= 60)
-      return "bg-amber-500/20 text-amber-400 border-amber-500/30";
+    if (score >= 80) return "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
+    if (score >= 60) return "bg-amber-500/20 text-amber-400 border-amber-500/30";
     return "bg-slate-500/20 text-slate-400 border-slate-500/30";
   };
 
@@ -613,152 +538,112 @@ export default function JobSearch() {
     current: "border-emerald-500/40 bg-emerald-500/10 text-emerald-100",
   }[discoveryControl.status];
 
-  const JobCard = ({
-    job,
-    showMatchScore = true,
-  }: {
-    job: any;
-    showMatchScore?: boolean;
-  }) => {
-    const listingDate = getJobListingDate(job);
-
-    return (
-      <Card
-        data-testid="job-card"
-        data-job-id={job.id}
-        className="group hover:border-cyan-500/50 transition-all duration-300 cursor-pointer bg-slate-900/50 border-slate-700/50"
-        onClick={() => setSelectedJob(job)}
-      >
-        <CardContent className="p-4">
-          <div className="flex justify-between items-start gap-4">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <h3 className="font-semibold text-white truncate">
-                  {job.title}
-                </h3>
-                {showMatchScore && job.matchScore && (
-                  <Badge
-                    variant="outline"
-                    className={getMatchBadgeColor(job.matchScore)}
-                  >
-                    <Target className="w-3 h-3 mr-1" />
-                    {job.matchScore}%
-                  </Badge>
-                )}
-              </div>
-              <div className="flex items-center gap-3 text-sm text-slate-400 mb-2">
-                <span className="flex items-center gap-1">
-                  <Building2 className="w-3 h-3" />
-                  {job.company || "Company"}
-                </span>
-                <span className="flex items-center gap-1">
-                  <MapPin className="w-3 h-3" />
-                  {job.location || "Remote"}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                {job.jobType && (
-                  <Badge
-                    variant="secondary"
-                    className="text-xs bg-slate-800 text-slate-300"
-                  >
-                    <Briefcase className="w-3 h-3 mr-1" />
-                    {job.jobType}
-                  </Badge>
-                )}
-                {(job.salaryMin || job.salaryMax) && (
-                  <Badge
-                    variant="secondary"
-                    className="text-xs bg-slate-800 text-slate-300"
-                  >
-                    <DollarSign className="w-3 h-3 mr-1" />
-                    {formatSalary(job.salaryMin, job.salaryMax)}
-                  </Badge>
-                )}
-                {listingDate && (
-                  <Badge
-                    variant="secondary"
-                    className="text-xs bg-slate-800 text-slate-300"
-                  >
-                    <Clock className="w-3 h-3 mr-1" />
-                    {listingDate.source === "posted"
-                      ? "Posted"
-                      : "Discovered"}{" "}
-                    {listingDate.date.toLocaleDateString()}
-                  </Badge>
-                )}
-              </div>
-              {job.matchSummary && (
-                <div className="mt-3 rounded-md border border-slate-800 bg-slate-950/40 p-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge
-                      variant="outline"
-                      className={getMatchBadgeColor(
-                        job.matchSummary.matchScore
-                      )}
-                    >
-                      {job.matchSummary.decisionLabel}
-                    </Badge>
-                    <Badge
-                      variant="outline"
-                      className={
-                        job.matchSummary.riskLevel === "high"
-                          ? "border-amber-500/40 text-amber-300"
-                          : job.matchSummary.riskLevel === "low"
-                            ? "border-emerald-500/40 text-emerald-300"
-                            : "border-blue-500/40 text-blue-300"
-                      }
-                    >
-                      {job.matchSummary.riskLevel} risk
-                    </Badge>
-                    {job.matchSummary.blockers.length > 0 && (
-                      <Badge
-                        variant="outline"
-                        className="border-orange-500/40 text-orange-300"
-                      >
-                        {job.matchSummary.blockers.length} blocker
-                        {job.matchSummary.blockers.length === 1 ? "" : "s"}
-                      </Badge>
-                    )}
-                    {job.matchSummary.isDecided && (
-                      <Badge
-                        data-testid="job-card-ledger-decision"
-                        variant="outline"
-                        className="border-cyan-500/40 text-cyan-300"
-                      >
-                        Ledger: {job.matchSummary.ledgerDecisionLabel}
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="mt-2 line-clamp-2 text-xs text-slate-400">
-                    {job.matchSummary.nextAction}
-                  </p>
-                  {job.matchSummary.ledgerDecisionReason && (
-                    <p className="mt-2 line-clamp-1 text-xs text-slate-500">
-                      {job.matchSummary.ledgerDecisionReason}
-                    </p>
-                  )}
-                </div>
+  const JobCard = ({ job, showMatchScore = true }: { job: any; showMatchScore?: boolean }) => (
+    <Card
+      data-testid="job-card"
+      data-job-id={job.id}
+      className="group hover:border-cyan-500/50 transition-all duration-300 cursor-pointer bg-slate-900/50 border-slate-700/50"
+      onClick={() => setSelectedJob(job)}
+    >
+      <CardContent className="p-4">
+        <div className="flex justify-between items-start gap-4">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="font-semibold text-white truncate">{job.title}</h3>
+              {showMatchScore && job.matchScore && (
+                <Badge variant="outline" className={getMatchBadgeColor(job.matchScore)}>
+                  <Target className="w-3 h-3 mr-1" />
+                  {job.matchScore}%
+                </Badge>
               )}
             </div>
-            <div className="flex flex-col gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                className="opacity-0 group-hover:opacity-100 transition-opacity"
-                onClick={e => {
-                  e.stopPropagation();
-                  handleSaveJob(job);
-                }}
-              >
-                <BookmarkPlus className="w-4 h-4" />
-              </Button>
+            <div className="flex items-center gap-3 text-sm text-slate-400 mb-2">
+              <span className="flex items-center gap-1">
+                <Building2 className="w-3 h-3" />
+                {job.company || "Company"}
+              </span>
+              <span className="flex items-center gap-1">
+                <MapPin className="w-3 h-3" />
+                {job.location || "Remote"}
+              </span>
             </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {job.jobType && (
+                <Badge variant="secondary" className="text-xs bg-slate-800 text-slate-300">
+                  <Briefcase className="w-3 h-3 mr-1" />
+                  {job.jobType}
+                </Badge>
+              )}
+              {(job.salaryMin || job.salaryMax) && (
+                <Badge variant="secondary" className="text-xs bg-slate-800 text-slate-300">
+                  <DollarSign className="w-3 h-3 mr-1" />
+                  {formatSalary(job.salaryMin, job.salaryMax)}
+                </Badge>
+              )}
+              {job.postedAt && (
+                <Badge variant="secondary" className="text-xs bg-slate-800 text-slate-300">
+                  <Clock className="w-3 h-3 mr-1" />
+                  {new Date(job.postedAt).toLocaleDateString()}
+                </Badge>
+              )}
+            </div>
+            {job.matchSummary && (
+              <div className="mt-3 rounded-md border border-slate-800 bg-slate-950/40 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline" className={getMatchBadgeColor(job.matchSummary.matchScore)}>
+                    {job.matchSummary.decisionLabel}
+                  </Badge>
+                  <Badge
+                    variant="outline"
+                    className={job.matchSummary.riskLevel === "high"
+                      ? "border-amber-500/40 text-amber-300"
+                      : job.matchSummary.riskLevel === "low"
+                        ? "border-emerald-500/40 text-emerald-300"
+                        : "border-blue-500/40 text-blue-300"}
+                  >
+                    {job.matchSummary.riskLevel} risk
+                  </Badge>
+                  {job.matchSummary.blockers.length > 0 && (
+                    <Badge variant="outline" className="border-orange-500/40 text-orange-300">
+                      {job.matchSummary.blockers.length} blocker{job.matchSummary.blockers.length === 1 ? "" : "s"}
+                    </Badge>
+                  )}
+                  {job.matchSummary.isDecided && (
+                    <Badge
+                      data-testid="job-card-ledger-decision"
+                      variant="outline"
+                      className="border-cyan-500/40 text-cyan-300"
+                    >
+                      Ledger: {job.matchSummary.ledgerDecisionLabel}
+                    </Badge>
+                  )}
+                </div>
+                <p className="mt-2 line-clamp-2 text-xs text-slate-400">{job.matchSummary.nextAction}</p>
+                {job.matchSummary.ledgerDecisionReason && (
+                  <p className="mt-2 line-clamp-1 text-xs text-slate-500">
+                    {job.matchSummary.ledgerDecisionReason}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
-        </CardContent>
-      </Card>
-    );
-  };
+          <div className="flex flex-col gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="opacity-0 group-hover:opacity-100 transition-opacity"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleSaveJob(job);
+              }}
+            >
+              <BookmarkPlus className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
 
   if (authLoading) {
     return (
@@ -778,17 +663,11 @@ export default function JobSearch() {
           <div>
             <h1 className="text-2xl font-bold text-white">Job Search</h1>
             <p className="text-slate-400">
-              {filteredJobs.length} jobs found across{" "}
-              {platformsData?.length || 0} platforms
+              {filteredJobs.length} jobs found across {platformsData?.length || 0} platforms
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Select
-              value={autonomousMode}
-              onValueChange={value =>
-                setAutonomousMode(value as "review_first" | "auto_apply")
-              }
-            >
+            <Select value={autonomousMode} onValueChange={(value) => setAutonomousMode(value as "review_first" | "auto_apply")}>
               <SelectTrigger className="w-[150px] bg-slate-800 border-slate-700">
                 <SelectValue />
               </SelectTrigger>
@@ -798,11 +677,7 @@ export default function JobSearch() {
               </SelectContent>
             </Select>
             {hasUnsavedJobSearchPolicy && (
-              <Badge
-                data-testid="job-search-unsaved-policy"
-                variant="outline"
-                className="border-amber-500/40 text-amber-300"
-              >
+              <Badge data-testid="job-search-unsaved-policy" variant="outline" className="border-amber-500/40 text-amber-300">
                 Unsaved policy
               </Badge>
             )}
@@ -811,50 +686,36 @@ export default function JobSearch() {
               variant="outline"
               size="sm"
               onClick={handleSaveJobSearchPolicy}
-              disabled={
-                !hasUnsavedJobSearchPolicy ||
-                saveJobSearchPolicyMutation.isPending
-              }
+              disabled={!hasUnsavedJobSearchPolicy || saveJobSearchPolicyMutation.isPending}
             >
-              {saveJobSearchPolicyMutation.isPending ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Save className="w-4 h-4 mr-2" />
-              )}
+              {saveJobSearchPolicyMutation.isPending
+                ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                : <Save className="w-4 h-4 mr-2" />}
               Save policy
             </Button>
             <Button
               data-testid="job-search-autonomous-primary"
               size="sm"
               onClick={handleAutonomousControlAction}
-              disabled={
-                autonomousRunMutation.isPending && autonomousControl.runsAgent
-              }
-              className={
-                autonomousControl.risk === "high"
-                  ? "bg-red-600 hover:bg-red-500"
-                  : autonomousControl.runsAgent
-                    ? "bg-gradient-to-r from-cyan-500 to-blue-600"
-                    : "bg-amber-600 hover:bg-amber-500"
-              }
+              disabled={autonomousRunMutation.isPending && autonomousControl.runsAgent}
+              className={autonomousControl.risk === "high"
+                ? "bg-red-600 hover:bg-red-500"
+                : autonomousControl.runsAgent
+                  ? "bg-gradient-to-r from-cyan-500 to-blue-600"
+                  : "bg-amber-600 hover:bg-amber-500"}
             >
-              {autonomousRunMutation.isPending &&
-              autonomousControl.runsAgent ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : autonomousControl.runsAgent ? (
-                <Sparkles className="w-4 h-4 mr-2" />
-              ) : (
-                <ExternalLink className="w-4 h-4 mr-2" />
-              )}
+              {autonomousRunMutation.isPending && autonomousControl.runsAgent
+                ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                : autonomousControl.runsAgent
+                  ? <Sparkles className="w-4 h-4 mr-2" />
+                  : <ExternalLink className="w-4 h-4 mr-2" />}
               {autonomousControl.cta}
             </Button>
             <Button
               variant="outline"
               size="sm"
               title="Refresh displayed job listings and discovery status"
-              onClick={() =>
-                void Promise.all([refetchJobs(), refetchDiscoveryStatus()])
-              }
+              onClick={() => void Promise.all([refetchJobs(), refetchDiscoveryStatus()])}
             >
               <RefreshCw className="w-4 h-4 mr-2" />
               Refresh listings
@@ -869,16 +730,11 @@ export default function JobSearch() {
                 <div>
                   <div className="flex items-center gap-2 mb-1">
                     <Sparkles className="w-4 h-4 text-cyan-400" />
-                    <h2 className="text-sm font-semibold text-white">
-                      Autonomous sourcing plan
-                    </h2>
+                    <h2 className="text-sm font-semibold text-white">Autonomous sourcing plan</h2>
                   </div>
                   <p className="text-sm text-slate-400">
-                    Scanned {autonomousPlan.summary.scanned} current jobs, found{" "}
-                    {autonomousPlan.summary.eligible} eligible matches, prepared{" "}
-                    {autonomousPlan.summary.queuedForReview} for review and
-                    identified {autonomousPlan.summary.manualApply} manual
-                    tasks.
+                    Scanned {autonomousPlan.summary.scanned} current jobs, found {autonomousPlan.summary.eligible} eligible matches,
+                    prepared {autonomousPlan.summary.queuedForReview} for review and identified {autonomousPlan.summary.manualApply} manual tasks.
                     {autonomousPlan.summary.blocked > 0
                       ? ` ${autonomousPlan.summary.blocked} high-fit role${autonomousPlan.summary.blocked === 1 ? " is" : "s are"} blocked by missing profile evidence.`
                       : ""}
@@ -888,36 +744,22 @@ export default function JobSearch() {
                   </p>
                   {autonomousPlan.policyWarnings?.length > 0 && (
                     <div className="mt-3 space-y-1">
-                      {autonomousPlan.policyWarnings
-                        .slice(0, 3)
-                        .map((warning: string) => (
-                          <p key={warning} className="text-xs text-amber-300">
-                            {warning}
-                          </p>
-                        ))}
+                      {autonomousPlan.policyWarnings.slice(0, 3).map((warning: string) => (
+                        <p key={warning} className="text-xs text-amber-300">{warning}</p>
+                      ))}
                     </div>
                   )}
                   {autonomousPlan.evidenceGates?.length > 0 && (
-                    <div
-                      data-testid="job-search-autonomous-evidence-gates"
-                      className="mt-3 space-y-2"
-                    >
-                      {autonomousPlan.evidenceGates
-                        .slice(0, 3)
-                        .map((gate: any) => (
-                          <div
-                            key={gate.id || gate.label}
-                            className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2"
-                          >
-                            <div className="flex items-center gap-2 text-xs font-medium text-amber-200">
-                              <AlertCircle className="h-3.5 w-3.5" />
-                              {gate.label || "Evidence gate"}
-                            </div>
-                            <p className="mt-1 text-xs text-amber-100/80">
-                              {gate.detail}
-                            </p>
+                    <div data-testid="job-search-autonomous-evidence-gates" className="mt-3 space-y-2">
+                      {autonomousPlan.evidenceGates.slice(0, 3).map((gate: any) => (
+                        <div key={gate.id || gate.label} className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                          <div className="flex items-center gap-2 text-xs font-medium text-amber-200">
+                            <AlertCircle className="h-3.5 w-3.5" />
+                            {gate.label || "Evidence gate"}
                           </div>
-                        ))}
+                          <p className="mt-1 text-xs text-amber-100/80">{gate.detail}</p>
+                        </div>
+                      ))}
                     </div>
                   )}
                   <div
@@ -925,105 +767,64 @@ export default function JobSearch() {
                     className="mt-3 rounded-md border border-slate-800 bg-slate-950/40 p-3"
                   >
                     <div className="mb-2 flex flex-wrap items-center gap-2">
-                      <Badge
-                        variant="outline"
-                        className={autonomousControlTone}
-                      >
+                      <Badge variant="outline" className={autonomousControlTone}>
                         {autonomousControl.label}
                       </Badge>
                       <Badge
                         variant="outline"
-                        className={
-                          autonomousControl.approvalGated
-                            ? "border-amber-500/40 text-amber-300"
-                            : "border-slate-700 text-slate-300"
-                        }
+                        className={autonomousControl.approvalGated
+                          ? "border-amber-500/40 text-amber-300"
+                          : "border-slate-700 text-slate-300"}
                       >
-                        {autonomousControl.approvalGated
-                          ? "Approval-gated"
-                          : "Internal"}
+                        {autonomousControl.approvalGated ? "Approval-gated" : "Internal"}
                       </Badge>
                     </div>
-                    <p className="text-sm font-medium text-white">
-                      {autonomousControl.headline}
-                    </p>
-                    <p className="mt-1 text-sm text-slate-400">
-                      {autonomousControl.detail}
-                    </p>
+                    <p className="text-sm font-medium text-white">{autonomousControl.headline}</p>
+                    <p className="mt-1 text-sm text-slate-400">{autonomousControl.detail}</p>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-7">
                   <div className="rounded-md bg-slate-800 px-3 py-2">
-                    <p className="text-lg font-bold text-white">
-                      {autonomousPlan.summary.eligible}
-                    </p>
+                    <p className="text-lg font-bold text-white">{autonomousPlan.summary.eligible}</p>
                     <p className="text-xs text-slate-400">Eligible</p>
                   </div>
                   <div className="rounded-md bg-slate-800 px-3 py-2">
-                    <p className="text-lg font-bold text-cyan-400">
-                      {autonomousPlan.summary.queuedForReview}
-                    </p>
+                    <p className="text-lg font-bold text-cyan-400">{autonomousPlan.summary.queuedForReview}</p>
                     <p className="text-xs text-slate-400">Review</p>
                   </div>
                   <div className="rounded-md bg-slate-800 px-3 py-2">
-                    <p className="text-lg font-bold text-amber-400">
-                      {autonomousPlan.summary.manualApply}
-                    </p>
+                    <p className="text-lg font-bold text-amber-400">{autonomousPlan.summary.manualApply}</p>
                     <p className="text-xs text-slate-400">Manual</p>
                   </div>
                   <div className="rounded-md bg-slate-800 px-3 py-2">
-                    <p className="text-lg font-bold text-red-300">
-                      {autonomousPlan.summary.blocked || 0}
-                    </p>
+                    <p className="text-lg font-bold text-red-300">{autonomousPlan.summary.blocked || 0}</p>
                     <p className="text-xs text-slate-400">Blocked</p>
                   </div>
                   <div className="rounded-md bg-slate-800 px-3 py-2">
-                    <p className="text-lg font-bold text-purple-400">
-                      {autonomousPlan.summary.followUpsActionReady ??
-                        autonomousPlan.summary.followUpsDue}
-                    </p>
+                    <p className="text-lg font-bold text-purple-400">{autonomousPlan.summary.followUpsActionReady ?? autonomousPlan.summary.followUpsDue}</p>
                     <p className="text-xs text-slate-400">Follow-ups ready</p>
                   </div>
                   <div className="rounded-md bg-slate-800 px-3 py-2">
-                    <p className="text-lg font-bold text-amber-400">
-                      {autonomousPlan.evidenceGates?.length || 0}
-                    </p>
+                    <p className="text-lg font-bold text-amber-400">{autonomousPlan.evidenceGates?.length || 0}</p>
                     <p className="text-xs text-slate-400">Gates</p>
                   </div>
                   <div className="rounded-md bg-slate-800 px-3 py-2">
-                    <p className="text-lg font-bold text-slate-300">
-                      {autonomousPlan.summary.expiredJobsSkipped || 0}
-                    </p>
+                    <p className="text-lg font-bold text-slate-300">{autonomousPlan.summary.expiredJobsSkipped || 0}</p>
                     <p className="text-xs text-slate-400">Stale</p>
                   </div>
                 </div>
               </div>
               <div className="mt-4 grid gap-2 md:grid-cols-3">
                 <label className="flex items-center gap-2 rounded-md border border-slate-700 bg-slate-800/50 px-3 py-2 text-sm text-slate-300">
-                  <Checkbox
-                    checked={requireHumanReview}
-                    onCheckedChange={checked =>
-                      setRequireHumanReview(Boolean(checked))
-                    }
-                  />
+                  <Checkbox checked={requireHumanReview} onCheckedChange={(checked) => setRequireHumanReview(Boolean(checked))} />
                   Human review
                 </label>
                 <label className="flex items-center gap-2 rounded-md border border-slate-700 bg-slate-800/50 px-3 py-2 text-sm text-slate-300">
-                  <Checkbox
-                    checked={allowUnsupportedATS}
-                    onCheckedChange={checked =>
-                      setAllowUnsupportedATS(Boolean(checked))
-                    }
-                  />
+                  <Checkbox checked={allowUnsupportedATS} onCheckedChange={(checked) => setAllowUnsupportedATS(Boolean(checked))} />
                   Manual tasks
                 </label>
                 <label className="flex items-center gap-2 rounded-md border border-slate-700 bg-slate-800/50 px-3 py-2 text-sm text-slate-300">
-                  <Checkbox
-                    checked={createFollowUps}
-                    onCheckedChange={checked =>
-                      setCreateFollowUps(Boolean(checked))
-                    }
-                  />
+                  <Checkbox checked={createFollowUps} onCheckedChange={(checked) => setCreateFollowUps(Boolean(checked))} />
                   Queue follow-ups
                 </label>
               </div>
@@ -1039,56 +840,36 @@ export default function JobSearch() {
                   <Badge variant="outline" className={sourcingBadgeTone}>
                     {sourcingControl.label}
                   </Badge>
-                  <Badge
-                    variant="outline"
-                    className="border-slate-700 text-slate-300"
-                  >
-                    {sourcingControl.totalJobs} visible job
-                    {sourcingControl.totalJobs === 1 ? "" : "s"}
+                  <Badge variant="outline" className="border-slate-700 text-slate-300">
+                    {sourcingControl.totalJobs} visible job{sourcingControl.totalJobs === 1 ? "" : "s"}
                   </Badge>
-                  <Badge
-                    variant="outline"
-                    className="border-slate-700 text-slate-300"
-                  >
+                  <Badge variant="outline" className="border-slate-700 text-slate-300">
                     {sourcingControl.averageScore}% avg match
                   </Badge>
                 </div>
-                <h2 className="text-xl font-semibold text-white">
-                  Sourcing Control
-                </h2>
-                <p className="mt-1 text-sm text-slate-300">
-                  {sourcingControl.headline}
-                </p>
-                <p className="mt-2 max-w-3xl text-sm text-slate-400">
-                  {sourcingControl.nextAction}
-                </p>
+                <h2 className="text-xl font-semibold text-white">Sourcing Control</h2>
+                <p className="mt-1 text-sm text-slate-300">{sourcingControl.headline}</p>
+                <p className="mt-2 max-w-3xl text-sm text-slate-400">{sourcingControl.nextAction}</p>
                 <div
                   data-testid="job-discovery-status"
                   data-discovery-status={discoveryControl.status}
                   className={`mt-3 max-w-3xl rounded-md border px-3 py-2 ${discoveryTone}`}
                 >
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge
-                      variant="outline"
-                      className="border-current text-current"
-                    >
+                    <Badge variant="outline" className="border-current text-current">
                       {discoveryControl.label}
                     </Badge>
                     <span className="text-xs font-medium">
-                      {discoveryControl.activeSources} active source
-                      {discoveryControl.activeSources === 1 ? "" : "s"}
+                      {discoveryControl.activeSources} active source{discoveryControl.activeSources === 1 ? "" : "s"}
                     </span>
                     <span className="text-xs">
                       {discoveryControl.sourcesWithFreshScrape} fresh in 24h
                     </span>
                     <span className="text-xs">
-                      {discoveryControl.canonicalJobs} canonical job
-                      {discoveryControl.canonicalJobs === 1 ? "" : "s"}
+                      {discoveryControl.canonicalJobs} canonical job{discoveryControl.canonicalJobs === 1 ? "" : "s"}
                     </span>
                   </div>
-                  <p className="mt-1 text-xs leading-5 opacity-90">
-                    {discoveryControl.detail}
-                  </p>
+                  <p className="mt-1 text-xs leading-5 opacity-90">{discoveryControl.detail}</p>
                 </div>
               </div>
               <Button
@@ -1121,9 +902,7 @@ export default function JobSearch() {
                   onClick={() => setActiveTab(String(tab))}
                 >
                   <p className="text-xs text-slate-500">{label}</p>
-                  <p className="mt-1 text-lg font-semibold text-white">
-                    {value}
-                  </p>
+                  <p className="mt-1 text-lg font-semibold text-white">{value}</p>
                 </button>
               ))}
             </div>
@@ -1139,18 +918,13 @@ export default function JobSearch() {
                 <Input
                   placeholder="Search jobs, companies, skills..."
                   value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-10 bg-slate-800 border-slate-700"
                 />
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <Select
-                  value={selectedJobType}
-                  onValueChange={value =>
-                    setSelectedJobType(value as JobTypeFilter)
-                  }
-                >
+                <Select value={selectedJobType} onValueChange={(value) => setSelectedJobType(value as JobTypeFilter)}>
                   <SelectTrigger className="w-[140px] bg-slate-800 border-slate-700">
                     <SelectValue placeholder="Job Type" />
                   </SelectTrigger>
@@ -1163,20 +937,14 @@ export default function JobSearch() {
                   </SelectContent>
                 </Select>
 
-                <Select
-                  value={selectedPlatform}
-                  onValueChange={setSelectedPlatform}
-                >
+                <Select value={selectedPlatform} onValueChange={setSelectedPlatform}>
                   <SelectTrigger className="w-[160px] bg-slate-800 border-slate-700">
                     <SelectValue placeholder="Platform" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Platforms</SelectItem>
-                    {platformsData?.map(platform => (
-                      <SelectItem
-                        key={platform.id}
-                        value={platform.id.toString()}
-                      >
+                    {platformsData?.map((platform) => (
+                      <SelectItem key={platform.id} value={platform.id.toString()}>
                         {platform.name}
                       </SelectItem>
                     ))}
@@ -1187,27 +955,14 @@ export default function JobSearch() {
                   <Checkbox
                     id="remote"
                     checked={showRemoteOnly}
-                    onCheckedChange={checked =>
-                      setShowRemoteOnly(checked as boolean)
-                    }
+                    onCheckedChange={(checked) => setShowRemoteOnly(checked as boolean)}
                   />
-                  <label
-                    htmlFor="remote"
-                    className="text-sm text-slate-300 cursor-pointer"
-                  >
+                  <label htmlFor="remote" className="text-sm text-slate-300 cursor-pointer">
                     Remote Only
                   </label>
                 </div>
-                <Select
-                  value={selectedExperienceLevel}
-                  onValueChange={value =>
-                    setSelectedExperienceLevel(value as JobExperienceLevel)
-                  }
-                >
-                  <SelectTrigger
-                    data-testid="job-filter-experience"
-                    className="w-[150px] bg-slate-800 border-slate-700"
-                  >
+                <Select value={selectedExperienceLevel} onValueChange={(value) => setSelectedExperienceLevel(value as JobExperienceLevel)}>
+                  <SelectTrigger data-testid="job-filter-experience" className="w-[150px] bg-slate-800 border-slate-700">
                     <SelectValue placeholder="Experience" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1220,18 +975,8 @@ export default function JobSearch() {
                     <SelectItem value="executive">Executive</SelectItem>
                   </SelectContent>
                 </Select>
-                <Select
-                  value={selectedApplicationProcess}
-                  onValueChange={value =>
-                    setSelectedApplicationProcess(
-                      value as JobApplicationProcessFilter
-                    )
-                  }
-                >
-                  <SelectTrigger
-                    data-testid="job-filter-application-process"
-                    className="w-[150px] bg-slate-800 border-slate-700"
-                  >
+                <Select value={selectedApplicationProcess} onValueChange={(value) => setSelectedApplicationProcess(value as JobApplicationProcessFilter)}>
+                  <SelectTrigger data-testid="job-filter-application-process" className="w-[150px] bg-slate-800 border-slate-700">
                     <SelectValue placeholder="Application system" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1243,16 +988,8 @@ export default function JobSearch() {
                     <SelectItem value="other">Other</SelectItem>
                   </SelectContent>
                 </Select>
-                <Select
-                  value={postedWithin}
-                  onValueChange={value =>
-                    setPostedWithin(value as JobPostedWithin)
-                  }
-                >
-                  <SelectTrigger
-                    data-testid="job-filter-posted-within"
-                    className="w-[140px] bg-slate-800 border-slate-700"
-                  >
+                <Select value={postedWithin} onValueChange={(value) => setPostedWithin(value as JobPostedWithin)}>
+                  <SelectTrigger data-testid="job-filter-posted-within" className="w-[140px] bg-slate-800 border-slate-700">
                     <SelectValue placeholder="Posted" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1271,18 +1008,10 @@ export default function JobSearch() {
                 <span className="text-sm text-slate-400">Salary Range</span>
                 <div className="flex items-center gap-3">
                   <span className="text-sm text-slate-300">
-                    ${(salaryRange[0] / 1000).toFixed(0)}k - $
-                    {(salaryRange[1] / 1000).toFixed(0)}k
+                    ${(salaryRange[0] / 1000).toFixed(0)}k - ${(salaryRange[1] / 1000).toFixed(0)}k
                   </span>
                   {activeFilterCount > 0 && (
-                    <Button
-                      data-testid="job-filter-clear"
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 px-2 text-slate-300"
-                      onClick={resetFilters}
-                    >
+                    <Button data-testid="job-filter-clear" type="button" size="sm" variant="ghost" className="h-7 px-2 text-slate-300" onClick={resetFilters}>
                       <XCircle className="mr-1 h-3.5 w-3.5" />
                       Clear {activeFilterCount}
                     </Button>
@@ -1291,9 +1020,7 @@ export default function JobSearch() {
               </div>
               <Slider
                 value={salaryRange}
-                onValueChange={value =>
-                  setSalaryRange(value as [number, number])
-                }
+                onValueChange={(value) => setSalaryRange(value as [number, number])}
                 min={0}
                 max={300000}
                 step={10000}
@@ -1301,45 +1028,18 @@ export default function JobSearch() {
               />
               <div className="mt-4 flex flex-wrap gap-x-5 gap-y-3">
                 {[
-                  [
-                    "visa-sponsorship",
-                    "Visa sponsorship",
-                    visaSponsorshipOnly,
-                    setVisaSponsorshipOnly,
-                  ],
-                  [
-                    "open-hiring-support",
-                    "Open hiring support",
-                    openHiringSupportOnly,
-                    setOpenHiringSupportOnly,
-                  ],
-                  [
-                    "diversity-friendly",
-                    "Diversity-friendly",
-                    diversityFriendlyOnly,
-                    setDiversityFriendlyOnly,
-                  ],
-                  [
-                    "salary-disclosed",
-                    "Salary disclosed",
-                    salaryDisclosedOnly,
-                    setSalaryDisclosedOnly,
-                  ],
+                  ["visa-sponsorship", "Visa sponsorship", visaSponsorshipOnly, setVisaSponsorshipOnly],
+                  ["open-hiring-support", "Open hiring support", openHiringSupportOnly, setOpenHiringSupportOnly],
+                  ["diversity-friendly", "Diversity-friendly", diversityFriendlyOnly, setDiversityFriendlyOnly],
+                  ["salary-disclosed", "Salary disclosed", salaryDisclosedOnly, setSalaryDisclosedOnly],
                 ].map(([id, label, checked, setChecked]) => (
                   <div key={id as string} className="flex items-center gap-2">
                     <Checkbox
                       id={id as string}
                       checked={checked as boolean}
-                      onCheckedChange={value =>
-                        (setChecked as (next: boolean) => void)(value === true)
-                      }
+                      onCheckedChange={(value) => (setChecked as (next: boolean) => void)(value === true)}
                     />
-                    <label
-                      htmlFor={id as string}
-                      className="text-sm text-slate-300 cursor-pointer"
-                    >
-                      {label as string}
-                    </label>
+                    <label htmlFor={id as string} className="text-sm text-slate-300 cursor-pointer">{label as string}</label>
                   </div>
                 ))}
               </div>
@@ -1350,36 +1050,21 @@ export default function JobSearch() {
         {/* Job Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="h-auto flex-wrap justify-start bg-slate-800/50 border border-slate-700">
-            <TabsTrigger
-              value="all"
-              className="data-[state=active]:bg-slate-700"
-            >
+            <TabsTrigger value="all" className="data-[state=active]:bg-slate-700">
               All Jobs ({filteredJobs.length})
             </TabsTrigger>
-            <TabsTrigger
-              value="excellent"
-              className="data-[state=active]:bg-emerald-900/50"
-            >
+            <TabsTrigger value="excellent" className="data-[state=active]:bg-emerald-900/50">
               <Star className="w-4 h-4 mr-1 text-emerald-400" />
               Excellent ({groupedJobs.excellent.length})
             </TabsTrigger>
-            <TabsTrigger
-              value="good"
-              className="data-[state=active]:bg-amber-900/50"
-            >
+            <TabsTrigger value="good" className="data-[state=active]:bg-amber-900/50">
               <TrendingUp className="w-4 h-4 mr-1 text-amber-400" />
               Good ({groupedJobs.good.length})
             </TabsTrigger>
-            <TabsTrigger
-              value="fair"
-              className="data-[state=active]:bg-slate-700"
-            >
+            <TabsTrigger value="fair" className="data-[state=active]:bg-slate-700">
               Fair ({groupedJobs.fair.length})
             </TabsTrigger>
-            <TabsTrigger
-              value="decided"
-              className="data-[state=active]:bg-cyan-900/50"
-            >
+            <TabsTrigger value="decided" className="data-[state=active]:bg-cyan-900/50">
               <ClipboardCheck className="w-4 h-4 mr-1 text-cyan-400" />
               Decided ({groupedJobs.decided.length})
             </TabsTrigger>
@@ -1414,9 +1099,7 @@ export default function JobSearch() {
                       <div className="text-center py-12 text-slate-400">
                         <Sparkles className="w-12 h-12 mx-auto mb-4 text-slate-600" />
                         <p>No excellent matches yet</p>
-                        <p className="text-sm mt-2">
-                          Complete your profile to improve matching
-                        </p>
+                        <p className="text-sm mt-2">Complete your profile to improve matching</p>
                       </div>
                     )}
                   </div>
@@ -1462,9 +1145,7 @@ export default function JobSearch() {
             {selectedJob && (
               <>
                 <DialogHeader>
-                  <DialogTitle className="text-xl text-white">
-                    {selectedJob.title}
-                  </DialogTitle>
+                  <DialogTitle className="text-xl text-white">{selectedJob.title}</DialogTitle>
                   <DialogDescription className="flex items-center gap-4 text-slate-400">
                     <span className="flex items-center gap-1">
                       <Building2 className="w-4 h-4" />
@@ -1481,10 +1162,7 @@ export default function JobSearch() {
                   <div className="space-y-4">
                     {selectedJob.matchScore && (
                       <div className="flex items-center gap-2">
-                        <Badge
-                          variant="outline"
-                          className={getMatchBadgeColor(selectedJob.matchScore)}
-                        >
+                        <Badge variant="outline" className={getMatchBadgeColor(selectedJob.matchScore)}>
                           <Target className="w-4 h-4 mr-1" />
                           {selectedJob.matchScore}% Match
                         </Badge>
@@ -1504,22 +1182,12 @@ export default function JobSearch() {
                       <div className="rounded-md border border-slate-700 bg-slate-800/50 p-3">
                         <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                           <div>
-                            <h4 className="text-sm font-medium text-slate-200">
-                              Match decision
-                            </h4>
-                            <p className="mt-1 text-sm text-slate-400">
-                              {selectedJobSummary.nextAction}
-                            </p>
+                            <h4 className="text-sm font-medium text-slate-200">Match decision</h4>
+                            <p className="mt-1 text-sm text-slate-400">{selectedJobSummary.nextAction}</p>
                           </div>
-                          <Badge
-                            variant="outline"
-                            className={getMatchBadgeColor(
-                              selectedJobSummary.matchScore
-                            )}
-                          >
+                          <Badge variant="outline" className={getMatchBadgeColor(selectedJobSummary.matchScore)}>
                             <Target className="w-3 h-3 mr-1" />
-                            {selectedJobSummary.matchScore}%{" "}
-                            {selectedJobSummary.confidence}
+                            {selectedJobSummary.matchScore}% {selectedJobSummary.confidence}
                           </Badge>
                         </div>
                         <div className="grid gap-2 text-xs text-slate-400 md:grid-cols-4">
@@ -1529,14 +1197,9 @@ export default function JobSearch() {
                             ["Salary", selectedJobSummary.salaryFit],
                             ["Location", selectedJobSummary.locationFit],
                           ].map(([label, value]) => (
-                            <div
-                              key={label}
-                              className="rounded border border-slate-700/70 bg-slate-900/60 p-2"
-                            >
+                            <div key={label} className="rounded border border-slate-700/70 bg-slate-900/60 p-2">
                               <div className="text-slate-500">{label}</div>
-                              <div className="mt-1 font-medium capitalize text-slate-200">
-                                {value}
-                              </div>
+                              <div className="mt-1 font-medium capitalize text-slate-200">{value}</div>
                             </div>
                           ))}
                         </div>
@@ -1557,10 +1220,7 @@ export default function JobSearch() {
                                     : ""}
                                 </p>
                               </div>
-                              <Badge
-                                variant="outline"
-                                className="border-cyan-500/40 text-cyan-300"
-                              >
+                              <Badge variant="outline" className="border-cyan-500/40 text-cyan-300">
                                 {selectedJobSummary.ledgerDecision}
                               </Badge>
                             </div>
@@ -1571,23 +1231,16 @@ export default function JobSearch() {
                             )}
                             {selectedJobSummary.ledgerReviewReason && (
                               <p className="mt-1 text-xs text-slate-400">
-                                Review context:{" "}
-                                {selectedJobSummary.ledgerReviewReason}
+                                Review context: {selectedJobSummary.ledgerReviewReason}
                               </p>
                             )}
                             <div className="mt-3 flex flex-wrap gap-2">
-                              {selectedJobSummary.ledgerDecision !==
-                                "review" && (
+                              {selectedJobSummary.ledgerDecision !== "review" && (
                                 <Button
                                   size="sm"
                                   data-testid="job-decision-reopen-review"
                                   disabled={decideMutation.isPending}
-                                  onClick={() =>
-                                    handleDecisionLifecycleAction(
-                                      selectedJob,
-                                      "queue_review"
-                                    )
-                                  }
+                                  onClick={() => handleDecisionLifecycleAction(selectedJob, "queue_review")}
                                 >
                                   <RefreshCw className="mr-2 h-4 w-4" />
                                   Reopen Review
@@ -1599,31 +1252,20 @@ export default function JobSearch() {
                                   size="sm"
                                   data-testid="job-decision-save"
                                   disabled={decideMutation.isPending}
-                                  onClick={() =>
-                                    handleDecisionLifecycleAction(
-                                      selectedJob,
-                                      "save"
-                                    )
-                                  }
+                                  onClick={() => handleDecisionLifecycleAction(selectedJob, "save")}
                                 >
                                   <Heart className="mr-2 h-4 w-4" />
                                   Save for Later
                                 </Button>
                               )}
-                              {selectedJobSummary.ledgerDecision !==
-                                "ignore" && (
+                              {selectedJobSummary.ledgerDecision !== "ignore" && (
                                 <Button
                                   variant="outline"
                                   size="sm"
                                   data-testid="job-decision-ignore"
                                   className="border-destructive/50 text-destructive"
                                   disabled={decideMutation.isPending}
-                                  onClick={() =>
-                                    handleDecisionLifecycleAction(
-                                      selectedJob,
-                                      "ignore"
-                                    )
-                                  }
+                                  onClick={() => handleDecisionLifecycleAction(selectedJob, "ignore")}
                                 >
                                   <XCircle className="mr-2 h-4 w-4" />
                                   Ignore
@@ -1643,11 +1285,8 @@ export default function JobSearch() {
                         )}
                         {selectedJobSummary.reasons.length > 0 && (
                           <div className="mt-3 space-y-1">
-                            {selectedJobSummary.reasons.map(reason => (
-                              <div
-                                key={reason}
-                                className="flex items-start gap-2 text-xs text-emerald-300"
-                              >
+                            {selectedJobSummary.reasons.map((reason) => (
+                              <div key={reason} className="flex items-start gap-2 text-xs text-emerald-300">
                                 <Target className="mt-0.5 h-3 w-3 shrink-0" />
                                 <span>{reason}</span>
                               </div>
@@ -1656,11 +1295,8 @@ export default function JobSearch() {
                         )}
                         {selectedJobSummary.blockers.length > 0 && (
                           <div className="mt-3 space-y-1">
-                            {selectedJobSummary.blockers.map(blocker => (
-                              <div
-                                key={blocker}
-                                className="flex items-start gap-2 text-xs text-amber-300"
-                              >
+                            {selectedJobSummary.blockers.map((blocker) => (
+                              <div key={blocker} className="flex items-start gap-2 text-xs text-amber-300">
                                 <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
                                 <span>{blocker}</span>
                               </div>
@@ -1669,75 +1305,42 @@ export default function JobSearch() {
                         )}
                         <div className="mt-3 grid gap-3 md:grid-cols-2">
                           <div>
-                            <div className="mb-2 text-xs font-medium text-slate-300">
-                              Matched skills
-                            </div>
+                            <div className="mb-2 text-xs font-medium text-slate-300">Matched skills</div>
                             <div className="flex flex-wrap gap-1">
-                              {selectedJobSummary.matchedSkills.length > 0 ? (
-                                selectedJobSummary.matchedSkills.map(skill => (
-                                  <Badge
-                                    key={skill}
-                                    variant="outline"
-                                    className="border-emerald-500/30 text-emerald-300"
-                                  >
-                                    {skill}
-                                  </Badge>
-                                ))
-                              ) : (
-                                <span className="text-xs text-slate-500">
-                                  No direct skill evidence yet
-                                </span>
+                              {selectedJobSummary.matchedSkills.length > 0 ? selectedJobSummary.matchedSkills.map((skill) => (
+                                <Badge key={skill} variant="outline" className="border-emerald-500/30 text-emerald-300">
+                                  {skill}
+                                </Badge>
+                              )) : (
+                                <span className="text-xs text-slate-500">No direct skill evidence yet</span>
                               )}
                             </div>
                           </div>
                           <div>
-                            <div className="mb-2 text-xs font-medium text-slate-300">
-                              Missing / verify
-                            </div>
+                            <div className="mb-2 text-xs font-medium text-slate-300">Missing / verify</div>
                             <div className="flex flex-wrap gap-1">
-                              {selectedJobSummary.missingSkills.length > 0 ? (
-                                selectedJobSummary.missingSkills.map(skill => (
-                                  <Badge
-                                    key={skill}
-                                    variant="outline"
-                                    className="border-amber-500/30 text-amber-300"
-                                  >
-                                    {skill}
-                                  </Badge>
-                                ))
-                              ) : (
-                                <span className="text-xs text-slate-500">
-                                  No missing skills detected from listing
-                                </span>
+                              {selectedJobSummary.missingSkills.length > 0 ? selectedJobSummary.missingSkills.map((skill) => (
+                                <Badge key={skill} variant="outline" className="border-amber-500/30 text-amber-300">
+                                  {skill}
+                                </Badge>
+                              )) : (
+                                <span className="text-xs text-slate-500">No missing skills detected from listing</span>
                               )}
                             </div>
                           </div>
                         </div>
                         <div className="mt-3 flex flex-wrap gap-2">
-                          {["salaryFit", "locationFit"].map(key => {
-                            const label =
-                              key === "salaryFit"
-                                ? "Salary fit"
-                                : "Location fit";
-                            const fit =
-                              key === "salaryFit"
-                                ? selectedJobSummary.salaryFit
-                                : selectedJobSummary.locationFit;
+                          {["salaryFit", "locationFit"].map((key) => {
+                            const label = key === "salaryFit" ? "Salary fit" : "Location fit";
+                            const fit = key === "salaryFit" ? selectedJobSummary.salaryFit : selectedJobSummary.locationFit;
                             return (
-                              <Badge
-                                key={key}
-                                variant="outline"
-                                className={getFitBadgeClass(fit)}
-                              >
+                              <Badge key={key} variant="outline" className={getFitBadgeClass(fit)}>
                                 {label}: {fit}
                               </Badge>
                             );
                           })}
                           {selectedJobSummary.remoteFit && (
-                            <Badge
-                              variant="outline"
-                              className="border-cyan-500/30 text-cyan-300"
-                            >
+                            <Badge variant="outline" className="border-cyan-500/30 text-cyan-300">
                               Remote-compatible
                             </Badge>
                           )}
@@ -1755,67 +1358,44 @@ export default function JobSearch() {
                       {(selectedJob.salaryMin || selectedJob.salaryMax) && (
                         <Badge variant="secondary" className="bg-slate-800">
                           <DollarSign className="w-3 h-3 mr-1" />
-                          {formatSalary(
-                            selectedJob.salaryMin,
-                            selectedJob.salaryMax
-                          )}
+                          {formatSalary(selectedJob.salaryMin, selectedJob.salaryMax)}
                         </Badge>
                       )}
                     </div>
 
-                    {selectedJobSources &&
-                      selectedJobSources.sources.length > 1 && (
-                        <div
-                          data-testid="job-detail-source-coverage"
-                          className="border-l-2 border-cyan-400 bg-slate-800/40 py-2 pl-3"
-                        >
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="text-sm font-medium text-slate-200">
-                              Source coverage
-                            </p>
-                            <Badge
-                              variant="outline"
-                              className="border-cyan-500/40 text-cyan-300"
-                            >
-                              {selectedJobSources.sources.length} linked sources
-                            </Badge>
-                          </div>
-                          <p className="mt-1 text-xs text-slate-400">
-                            Hire.AI is showing one canonical listing while
-                            preserving every matched source for verification.
-                          </p>
-                          <div className="mt-2 flex flex-wrap gap-1">
-                            {selectedJobSources.sources.map(source => (
-                              <Badge
-                                key={source.id}
-                                variant="outline"
-                                className="border-slate-600 text-slate-300"
-                              >
-                                {platformNameById.get(source.platformId) ||
-                                  `Platform #${source.platformId}`}
-                              </Badge>
-                            ))}
-                          </div>
+                    {selectedJobSources && selectedJobSources.sources.length > 1 && (
+                      <div
+                        data-testid="job-detail-source-coverage"
+                        className="border-l-2 border-cyan-400 bg-slate-800/40 py-2 pl-3"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-medium text-slate-200">Source coverage</p>
+                          <Badge variant="outline" className="border-cyan-500/40 text-cyan-300">
+                            {selectedJobSources.sources.length} linked sources
+                          </Badge>
                         </div>
-                      )}
+                        <p className="mt-1 text-xs text-slate-400">
+                          Hire.AI is showing one canonical listing while preserving every matched source for verification.
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {selectedJobSources.sources.map((source) => (
+                            <Badge key={source.id} variant="outline" className="border-slate-600 text-slate-300">
+                              {platformNameById.get(source.platformId) || `Platform #${source.platformId}`}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {selectedJob.skills && (
                       <div>
-                        <h4 className="text-sm font-medium text-slate-300 mb-2">
-                          Required Skills
-                        </h4>
+                        <h4 className="text-sm font-medium text-slate-300 mb-2">Required Skills</h4>
                         <div className="flex flex-wrap gap-1">
-                          {selectedJob.skills
-                            .split(",")
-                            .map((skill: string, i: number) => (
-                              <Badge
-                                key={i}
-                                variant="outline"
-                                className="text-xs border-slate-600"
-                              >
-                                {skill.trim()}
-                              </Badge>
-                            ))}
+                          {selectedJob.skills.split(",").map((skill: string, i: number) => (
+                            <Badge key={i} variant="outline" className="text-xs border-slate-600">
+                              {skill.trim()}
+                            </Badge>
+                          ))}
                         </div>
                       </div>
                     )}
@@ -1823,9 +1403,7 @@ export default function JobSearch() {
                     <Separator className="bg-slate-700" />
 
                     <div>
-                      <h4 className="text-sm font-medium text-slate-300 mb-2">
-                        Job Description
-                      </h4>
+                      <h4 className="text-sm font-medium text-slate-300 mb-2">Job Description</h4>
                       <p className="text-sm text-slate-400 whitespace-pre-wrap">
                         {selectedJob.description || "No description available"}
                       </p>
@@ -1848,9 +1426,7 @@ export default function JobSearch() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() =>
-                          openExternalUrl(selectedJob.applicationUrl)
-                        }
+                        onClick={() => openExternalUrl(selectedJob.applicationUrl)}
                       >
                         <ExternalLink className="w-4 h-4 mr-1" />
                         View Original
@@ -1859,17 +1435,12 @@ export default function JobSearch() {
                   </div>
                   <Button
                     data-testid="job-prepare-or-resolve-evidence"
-                    title={
-                      preparationEvidenceGate?.detail ||
-                      "Queue a controlled application review"
-                    }
+                    title={preparationEvidenceGate?.detail || "Queue a controlled application review"}
                     onClick={() => handleApply(selectedJob)}
                     disabled={decideMutation.isPending}
-                    className={
-                      preparationEvidenceGate
-                        ? "border border-amber-500/50 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20"
-                        : "bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700"
-                    }
+                    className={preparationEvidenceGate
+                      ? "border border-amber-500/50 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20"
+                      : "bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700"}
                   >
                     {decideMutation.isPending ? (
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -1880,12 +1451,11 @@ export default function JobSearch() {
                     )}
                     {preparationEvidenceGate
                       ? "Resolve Evidence"
-                      : selectedJobSummary?.recommendedDecision ===
-                          "manual_apply"
-                        ? "Queue Manual Task"
-                        : selectedJobSummary?.recommendedDecision === "ignore"
-                          ? "Queue Exception Review"
-                          : "Queue Review"}
+                      : selectedJobSummary?.recommendedDecision === "manual_apply"
+                      ? "Queue Manual Task"
+                      : selectedJobSummary?.recommendedDecision === "ignore"
+                        ? "Queue Exception Review"
+                        : "Queue Review"}
                   </Button>
                 </div>
               </>
