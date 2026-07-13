@@ -81,7 +81,9 @@ export function ReportHireDialog({ open, onOpenChange, applicationId, onSuccess 
       }
       setStep("success");
       onSuccess?.();
-      toast.success("Hire report recorded. Continue in Stripe Checkout to authorize billing; proof and review state are in the operating ledger.");
+      toast.success(data.checkoutUrl
+        ? "Hire report recorded. Continue in Stripe Checkout to authorize billing; proof and review state are in the operating ledger."
+        : "Hire report recorded. Billing setup is unavailable right now; reopen Billing to retry without losing the proof and review record.");
     },
     onError: (err) => {
       toast.error(err.message || "Failed to report hire. Please try again.");

@@ -27,6 +27,17 @@ const mocks = vi.hoisted(() => {
       set: vi.fn(() => ({ where: vi.fn().mockResolvedValue([{ affectedRows: 1 }]) })),
     })),
   };
+  const stripe = {
+    customers: { create: vi.fn() },
+    products: { create: vi.fn().mockResolvedValue({ id: "prod_test" }) },
+    prices: { create: vi.fn().mockResolvedValue({ id: "price_test" }) },
+    checkout: {
+      sessions: {
+        create: vi.fn().mockResolvedValue({ id: "cs_test", url: "https://checkout.stripe.com/c/pay/cs_test" }),
+        retrieve: vi.fn(),
+      },
+    },
+  };
 
   return {
     mockDb,
@@ -38,6 +49,7 @@ const mocks = vi.hoisted(() => {
     createAuditEvent: vi.fn(),
     dismissOfferAttributionAdminReviews,
     getUserOfferAttributionReviews: vi.fn(),
+    stripe,
   };
 });
 
@@ -52,21 +64,7 @@ vi.mock("./db", () => ({
 vi.mock("./storage", () => ({ storagePut: mocks.storagePut }));
 
 vi.mock("./stripeClient", () => ({
-  getStripeClient: vi.fn(() => ({
-    customers: { create: vi.fn() },
-    products: { create: vi.fn().mockResolvedValue({ id: "prod_test" }) },
-    prices: { create: vi.fn().mockResolvedValue({ id: "price_test" }) },
-    checkout: {
-      sessions: { create: vi.fn().mockResolvedValue({ id: "cs_test", url: "https://checkout.stripe.com/c/pay/cs_test" }) },
-    },
-    subscriptions: {
-      create: vi.fn().mockResolvedValue({
-        id: "sub_test",
-        status: "incomplete",
-        latest_invoice: { payment_intent: { client_secret: "secret_test" } },
-      }),
-    },
-  })),
+  getStripeClient: vi.fn(() => mocks.stripe),
 }));
 
 function createContext(userId: number): TrpcContext {
@@ -232,6 +230,107 @@ describe("success fee report-hire eligibility", () => {
       entityId: 51,
       action: "offer_attribution_review_superseded_by_hire_report",
       approvalId: 77,
+    }));
+  });
+
+  it("reuses an open Checkout session instead of creating another subscription path", async () => {
+    mocks.selectLimit.mockResolvedValueOnce([{
+      id: 91,
+      userId: 190096,
+      applicationId: null,
+      employerName: "Example Employer",
+      jobTitle: "Example Role",
+      monthlyFeeAmount: 25000,
+      currency: "USD",
+      stripePriceId: "price_existing",
+      stripeSubscriptionId: null,
+      stripeCheckoutSessionId: "cs_open_91",
+      status: "pending_verification",
+      termsAcceptedAt: new Date(),
+    }]);
+    mocks.stripe.checkout.sessions.retrieve.mockResolvedValueOnce({
+      id: "cs_open_91",
+      status: "open",
+      url: "https://checkout.stripe.com/c/pay/cs_open_91",
+    });
+    const caller = successFeesRouter.createCaller(createContext(190096));
+
+    await expect(caller.retryBillingCheckout({ successFeeId: 91, confirmBillingSetup: true })).resolves.toMatchObject({
+      feeId: 91,
+      checkoutSource: "reused_open_session",
+      checkoutUrl: "https://checkout.stripe.com/c/pay/cs_open_91",
+    });
+
+    expect(mocks.stripe.checkout.sessions.create).not.toHaveBeenCalled();
+    expect(mocks.stripe.products.create).not.toHaveBeenCalled();
+    expect(mocks.createAuditEvent).toHaveBeenCalledWith(expect.objectContaining({
+      action: "success_fee_checkout_reopened",
+      riskLevel: "critical",
+    }));
+  });
+
+  it("replaces an expired Checkout session using the existing price and no new fee", async () => {
+    mocks.selectLimit
+      .mockResolvedValueOnce([{
+        id: 92,
+        userId: 190097,
+        applicationId: null,
+        employerName: "Example Employer",
+        jobTitle: "Example Role",
+        monthlyFeeAmount: 25000,
+        currency: "USD",
+        stripePriceId: "price_existing",
+        stripeSubscriptionId: null,
+        stripeCheckoutSessionId: "cs_expired_92",
+        status: "pending_verification",
+        termsAcceptedAt: new Date(),
+      }])
+      .mockResolvedValueOnce([{ id: 190097, stripeCustomerId: "cus_existing" }]);
+    mocks.stripe.checkout.sessions.retrieve.mockResolvedValueOnce({ id: "cs_expired_92", status: "expired", url: null });
+    mocks.stripe.checkout.sessions.create.mockResolvedValueOnce({
+      id: "cs_replacement_92",
+      url: "https://checkout.stripe.com/c/pay/cs_replacement_92",
+    });
+    const caller = successFeesRouter.createCaller(createContext(190097));
+
+    await expect(caller.retryBillingCheckout({ successFeeId: 92, confirmBillingSetup: true })).resolves.toMatchObject({
+      feeId: 92,
+      checkoutSource: "replaced_expired_session",
+      checkoutUrl: "https://checkout.stripe.com/c/pay/cs_replacement_92",
+    });
+
+    expect(mocks.stripe.checkout.sessions.create).toHaveBeenCalledTimes(1);
+    expect(mocks.stripe.products.create).not.toHaveBeenCalled();
+    expect(mocks.stripe.prices.create).not.toHaveBeenCalled();
+  });
+
+  it("blocks recovery when Checkout completed but its webhook has not reconciled", async () => {
+    mocks.selectLimit.mockResolvedValueOnce([{
+      id: 93,
+      userId: 190098,
+      applicationId: null,
+      employerName: "Example Employer",
+      jobTitle: "Example Role",
+      monthlyFeeAmount: 25000,
+      currency: "USD",
+      stripePriceId: "price_existing",
+      stripeSubscriptionId: null,
+      stripeCheckoutSessionId: "cs_complete_93",
+      status: "pending_verification",
+      termsAcceptedAt: new Date(),
+    }]);
+    mocks.stripe.checkout.sessions.retrieve.mockResolvedValueOnce({ id: "cs_complete_93", status: "complete", url: null });
+    const caller = successFeesRouter.createCaller(createContext(190098));
+
+    await expect(caller.retryBillingCheckout({ successFeeId: 93, confirmBillingSetup: true })).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: expect.stringContaining("awaiting ledger reconciliation"),
+    });
+
+    expect(mocks.stripe.checkout.sessions.create).not.toHaveBeenCalled();
+    expect(mocks.createAdminReviewItem).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Completed Checkout awaits reconciliation",
+      priority: "critical",
     }));
   });
 });

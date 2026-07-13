@@ -178,6 +178,17 @@ export default function Billing() {
     onError: (err) => toast.error(err.message || "Failed to report employment end"),
   });
 
+  const retryBillingCheckout = trpc.successFees.retryBillingCheckout.useMutation({
+    onSuccess: (data) => {
+      if (data.checkoutUrl) {
+        window.open(data.checkoutUrl, "_blank", "noopener,noreferrer");
+      }
+      toast.success("Secure Stripe Checkout opened. No new success-fee record or subscription was created by Hire.AI.");
+      refetchFees();
+    },
+    onError: (err) => toast.error(err.message || "Could not reopen secure Stripe Checkout"),
+  });
+
   const getBillingPortal = trpc.successFees.getBillingPortalUrl.useMutation({
     onSuccess: (data) => window.open(data.url, "_blank"),
     onError: (err) => toast.error(err.message || "Could not open billing portal"),
@@ -473,6 +484,7 @@ export default function Billing() {
             <div className="space-y-3">
               {fees.map(fee => {
                 const isVerificationDue = fee.nextVerificationDue && new Date(fee.nextVerificationDue) < new Date();
+                const needsBillingCheckout = fee.status === "pending_verification" && !fee.stripeSubscriptionId;
                 const daysUntilVerification = fee.nextVerificationDue
                   ? Math.ceil((new Date(fee.nextVerificationDue).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
                   : null;
@@ -509,7 +521,26 @@ export default function Billing() {
                       {fee.status === "pending_verification" && (
                         <div className="flex items-center gap-2 text-xs p-2 rounded mb-3 bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
                           <Clock className="w-3.5 h-3.5" />
-                          Offer letter under review. Your subscription will activate once verified.
+                          Offer letter is under review. Billing begins only after you confirm in secure Stripe Checkout.
+                        </div>
+                      )}
+
+                      {needsBillingCheckout && (
+                        <div className="mb-3 flex flex-col gap-2 rounded border border-cyan-500/30 bg-cyan-500/10 p-3 text-xs sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0 text-cyan-100">
+                            <p className="font-medium">Secure billing confirmation required</p>
+                            <p className="mt-1 text-cyan-100/70">Hire.AI will reuse an open Checkout session or replace only an expired one.</p>
+                          </div>
+                          <Button
+                            size="sm"
+                            data-testid="retry-success-fee-checkout"
+                            onClick={() => retryBillingCheckout.mutate({ successFeeId: fee.id, confirmBillingSetup: true })}
+                            disabled={retryBillingCheckout.isPending}
+                            className="shrink-0 bg-cyan-500 text-xs font-semibold text-black hover:bg-cyan-600"
+                          >
+                            <ExternalLink className="mr-1 h-3 w-3" />
+                            {retryBillingCheckout.isPending ? "Opening..." : "Open Stripe Checkout"}
+                          </Button>
                         </div>
                       )}
 

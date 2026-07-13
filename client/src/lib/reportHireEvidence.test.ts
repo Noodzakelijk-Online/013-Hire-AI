@@ -126,4 +126,23 @@ describe("report hire evidence summary", () => {
     expect(summary.nextAction).toContain("quarterly verification");
     expect(summary.items.find((item) => item.id === "offer_attribution")?.state).toBe("complete");
   });
+
+  it("preserves the recorded ledger and directs the user to Billing when Checkout is unavailable", () => {
+    const summary = getReportHireCompletionSummary({
+      feeId: 44,
+      monthlyFeeAmount: 20_000,
+      subscriptionStatus: "checkout_unavailable",
+      ledger: {
+        offerProofStatus: "stored",
+        offerAttributionStatus: "admin_review_open",
+        verificationStatus: "pending_review",
+        billingSetupStatus: "checkout_unavailable",
+        adminReviewRequired: true,
+      },
+    });
+
+    expect(summary.paymentActionRequired).toBe(true);
+    expect(summary.nextAction).toContain("Open Billing");
+    expect(summary.items.find((item) => item.id === "billing")?.detail).toContain("retry");
+  });
 });

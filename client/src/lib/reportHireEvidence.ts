@@ -202,9 +202,12 @@ export function getReportHireCompletionSummary(
   result?: ReportHireResultLike | null
 ): ReportHireCompletionSummary {
   const ledger = result?.ledger;
+  const checkoutUnavailable = ledger?.billingSetupStatus === "checkout_unavailable" ||
+    result?.subscriptionStatus === "checkout_unavailable";
   const paymentActionRequired = Boolean(result?.checkoutUrl) ||
     ledger?.billingSetupStatus === "checkout_required" ||
-    result?.subscriptionStatus === "checkout_open";
+    result?.subscriptionStatus === "checkout_open" ||
+    checkoutUnavailable;
   const adminReviewRequired = ledger?.adminReviewRequired !== false;
   const feeId = typeof result?.feeId === "number" ? result.feeId : null;
   const monthlyFeeCents = result?.monthlyFeeAmount || 0;
@@ -237,7 +240,9 @@ export function getReportHireCompletionSummary(
       label: "Payment setup",
       state: paymentActionRequired ? "pending" : "complete",
       detail: paymentActionRequired
-        ? "Continue in secure Stripe Checkout before recurring billing can start."
+        ? checkoutUnavailable
+          ? "Checkout could not be opened. Reopen Billing to retry without creating another success-fee record."
+          : "Continue in secure Stripe Checkout before recurring billing can start."
         : "Stripe subscription metadata was linked to the reported success fee.",
     },
   ];
@@ -245,7 +250,9 @@ export function getReportHireCompletionSummary(
   if (paymentActionRequired) {
     return {
       label: "Hire report recorded",
-      nextAction: "Continue in secure Stripe Checkout, then watch the admin review and verification queues.",
+      nextAction: checkoutUnavailable
+        ? "Open Billing to retry secure Stripe Checkout; the proof, approvals, and admin review record were preserved."
+        : "Continue in secure Stripe Checkout, then watch the admin review and verification queues.",
       feeId,
       monthlyFeeCents,
       paymentActionRequired,

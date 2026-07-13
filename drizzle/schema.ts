@@ -819,6 +819,7 @@ export const successFees = mysqlTable("success_fees", {
   monthlyFeeAmount: int("monthly_fee_amount").notNull(),
   stripeSubscriptionId: varchar("stripe_subscription_id", { length: 255 }),
   stripePriceId: varchar("stripe_price_id", { length: 255 }),
+  stripeCheckoutSessionId: varchar("stripe_checkout_session_id", { length: 255 }),
   status: mysqlEnum("status", ["pending_verification", "active", "paused", "ended", "suspended", "disputed"]).default("pending_verification").notNull(),
   startDate: timestamp("start_date").notNull(),
   endDate: timestamp("end_date"),

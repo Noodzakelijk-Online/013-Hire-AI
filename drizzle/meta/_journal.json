@@ -225,6 +225,13 @@
       "when": 1784509200000,
       "tag": "0031_follow_up_mail_delivery",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "5",
+      "when": 1784512800000,
+      "tag": "0032_success_fee_checkout_sessions",
+      "breakpoints": true
     }
   ]
 }

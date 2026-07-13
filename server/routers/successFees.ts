@@ -9,7 +9,7 @@ import {
   getUserOfferAttributionReviews,
   getUserSuccessFees,
 } from "../db";
-import { applicationApprovals, applications, successFees, employmentVerifications, feePayments, users } from "../../drizzle/schema";
+import { applicationApprovals, applications, successFees, employmentVerifications, feePayments, users, type SuccessFee } from "../../drizzle/schema";
 import { eq, desc, and, inArray } from "drizzle-orm";
 import { isAcceptedOfferApplicationStatus } from "@shared/offerEligibility";
 import { storagePut } from "../storage";
@@ -63,6 +63,66 @@ function billingReturnUrl(params: Record<string, string>) {
   return url.toString();
 }
 
+async function ensureSuccessFeeStripePrice(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  fee: Pick<SuccessFee, "id" | "userId" | "employerName" | "monthlyFeeAmount" | "currency" | "stripePriceId">
+) {
+  if (fee.stripePriceId) return fee.stripePriceId;
+
+  const stripe = getStripeClient();
+  const product = await stripe.products.create({
+    name: `Hire.AI Success Fee - ${fee.employerName}`,
+    metadata: {
+      userId: fee.userId.toString(),
+      successFeeId: fee.id.toString(),
+      employerName: fee.employerName,
+    },
+  });
+  const price = await stripe.prices.create({
+    product: product.id,
+    unit_amount: fee.monthlyFeeAmount,
+    currency: fee.currency.toLowerCase(),
+    recurring: { interval: "month" },
+    metadata: { successFeeId: fee.id.toString() },
+  });
+
+  await db.update(successFees)
+    .set({ stripePriceId: price.id })
+    .where(eq(successFees.id, fee.id));
+  return price.id;
+}
+
+async function createSuccessFeeCheckoutSession(params: {
+  stripeCustomerId: string;
+  fee: Pick<SuccessFee, "id" | "userId" | "employerName">;
+  stripePriceId: string;
+}) {
+  const checkoutSession = await getStripeClient().checkout.sessions.create({
+    mode: "subscription",
+    customer: params.stripeCustomerId,
+    line_items: [{ price: params.stripePriceId, quantity: 1 }],
+    client_reference_id: String(params.fee.id),
+    metadata: {
+      userId: params.fee.userId.toString(),
+      successFeeId: params.fee.id.toString(),
+      employerName: params.fee.employerName,
+    },
+    subscription_data: {
+      metadata: {
+        userId: params.fee.userId.toString(),
+        successFeeId: params.fee.id.toString(),
+        employerName: params.fee.employerName,
+      },
+    },
+    success_url: billingReturnUrl({ checkout: "success", session_id: "{CHECKOUT_SESSION_ID}" }),
+    cancel_url: billingReturnUrl({ checkout: "cancelled" }),
+  });
+  if (!checkoutSession.url) {
+    throw new Error("Stripe did not return a secure checkout URL.");
+  }
+  return checkoutSession;
+}
+
 export const successFeesRouter = router({
   // Report a new hire and set up success fee
   reportHire: protectedProcedure
@@ -79,7 +139,6 @@ export const successFeesRouter = router({
       termsAccepted: z.boolean().refine(v => v === true, "You must accept the terms"),
     }))
     .mutation(async ({ ctx, input }) => {
-      const stripe = getStripeClient();
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const userId = ctx.user.id;
@@ -355,79 +414,70 @@ export const successFeesRouter = router({
         description: `Reported hire at ${input.employerName} for ${input.jobTitle}.`,
       });
 
-      // Get or create Stripe customer
-      const stripeCustomerId = await getOrCreateStripeCustomer(
-        userId,
-        ctx.user.email ?? "",
-        ctx.user.name
-      );
-
-      // Create a Stripe product and price for this specific fee
-      const product = await stripe.products.create({
-        name: `Hire.AI Success Fee - ${input.employerName}`,
-        metadata: {
-          userId: userId.toString(),
-          successFeeId: fee.id.toString(),
+      let checkoutUrl: string | null = null;
+      try {
+        const stripeCustomerId = await getOrCreateStripeCustomer(
+          userId,
+          ctx.user.email ?? "",
+          ctx.user.name
+        );
+        const stripePriceId = await ensureSuccessFeeStripePrice(db, {
+          ...fee,
+          userId,
           employerName: input.employerName,
-        },
-      });
+          monthlyFeeAmount,
+          currency: input.currency,
+          stripePriceId: null,
+        });
+        const checkoutSession = await createSuccessFeeCheckoutSession({
+          stripeCustomerId,
+          fee: { id: fee.id, userId, employerName: input.employerName },
+          stripePriceId,
+        });
+        checkoutUrl = checkoutSession.url;
 
-      const price = await stripe.prices.create({
-        product: product.id,
-        unit_amount: monthlyFeeAmount,
-        currency: input.currency.toLowerCase(),
-        recurring: { interval: "month" },
-        metadata: {
-          successFeeId: fee.id.toString(),
-        },
-      });
-
-      // Hosted Checkout owns payment-method collection and subscription creation.
-      // A payment-intent client secret is not a navigable checkout URL.
-      const checkoutSession = await stripe.checkout.sessions.create({
-        mode: "subscription",
-        customer: stripeCustomerId,
-        line_items: [{ price: price.id, quantity: 1 }],
-        client_reference_id: String(fee.id),
-        metadata: {
-          userId: userId.toString(),
-          successFeeId: fee.id.toString(),
-          employerName: input.employerName,
-        },
-        subscription_data: {
-          metadata: {
-            userId: userId.toString(),
-            successFeeId: fee.id.toString(),
-            employerName: input.employerName,
-          },
-        },
-        success_url: billingReturnUrl({ checkout: "success", session_id: "{CHECKOUT_SESSION_ID}" }),
-        cancel_url: billingReturnUrl({ checkout: "cancelled" }),
-      });
-      if (!checkoutSession.url) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Stripe did not return a secure checkout URL for this success fee.",
+        // The subscription ID is linked only by the signed Checkout webhook.
+        await db.update(successFees)
+          .set({ stripeCheckoutSessionId: checkoutSession.id })
+          .where(eq(successFees.id, fee.id));
+      } catch {
+        console.error("[SuccessFees] Checkout creation failed after the hire report was recorded.");
+        await createAuditEvent({
+          userId,
+          entityType: "success_fee",
+          entityId: fee.id,
+          action: "success_fee_checkout_creation_failed",
+          actor: "system",
+          source: "successFees.reportHire",
+          afterState: JSON.stringify({
+            localHireReportRecorded: true,
+            stripeSubscriptionCreated: false,
+            checkoutSessionAvailable: false,
+          }),
+          riskLevel: "critical",
+          approvalId: billingApprovalId,
+        });
+        await createAdminReviewItem({
+          userId,
+          entityType: "success_fee",
+          entityId: fee.id,
+          category: "payment_failed",
+          priority: "critical",
+          title: "Success-fee Checkout unavailable",
+          description: "The hire report and proof ledger were recorded, but Stripe Checkout was unavailable. Verify provider configuration before the user retries billing setup.",
         });
       }
-
-      // The subscription ID is linked from the signed checkout.session.completed webhook.
-      await db.update(successFees)
-        .set({
-          stripePriceId: price.id,
-        })
-        .where(eq(successFees.id, fee.id));
 
       return {
         feeId: fee.id,
         monthlyFeeAmount,
-        checkoutUrl: checkoutSession.url,
-        subscriptionStatus: "checkout_open" as const,
+        checkoutUrl,
+        subscriptionStatus: checkoutUrl ? "checkout_open" as const : "checkout_unavailable" as const,
         ledger: {
           offerProofStatus: "stored" as const,
           offerAttributionStatus: "admin_review_open" as const,
           verificationStatus: "pending_review" as const,
-          billingSetupStatus: "checkout_required" as const,
+          billingSetupStatus: checkoutUrl ? "checkout_required" as const : "checkout_unavailable" as const,
           adminReviewRequired: true,
           offerAttributionApprovalId,
           billingApprovalId,
@@ -439,6 +489,172 @@ export const successFeesRouter = router({
   getMyFees: protectedProcedure.query(async ({ ctx }) => {
     return await getUserSuccessFees(ctx.user.id);
   }),
+
+  // Reopen an expired Checkout flow without creating another success-fee record.
+  retryBillingCheckout: protectedProcedure
+    .input(z.object({
+      successFeeId: z.number().int().positive(),
+      confirmBillingSetup: z.literal(true),
+    }).strict())
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const userId = ctx.user.id;
+      const [fee] = await db
+        .select()
+        .from(successFees)
+        .where(and(eq(successFees.id, input.successFeeId), eq(successFees.userId, userId)))
+        .limit(1);
+
+      if (!fee) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Success fee not found." });
+      }
+      if (fee.stripeSubscriptionId) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "This success fee already has a Stripe subscription. Use the Billing Portal for subscription changes.",
+        });
+      }
+      if (fee.status !== "pending_verification" || !fee.termsAcceptedAt) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Only a pending, terms-approved success fee can reopen Checkout.",
+        });
+      }
+
+      let checkoutUrl: string | null = null;
+      let checkoutSource: "reused_open_session" | "replaced_expired_session" | "created_session" = "created_session";
+      if (fee.stripeCheckoutSessionId) {
+        try {
+          const existingSession = await getStripeClient().checkout.sessions.retrieve(fee.stripeCheckoutSessionId);
+          if (existingSession.status === "open" && existingSession.url) {
+            checkoutUrl = existingSession.url;
+            checkoutSource = "reused_open_session";
+          } else if (existingSession.status === "complete") {
+            await createAdminReviewItem({
+              userId,
+              entityType: "success_fee",
+              entityId: fee.id,
+              category: "payment_failed",
+              priority: "critical",
+              title: "Completed Checkout awaits reconciliation",
+              description: "Stripe reports Checkout completed but the subscription has not reached the success-fee ledger. Review signed webhook delivery before creating another Checkout session.",
+            });
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message: "Checkout is complete but still awaiting ledger reconciliation. A new billing session was not created.",
+            });
+          } else if (existingSession.status !== "expired") {
+            throw new Error("Stored Checkout session is not safely recoverable.");
+          }
+          if (existingSession.status === "expired") checkoutSource = "replaced_expired_session";
+        } catch (error) {
+          if (error instanceof TRPCError) throw error;
+          console.error("[SuccessFees] Stored Checkout session could not be verified for recovery.");
+          await createAuditEvent({
+            userId,
+            entityType: "success_fee",
+            entityId: fee.id,
+            action: "success_fee_checkout_recovery_blocked",
+            actor: "system",
+            source: "successFees.retryBillingCheckout",
+            afterState: JSON.stringify({
+              checkoutSessionId: fee.stripeCheckoutSessionId,
+              localStateChanged: false,
+              stripeSubscriptionCreated: false,
+            }),
+            riskLevel: "critical",
+          });
+          await createAdminReviewItem({
+            userId,
+            entityType: "success_fee",
+            entityId: fee.id,
+            category: "payment_failed",
+            priority: "critical",
+            title: "Checkout recovery blocked pending verification",
+            description: "The prior Stripe Checkout session could not be verified. Do not create another billing session until the provider state is reconciled.",
+          });
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "Hire.AI could not verify the prior Checkout session, so a duplicate billing flow was not created.",
+          });
+        }
+      }
+
+      if (!checkoutUrl) {
+        try {
+          const stripeCustomerId = await getOrCreateStripeCustomer(userId, ctx.user.email ?? "", ctx.user.name);
+          const stripePriceId = await ensureSuccessFeeStripePrice(db, fee);
+          const checkoutSession = await createSuccessFeeCheckoutSession({ stripeCustomerId, fee, stripePriceId });
+          checkoutUrl = checkoutSession.url;
+          await db.update(successFees)
+            .set({ stripeCheckoutSessionId: checkoutSession.id })
+            .where(eq(successFees.id, fee.id));
+        } catch {
+          console.error("[SuccessFees] Checkout recovery could not create a secure session.");
+          await createAuditEvent({
+            userId,
+            entityType: "success_fee",
+            entityId: fee.id,
+            action: "success_fee_checkout_recovery_failed",
+            actor: "system",
+            source: "successFees.retryBillingCheckout",
+            afterState: JSON.stringify({
+              checkoutSource,
+              localStateChanged: false,
+              stripeSubscriptionCreated: false,
+            }),
+            riskLevel: "critical",
+          });
+          await createAdminReviewItem({
+            userId,
+            entityType: "success_fee",
+            entityId: fee.id,
+            category: "payment_failed",
+            priority: "critical",
+            title: "Success-fee Checkout recovery failed",
+            description: "Stripe could not create a new Checkout session after the prior session expired or was unavailable. The fee record was preserved and no subscription was created.",
+          });
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "Stripe Checkout is unavailable. No subscription or duplicate fee was created.",
+          });
+        }
+      }
+
+      const decidedAt = new Date();
+      const approval = await db.insert(applicationApprovals).values({
+        userId,
+        applicationId: fee.applicationId ?? null,
+        entityType: "billing",
+        entityId: fee.id,
+        approvalType: "billing_action",
+        status: "approved",
+        riskLevel: "critical",
+        requestedBy: "user",
+        decidedBy: "user",
+        title: "Success-fee Checkout recovery approved",
+        description: `User explicitly reopened secure Checkout for ${fee.employerName}.`,
+        payload: JSON.stringify({ successFeeId: fee.id, checkoutSource }),
+        decisionNote: "User explicitly approved reopening Stripe Checkout; subscription creation remains within Stripe Checkout.",
+        requestedAt: decidedAt,
+        decidedAt,
+      });
+      const approvalId = Number(approval[0].insertId);
+      await createAuditEvent({
+        userId,
+        entityType: "success_fee",
+        entityId: fee.id,
+        action: "success_fee_checkout_reopened",
+        actor: "user",
+        source: "successFees.retryBillingCheckout",
+        afterState: JSON.stringify({ checkoutSource, stripeSubscriptionCreated: false, checkoutSessionAvailable: true }),
+        riskLevel: "critical",
+        approvalId,
+      });
+
+      return { feeId: fee.id, checkoutUrl, checkoutSource, billingApprovalId: approvalId };
+    }),
 
   // Show offer responses/approvals that should be converted into reported hires.
   getOfferAttributionReviews: protectedProcedure.query(async ({ ctx }) => {

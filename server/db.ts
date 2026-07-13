@@ -2433,6 +2433,7 @@ export async function createSuccessFee(fee: InsertSuccessFee) {
       feePercent: fee.feePercent ?? 5,
       stripeSubscriptionId: fee.stripeSubscriptionId ?? null,
       stripePriceId: fee.stripePriceId ?? null,
+      stripeCheckoutSessionId: fee.stripeCheckoutSessionId ?? null,
       status: fee.status ?? "pending_verification",
       endDate: fee.endDate ?? null,
       nextVerificationDue: fee.nextVerificationDue ?? null,
