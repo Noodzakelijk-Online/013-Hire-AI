@@ -140,6 +140,37 @@ async function markInboxAccessVerified(
   });
 }
 
+async function markInboxAccessNeedsReauth(
+  userId: number,
+  account: Awaited<ReturnType<typeof listUserConnectorAccounts>>[number],
+  dependencies: InboxResponseDiscoveryDependencies
+) {
+  await dependencies.upsertUserConnectorAccount({
+    userId,
+    provider: account.provider,
+    status: "needs_reauth",
+    consentScopes: account.consentScopes,
+    externalAccountLabel: account.externalAccountLabel,
+    connectionRequestedAt: account.connectionRequestedAt,
+    lastVerifiedAt: account.lastVerifiedAt,
+    disconnectedAt: null,
+  });
+}
+
+async function throwInboxApiError(
+  userId: number,
+  account: Awaited<ReturnType<typeof listUserConnectorAccounts>>[number],
+  provider: InboxProvider,
+  status: number,
+  dependencies: InboxResponseDiscoveryDependencies
+): Promise<never> {
+  if (status === 401 || status === 403) {
+    await markInboxAccessNeedsReauth(userId, account, dependencies);
+    throw new Error(`${displayName(provider)} authorization is no longer valid. Reauthorize before inbox discovery.`);
+  }
+  throw new Error(`${displayName(provider)} inbox discovery is temporarily unavailable.`);
+}
+
 function classifyResponse(text: string): InboxResponseType {
   const value = text.toLowerCase();
   if (/\b(interview|phone screen|technical screen|schedule (a |an )?(call|meeting)|meet the team)\b/.test(value)) return "interview_invite";
@@ -212,7 +243,7 @@ export async function discoverInboxResponseCandidates(
       maxResults: String(MAX_MESSAGES),
       q: "newer_than:30d",
     }), { headers: { Authorization: `Bearer ${accessToken}` } });
-    if (!list.ok) throw new Error("Gmail inbox discovery is temporarily unavailable.");
+    if (!list.ok) await throwInboxApiError(userId, account, "gmail", list.status, dependencies);
     const payload = await list.json() as { messages?: Array<{ id?: unknown }> };
     await markInboxAccessVerified(userId, account, now, dependencies);
     const messages = Array.isArray(payload.messages) ? payload.messages.slice(0, MAX_MESSAGES) : [];
@@ -222,7 +253,12 @@ export async function discoverInboxResponseCandidates(
       const detail = await fetcher(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(message.id)}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
-      if (!detail.ok) continue;
+      if (!detail.ok) {
+        if (detail.status === 401 || detail.status === 403) {
+          await throwInboxApiError(userId, account, "gmail", detail.status, dependencies);
+        }
+        continue;
+      }
       const metadata = await detail.json() as Record<string, unknown>;
       const headers = gmailHeaders(metadata);
       const preview = typeof metadata.snippet === "string" ? metadata.snippet.slice(0, 600) : "";
@@ -248,7 +284,7 @@ export async function discoverInboxResponseCandidates(
     "$select": "id,subject,from,receivedDateTime,bodyPreview",
     "$orderby": "receivedDateTime desc",
   }), { headers: { Authorization: `Bearer ${accessToken}` } });
-  if (!response.ok) throw new Error("Outlook inbox discovery is temporarily unavailable.");
+  if (!response.ok) await throwInboxApiError(userId, account, "outlook", response.status, dependencies);
   const payload = await response.json() as { value?: Array<Record<string, unknown>> };
   await markInboxAccessVerified(userId, account, now, dependencies);
   return (Array.isArray(payload.value) ? payload.value : []).flatMap((message): InboxResponseCandidate[] => {

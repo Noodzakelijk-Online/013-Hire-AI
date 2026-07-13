@@ -173,6 +173,23 @@ async function markCloudAccessVerified(
   });
 }
 
+async function markCloudAccessNeedsReauth(
+  userId: number,
+  account: ConnectorAccount,
+  dependencies: CloudDocumentDiscoveryDependencies
+) {
+  await dependencies.upsertUserConnectorAccount({
+    userId,
+    provider: account.provider,
+    status: "needs_reauth",
+    consentScopes: account.consentScopes,
+    externalAccountLabel: account.externalAccountLabel,
+    connectionRequestedAt: account.connectionRequestedAt,
+    lastVerifiedAt: account.lastVerifiedAt,
+    disconnectedAt: null,
+  });
+}
+
 function parseGoogleDriveDocuments(payload: unknown): CloudResumeDocument[] {
   const files = payload && typeof payload === "object" && Array.isArray((payload as { files?: unknown }).files)
     ? (payload as { files: unknown[] }).files
@@ -231,6 +248,19 @@ function cloudApiError(provider: CloudDocumentProvider, status: number) {
   return new Error(`${cloudProviderLabel(provider)} document discovery is temporarily unavailable.`);
 }
 
+async function throwCloudApiError(
+  userId: number,
+  account: ConnectorAccount,
+  provider: CloudDocumentProvider,
+  status: number,
+  dependencies: CloudDocumentDiscoveryDependencies
+): Promise<never> {
+  if (status === 401 || status === 403) {
+    await markCloudAccessNeedsReauth(userId, account, dependencies);
+  }
+  throw cloudApiError(provider, status);
+}
+
 export async function discoverCloudResumeDocuments(
   userId: number,
   provider: CloudDocumentProvider,
@@ -259,7 +289,7 @@ export async function discoverCloudResumeDocuments(
       },
       body: JSON.stringify({ path: "", recursive: true, include_deleted: false, limit: MAX_DISCOVERED_DOCUMENTS }),
     });
-  if (!response.ok) throw cloudApiError(provider, response.status);
+  if (!response.ok) await throwCloudApiError(userId, account, provider, response.status, dependencies);
   const payload = await response.json() as unknown;
   await markCloudAccessVerified(userId, account, now, dependencies);
   const documents = provider === "google_drive"
@@ -292,7 +322,7 @@ export async function downloadCloudResumeDocument(
         "Dropbox-API-Arg": JSON.stringify({ path: document.sourceId }),
       },
     });
-  if (!response.ok) throw cloudApiError(document.provider, response.status);
+  if (!response.ok) await throwCloudApiError(userId, account, document.provider, response.status, dependencies);
   const data = Buffer.from(await response.arrayBuffer());
   if (data.length === 0 || data.length > MAX_RESUME_BYTES) {
     throw new Error("The selected cloud document must be between 1 byte and 10MB.");

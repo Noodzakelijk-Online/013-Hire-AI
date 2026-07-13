@@ -149,6 +149,18 @@ describe("cloud resume discovery", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
+  it("marks a revoked cloud grant for reauthorization before surfacing the provider error", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 401 }));
+
+    await expect(discoverCloudResumeDocuments(501, "google_drive", discoveryOptions(fetcher))).rejects.toThrow(
+      "Google Drive authorization is no longer valid"
+    );
+    expect(mocks.upsertUserConnectorAccount).toHaveBeenCalledWith(expect.objectContaining({
+      provider: "google_drive",
+      status: "needs_reauth",
+    }));
+  });
+
   it("refreshes a grant with missing expiry metadata instead of treating it as permanent access", async () => {
     mocks.getConnectorAuthorization.mockResolvedValue({
       userId: 501,

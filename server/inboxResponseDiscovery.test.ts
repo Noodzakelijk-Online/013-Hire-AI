@@ -98,6 +98,18 @@ describe("inbox response discovery", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
+  it("marks a revoked inbox grant for reauthorization before surfacing the provider error", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 401 }));
+
+    await expect(discoverInboxResponseCandidates(700, "gmail", options(fetcher))).rejects.toThrow(
+      "Gmail authorization is no longer valid"
+    );
+    expect(mocks.upsertUserConnectorAccount).toHaveBeenCalledWith(expect.objectContaining({
+      provider: "gmail",
+      status: "needs_reauth",
+    }));
+  });
+
   it("reads Outlook metadata and only surfaces an unambiguous application match", async () => {
     mocks.listUserConnectorAccounts.mockResolvedValue([connectedInbox("outlook")]);
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
