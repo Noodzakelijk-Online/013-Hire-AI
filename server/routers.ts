@@ -3112,6 +3112,7 @@ export const appRouter = router({
         profileReadinessBlockedActions: persistedSummary?.skippedProfileReadinessActions ?? userStatus?.profileReadinessBlockedActions ?? 0,
         evidenceGatedActions: persistedSummary?.skippedEvidenceGatedActions ?? userStatus?.evidenceGatedActions ?? 0,
         staleJobActionsSkipped: persistedSummary?.skippedStaleJobActions ?? 0,
+        emptySourceActionsSkipped: persistedSummary?.skippedEmptySourceActions ?? userStatus?.emptySourceActionsSkipped ?? 0,
         userDecisionLockedJobs: persistedSummary?.userDecisionLockedJobs ?? userStatus?.userDecisionLockedJobs ?? 0,
         inboxProvidersScanned: persistedSummary?.inboxProvidersScanned ?? userStatus?.inboxProvidersScanned ?? 0,
         inboxCandidatesDiscovered: persistedSummary?.inboxCandidatesDiscovered ?? userStatus?.inboxCandidatesDiscovered ?? 0,

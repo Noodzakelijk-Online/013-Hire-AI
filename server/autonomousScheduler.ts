@@ -22,6 +22,7 @@ interface AutonomousSchedulerStatus {
   resumeEvidenceBlockedActions: number;
   profileReadinessBlockedActions: number;
   evidenceGatedActions: number;
+  emptySourceActionsSkipped: number;
   userDecisionLockedJobs: number;
   inboxProvidersScanned: number;
   inboxCandidatesDiscovered: number;
@@ -38,6 +39,7 @@ interface AutonomousUserRunStatus {
   resumeEvidenceBlockedActions: number;
   profileReadinessBlockedActions: number;
   evidenceGatedActions: number;
+  emptySourceActionsSkipped: number;
   userDecisionLockedJobs: number;
   inboxProvidersScanned: number;
   inboxCandidatesDiscovered: number;
@@ -64,6 +66,7 @@ export class AutonomousScheduler {
     resumeEvidenceBlockedActions: 0,
     profileReadinessBlockedActions: 0,
     evidenceGatedActions: 0,
+    emptySourceActionsSkipped: 0,
     userDecisionLockedJobs: 0,
     inboxProvidersScanned: 0,
     inboxCandidatesDiscovered: 0,
@@ -114,6 +117,7 @@ export class AutonomousScheduler {
     this.status.resumeEvidenceBlockedActions = 0;
     this.status.profileReadinessBlockedActions = 0;
     this.status.evidenceGatedActions = 0;
+    this.status.emptySourceActionsSkipped = 0;
     this.status.userDecisionLockedJobs = 0;
     this.status.inboxProvidersScanned = 0;
     this.status.inboxCandidatesDiscovered = 0;
@@ -143,6 +147,7 @@ export class AutonomousScheduler {
             this.status.resumeEvidenceBlockedActions += result.skippedResumeEvidenceActions || 0;
             this.status.profileReadinessBlockedActions += result.skippedProfileReadinessActions || 0;
             this.status.evidenceGatedActions += result.skippedEvidenceGatedActions;
+            this.status.emptySourceActionsSkipped += result.skippedEmptySourceActions || 0;
             this.status.userDecisionLockedJobs += result.userDecisionLockedJobs || 0;
             this.status.inboxProvidersScanned += result.inboxProvidersScanned || 0;
             this.status.inboxCandidatesDiscovered += result.inboxCandidatesDiscovered || 0;
@@ -156,6 +161,7 @@ export class AutonomousScheduler {
               resumeEvidenceBlockedActions: result.skippedResumeEvidenceActions || 0,
               profileReadinessBlockedActions: result.skippedProfileReadinessActions || 0,
               evidenceGatedActions: result.skippedEvidenceGatedActions,
+              emptySourceActionsSkipped: result.skippedEmptySourceActions || 0,
               userDecisionLockedJobs: result.userDecisionLockedJobs || 0,
               inboxProvidersScanned: result.inboxProvidersScanned || 0,
               inboxCandidatesDiscovered: result.inboxCandidatesDiscovered || 0,
@@ -179,6 +185,7 @@ export class AutonomousScheduler {
             resumeEvidenceBlockedActions: 0,
             profileReadinessBlockedActions: 0,
             evidenceGatedActions: 0,
+            emptySourceActionsSkipped: 0,
             userDecisionLockedJobs: 0,
             inboxProvidersScanned: 0,
             inboxCandidatesDiscovered: 0,

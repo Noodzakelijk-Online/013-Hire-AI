@@ -70,7 +70,7 @@ export default function Dashboard() {
     onSuccess: async (result) => {
       const counts = getAutonomousRunCounts(result);
       const message = formatAutonomousRunSummary(result);
-      if (counts.failures > 0 || counts.resumeEvidenceBlockedActions > 0 || counts.profileReadinessBlockedActions > 0) {
+      if (counts.failures > 0 || counts.resumeEvidenceBlockedActions > 0 || counts.profileReadinessBlockedActions > 0 || counts.emptySourceActionsSkipped > 0) {
         toast.warning(message);
       } else {
         toast.success(message);

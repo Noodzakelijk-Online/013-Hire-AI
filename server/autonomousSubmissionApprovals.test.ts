@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   getActiveResume: vi.fn(),
   getActiveJobs: vi.fn(),
   getJobById: vi.fn(),
+  getAutonomousJobSourceEligibility: vi.fn(),
 }));
 
 vi.mock("./resumeStorage", async (importOriginal) => ({
@@ -15,6 +16,7 @@ vi.mock("./db", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./db")>()),
   getActiveJobs: mocks.getActiveJobs,
   getJobById: mocks.getJobById,
+  getAutonomousJobSourceEligibility: mocks.getAutonomousJobSourceEligibility,
 }));
 
 import {
@@ -79,6 +81,12 @@ describe("autonomous submission approval gates", () => {
     mocks.getJobById.mockImplementation(async (jobId: number) =>
       sampleJobs.find((job) => job.id === jobId)
     );
+    mocks.getAutonomousJobSourceEligibility.mockResolvedValue({
+      eligible: true,
+      sourcePlatformIds: [sampleJobs[0].platformId],
+      emptySourcePlatformIds: [],
+      reason: null,
+    });
   });
 
   it("creates submission approvals for queued autonomous application records", async () => {
@@ -224,6 +232,44 @@ describe("autonomous submission approval gates", () => {
     expect(auditEvents.some((event) =>
       event.action === "autonomous_application_preparation_blocked_stale_job" &&
       event.afterState?.includes(`"jobId":${sampleJobs[0].id}`) &&
+      event.afterState?.includes('"externalSubmissionPerformed":false')
+    )).toBe(true);
+  });
+
+  it("halts preparation when every observed source reported no listings", async () => {
+    const userId = await createEligibleTestUser("99110");
+    mocks.getAutonomousJobSourceEligibility.mockResolvedValue({
+      eligible: false,
+      sourcePlatformIds: [sampleJobs[0].platformId],
+      emptySourcePlatformIds: [sampleJobs[0].platformId],
+      reason: "Every observed source for this job reported no listings in its latest clean scan.",
+    });
+    await upsertUserProfile({
+      userId,
+      skills: "React, TypeScript, Node.js",
+      experience: "Five years building production web applications.",
+      desiredJobTypes: "full-time",
+      desiredLocations: "remote, worldwide",
+      resumeUrl: "https://example.com/resume.pdf",
+      preferences: JSON.stringify({
+        autonomousEnabled: true,
+        mode: "review_first",
+        minMatchScore: 0,
+        dailyApplicationLimit: 1,
+      }),
+    });
+
+    const result = await runAutonomousForUser(userId, { dailyApplicationLimit: 1, minMatchScore: 0 });
+    const auditEvents = await getAuditEventsForUser(userId, 10);
+
+    expect(result.skippedEmptySourceActions).toBe(1);
+    expect(result.skippedStaleJobActions).toBe(0);
+    expect(result.queuedReviewRecords + result.queuedApplicationRecords + result.queuedManualRecords).toBe(0);
+    expect(await getUserApplications(userId)).toHaveLength(0);
+    expect(auditEvents.some((event) =>
+      event.action === "autonomous_application_preparation_blocked_empty_source_scan" &&
+      event.afterState?.includes(`"jobId":${sampleJobs[0].id}`) &&
+      event.afterState?.includes(`"emptySourcePlatformIds":[${sampleJobs[0].platformId}]`) &&
       event.afterState?.includes('"externalSubmissionPerformed":false')
     )).toBe(true);
   });

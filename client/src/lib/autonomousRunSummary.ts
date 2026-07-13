@@ -9,6 +9,7 @@ export interface AutonomousRunSummaryInput {
   skippedProfileReadinessActions?: number;
   skippedEvidenceGatedActions?: number;
   skippedStaleJobActions?: number;
+  skippedEmptySourceActions?: number;
   userDecisionLockedJobs?: number;
   inboxProvidersScanned?: number;
   inboxCandidatesDiscovered?: number;
@@ -40,6 +41,7 @@ export function getAutonomousRunCounts(result: AutonomousRunSummaryInput) {
     profileReadinessBlockedActions: result.skippedProfileReadinessActions || 0,
     evidenceGatedActions: result.skippedEvidenceGatedActions || 0,
     staleJobActionsSkipped: result.skippedStaleJobActions || 0,
+    emptySourceActionsSkipped: result.skippedEmptySourceActions || 0,
     userDecisionLockedJobs: result.userDecisionLockedJobs || 0,
     inboxProvidersScanned: result.inboxProvidersScanned || 0,
     inboxCandidatesDiscovered: result.inboxCandidatesDiscovered || 0,
@@ -63,6 +65,7 @@ export function hasAutonomousRunAttention(result: AutonomousRunSummaryInput) {
     counts.resumeEvidenceBlockedActions > 0 ||
     counts.profileReadinessBlockedActions > 0 ||
     counts.evidenceGatedActions > 0 ||
+    counts.emptySourceActionsSkipped > 0 ||
     counts.safetyBlockedFollowUps > 0
   );
 }
@@ -105,6 +108,9 @@ export function formatAutonomousRunSummary(result: AutonomousRunSummaryInput) {
   }
   if (counts.staleJobActionsSkipped > 0) {
     notes.push(`${plural(counts.staleJobActionsSkipped, "job preparation")} blocked after a final listing freshness check`);
+  }
+  if (counts.emptySourceActionsSkipped > 0) {
+    notes.push(`${plural(counts.emptySourceActionsSkipped, "job preparation")} blocked because every observed source reported no listings`);
   }
   if (counts.userDecisionLockedJobs > 0) {
     notes.push(`${plural(counts.userDecisionLockedJobs, "job")} retained under an explicit user decision`);

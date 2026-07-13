@@ -70,6 +70,10 @@ import { isOfferEligibleApplicationStatus } from "@shared/offerEligibility";
 import { getListingObservationCutoff, isJobListingCurrent } from "@shared/jobListingFreshness";
 import { getMissingScraperPlatformCatalog, scraperPlatformCatalog } from "./scrapers/platformCatalog";
 import { getCanonicalJobGroupIds, resolveCanonicalJobId } from "./jobDeduplication";
+import {
+  getAutonomousSourceEligibility,
+  type AutonomousJobSourceEligibility,
+} from "./autonomousSourceEligibility";
 
 type InsertJob = InferInsertModel<typeof jobs>;
 type InsertUserProfile = InferInsertModel<typeof userProfiles>;
@@ -144,6 +148,7 @@ export interface AutonomousRunSummaryRecord {
   skippedProfileReadinessActions: number;
   skippedEvidenceGatedActions: number;
   skippedStaleJobActions: number;
+  skippedEmptySourceActions: number;
   userDecisionLockedJobs?: number;
   inboxProvidersScanned?: number;
   inboxCandidatesDiscovered?: number;
@@ -188,6 +193,10 @@ function parseAutonomousRunSummary(value: string | null | undefined): Autonomous
     summary.skippedStaleJobActions = typeof parsed.skippedStaleJobActions === "number"
       && Number.isFinite(parsed.skippedStaleJobActions)
       ? Math.max(0, Math.round(parsed.skippedStaleJobActions))
+      : 0;
+    summary.skippedEmptySourceActions = typeof parsed.skippedEmptySourceActions === "number"
+      && Number.isFinite(parsed.skippedEmptySourceActions)
+      ? Math.max(0, Math.round(parsed.skippedEmptySourceActions))
       : 0;
     summary.userDecisionLockedJobs = typeof parsed.userDecisionLockedJobs === "number"
       && Number.isFinite(parsed.userDecisionLockedJobs)
@@ -778,6 +787,46 @@ export async function getJobAggregationSources(jobId: number) {
       Number(right.id === primaryJobId) - Number(left.id === primaryJobId) || left.id - right.id
     ),
   };
+}
+
+/**
+ * Source scans are only a hard stop when every platform carrying the
+ * canonical job completed a clean scan with zero listings.
+ */
+export async function getAutonomousJobSourceEligibility(
+  jobId: number
+): Promise<AutonomousJobSourceEligibility> {
+  const aggregation = await getJobAggregationSources(jobId);
+  if (!aggregation) {
+    return {
+      eligible: true,
+      sourcePlatformIds: [],
+      emptySourcePlatformIds: [],
+      reason: null,
+    };
+  }
+
+  const platformIds = Array.from(new Set(
+    aggregation.sources
+      .map((source) => source.platformId)
+      .filter((platformId): platformId is number => typeof platformId === "number" && Number.isInteger(platformId) && platformId > 0)
+  ));
+  if (platformIds.length === 0) {
+    return getAutonomousSourceEligibility(aggregation.sources, []);
+  }
+  const db = await getDb();
+  const platforms = !db
+    ? samplePlatforms.filter((platform) => platformIds.includes(platform.id))
+    : await db
+      .select({
+        id: jobPlatforms.id,
+        lastScrapeStatus: jobPlatforms.lastScrapeStatus,
+        lastScrapeJobCount: jobPlatforms.lastScrapeJobCount,
+      })
+      .from(jobPlatforms)
+      .where(inArray(jobPlatforms.id, platformIds));
+
+  return getAutonomousSourceEligibility(aggregation.sources, platforms);
 }
 
 // User Profiles

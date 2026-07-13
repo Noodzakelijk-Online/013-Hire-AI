@@ -19,6 +19,7 @@ import {
   completeAutonomousRunLease,
   getActiveJobs,
   getAutonomousUserEligibility,
+  getAutonomousJobSourceEligibility,
   getApplicationLedgerArtifacts,
   getApplicationCampaign,
   getEmployerResponses,
@@ -46,6 +47,7 @@ import { getAutonomousEvidenceContext } from "./autonomousEvidence";
 import { getActiveResume } from "./resumeStorage";
 import { buildEvidenceBoundApplicationDraft, type EvidenceBoundApplicationDraft } from "./applicationMaterialDraft";
 import { monitorInboxResponses } from "./inboxResponseMonitoring";
+import type { AutonomousJobSourceEligibility } from "./autonomousSourceEligibility";
 
 export interface AutonomousRunResult extends AutonomousPlan {
   queuedApplicationRecords: number;
@@ -58,6 +60,7 @@ export interface AutonomousRunResult extends AutonomousPlan {
   skippedProfileReadinessActions: number;
   skippedEvidenceGatedActions: number;
   skippedStaleJobActions: number;
+  skippedEmptySourceActions: number;
   userDecisionLockedJobs: number;
   inboxProvidersScanned: number;
   inboxCandidatesDiscovered: number;
@@ -81,6 +84,7 @@ function persistableRunSummary(result: AutonomousRunResult) {
     skippedProfileReadinessActions: result.skippedProfileReadinessActions,
     skippedEvidenceGatedActions: result.skippedEvidenceGatedActions,
     skippedStaleJobActions: result.skippedStaleJobActions,
+    skippedEmptySourceActions: result.skippedEmptySourceActions,
     userDecisionLockedJobs: result.userDecisionLockedJobs,
     inboxProvidersScanned: result.inboxProvidersScanned,
     inboxCandidatesDiscovered: result.inboxCandidatesDiscovered,
@@ -156,7 +160,16 @@ async function recordAutonomousTerminalDecision(userId: number, decision: Autono
 
 async function getCurrentJobForAutonomousDecision(jobId: number) {
   const job = await getJobById(jobId);
-  return job && isJobCurrentForAutonomousProcessing(job) ? job : null;
+  if (!job || !isJobCurrentForAutonomousProcessing(job)) {
+    return { job: null, blockedByEmptySource: false, sourceEligibility: null };
+  }
+
+  const sourceEligibility = await getAutonomousJobSourceEligibility(jobId);
+  return {
+    job: sourceEligibility.eligible ? job : null,
+    blockedByEmptySource: !sourceEligibility.eligible,
+    sourceEligibility,
+  };
 }
 
 async function recordStaleJobPreparationBlocked(userId: number, decision: AutonomousJobDecision) {
@@ -172,6 +185,32 @@ async function recordStaleJobPreparationBlocked(userId: number, decision: Autono
       title: decision.title,
       company: decision.company,
       plannedAction: decision.action,
+      externalSubmissionPerformed: false,
+    }),
+    riskLevel: "medium",
+  });
+}
+
+async function recordEmptySourcePreparationBlocked(
+  userId: number,
+  decision: AutonomousJobDecision,
+  sourceEligibility: AutonomousJobSourceEligibility
+) {
+  await createAuditEvent({
+    userId,
+    entityType: "user",
+    entityId: userId,
+    action: "autonomous_application_preparation_blocked_empty_source_scan",
+    actor: "system",
+    source: "autonomousService",
+    afterState: JSON.stringify({
+      jobId: decision.jobId,
+      title: decision.title,
+      company: decision.company,
+      plannedAction: decision.action,
+      sourcePlatformIds: sourceEligibility.sourcePlatformIds,
+      emptySourcePlatformIds: sourceEligibility.emptySourcePlatformIds,
+      reason: sourceEligibility.reason,
       externalSubmissionPerformed: false,
     }),
     riskLevel: "medium",
@@ -393,6 +432,7 @@ async function executeAutonomousRun(
   let queuedReviewRecords = 0;
   let queuedManualRecords = 0;
   let skippedStaleJobActions = 0;
+  let skippedEmptySourceActions = 0;
   let inboxProvidersScanned = 0;
   let inboxCandidatesDiscovered = 0;
   let inboxMonitoringFailures = 0;
@@ -498,12 +538,18 @@ async function executeAutonomousRun(
     assertLeaseActive();
     try {
       const currentJob = await getCurrentJobForAutonomousDecision(decision.jobId);
-      if (!currentJob) {
+      if (!currentJob.job) {
+        if (currentJob.blockedByEmptySource && currentJob.sourceEligibility) {
+          skippedEmptySourceActions += 1;
+          await recordEmptySourcePreparationBlocked(userId, decision, currentJob.sourceEligibility);
+          continue;
+        }
         skippedStaleJobActions += 1;
         await recordStaleJobPreparationBlocked(userId, decision);
         continue;
       }
-      const draft = buildEvidenceBoundApplicationDraft(profile, currentJob);
+      const job = currentJob.job;
+      const draft = buildEvidenceBoundApplicationDraft(profile, job);
       const result = await createApplication({
         userId,
         jobId: decision.jobId,
@@ -555,7 +601,7 @@ async function executeAutonomousRun(
         profile,
         draft,
         resume: activeResume!,
-        platformId: currentJob.platformId,
+        platformId: job.platformId,
         branch: "auto_apply",
         approvalId: Number(approval.insertId),
       });
@@ -570,12 +616,18 @@ async function executeAutonomousRun(
     assertLeaseActive();
     try {
       const currentJob = await getCurrentJobForAutonomousDecision(decision.jobId);
-      if (!currentJob) {
+      if (!currentJob.job) {
+        if (currentJob.blockedByEmptySource && currentJob.sourceEligibility) {
+          skippedEmptySourceActions += 1;
+          await recordEmptySourcePreparationBlocked(userId, decision, currentJob.sourceEligibility);
+          continue;
+        }
         skippedStaleJobActions += 1;
         await recordStaleJobPreparationBlocked(userId, decision);
         continue;
       }
-      const draft = buildEvidenceBoundApplicationDraft(profile, currentJob);
+      const job = currentJob.job;
+      const draft = buildEvidenceBoundApplicationDraft(profile, job);
       const result = await createApplication({
         userId,
         jobId: decision.jobId,
@@ -627,7 +679,7 @@ async function executeAutonomousRun(
         profile,
         draft,
         resume: activeResume!,
-        platformId: currentJob.platformId,
+        platformId: job.platformId,
         branch: "review",
         approvalId: Number(approval.insertId),
       });
@@ -642,12 +694,18 @@ async function executeAutonomousRun(
     assertLeaseActive();
     try {
       const currentJob = await getCurrentJobForAutonomousDecision(decision.jobId);
-      if (!currentJob) {
+      if (!currentJob.job) {
+        if (currentJob.blockedByEmptySource && currentJob.sourceEligibility) {
+          skippedEmptySourceActions += 1;
+          await recordEmptySourcePreparationBlocked(userId, decision, currentJob.sourceEligibility);
+          continue;
+        }
         skippedStaleJobActions += 1;
         await recordStaleJobPreparationBlocked(userId, decision);
         continue;
       }
-      const draft = buildEvidenceBoundApplicationDraft(profile, currentJob);
+      const job = currentJob.job;
+      const draft = buildEvidenceBoundApplicationDraft(profile, job);
       const result = await createApplication({
         userId,
         jobId: decision.jobId,
@@ -694,7 +752,7 @@ async function executeAutonomousRun(
         profile,
         draft,
         resume: activeResume!,
-        platformId: currentJob.platformId,
+        platformId: job.platformId,
         branch: "manual",
         approvalId: Number(approval.insertId),
       });
@@ -784,6 +842,7 @@ async function executeAutonomousRun(
     skippedProfileReadinessActions,
     skippedEvidenceGatedActions: evidenceGatedActions.total,
     skippedStaleJobActions,
+    skippedEmptySourceActions,
     userDecisionLockedJobs,
     inboxProvidersScanned,
     inboxCandidatesDiscovered,

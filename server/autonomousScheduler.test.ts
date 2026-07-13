@@ -39,6 +39,7 @@ describe("AutonomousScheduler", () => {
       skippedResumeEvidenceActions: 2,
       skippedProfileReadinessActions: 3,
       skippedEvidenceGatedActions: 3,
+      skippedEmptySourceActions: 2,
       failedActions: 0,
     });
 
@@ -53,6 +54,7 @@ describe("AutonomousScheduler", () => {
       resumeEvidenceBlockedActions: 2,
       profileReadinessBlockedActions: 3,
       evidenceGatedActions: 3,
+      emptySourceActionsSkipped: 2,
       failedActions: 0,
     });
     expect(scheduler.getUserStatus(17)).toMatchObject({
@@ -60,6 +62,7 @@ describe("AutonomousScheduler", () => {
       resumeEvidenceBlockedActions: 2,
       profileReadinessBlockedActions: 3,
       evidenceGatedActions: 3,
+      emptySourceActionsSkipped: 2,
     });
   });
 
@@ -83,6 +86,7 @@ describe("AutonomousScheduler", () => {
         skippedResumeEvidenceActions: 1,
         skippedProfileReadinessActions: 2,
         skippedEvidenceGatedActions: 2,
+        skippedEmptySourceActions: 1,
         failedActions: 0,
       })
       .mockResolvedValueOnce(null);
@@ -92,10 +96,12 @@ describe("AutonomousScheduler", () => {
     expect(scheduler.getStatus().evidenceGatedActions).toBe(2);
     expect(scheduler.getStatus().resumeEvidenceBlockedActions).toBe(1);
     expect(scheduler.getStatus().profileReadinessBlockedActions).toBe(2);
+    expect(scheduler.getStatus().emptySourceActionsSkipped).toBe(1);
 
     await scheduler.runDueUsers();
     expect(scheduler.getStatus().evidenceGatedActions).toBe(0);
     expect(scheduler.getStatus().resumeEvidenceBlockedActions).toBe(0);
     expect(scheduler.getStatus().profileReadinessBlockedActions).toBe(0);
+    expect(scheduler.getStatus().emptySourceActionsSkipped).toBe(0);
   });
 });

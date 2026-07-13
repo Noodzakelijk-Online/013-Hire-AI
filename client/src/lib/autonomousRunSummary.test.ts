@@ -89,6 +89,18 @@ describe("autonomous run summary", () => {
     );
   });
 
+  it("reports preparation halted by confirmed empty source scans", () => {
+    const result = { skippedEmptySourceActions: 1 };
+
+    expect(getAutonomousRunCounts(result)).toMatchObject({
+      emptySourceActionsSkipped: 1,
+    });
+    expect(hasAutonomousRunAttention(result)).toBe(true);
+    expect(formatAutonomousRunSummary(result)).toBe(
+      "Autonomous run completed with no new tasks; 1 job preparation blocked because every observed source reported no listings"
+    );
+  });
+
   it("reports jobs retained under explicit user decisions", () => {
     expect(getAutonomousRunCounts({ userDecisionLockedJobs: 2 })).toMatchObject({
       userDecisionLockedJobs: 2,
