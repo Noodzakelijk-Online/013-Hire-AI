@@ -476,7 +476,8 @@ export default function Billing() {
                   }}
                   className="mt-4 bg-cyan-500 hover:bg-cyan-600 text-black font-semibold"
                 >
-                  🎉 I Got Hired!
+                  <CheckCircle className="mr-2 h-4 w-4" />
+                  I Got Hired!
                 </Button>
               </CardContent>
             </Card>

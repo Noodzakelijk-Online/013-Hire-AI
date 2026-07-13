@@ -133,10 +133,10 @@ export async function seedDevReviewQueueUser(): Promise<User> {
   const respondedApplicationResult = await createApplication({
     userId: user.id,
     jobId: 2,
-    status: "interview",
+    status: "offer",
     appliedDate: new Date("2026-06-20T09:00:00.000Z"),
-    lastActivity: new Date("2026-06-28T15:00:00.000Z"),
-    notes: "Submitted application with employer response history for QA.",
+    lastActivity: new Date("2026-07-01T12:00:00.000Z"),
+    notes: "Submitted application with interview and written-offer evidence for QA.",
     coverLetter: "Submitted cover letter prepared from profile evidence.",
     isAutoApplied: 0,
   });
@@ -165,6 +165,18 @@ export async function seedDevReviewQueueUser(): Promise<User> {
     statusBefore: "applied",
     statusAfter: "interview",
   });
+
+  const offerResponse = await createEmployerResponse({
+    applicationId: respondedApplicationId,
+    userId: user.id,
+    responseType: "offer",
+    source: "email",
+    summary: "Recruiter sent a written remote offer with salary and start-date details.",
+    receivedAt: new Date("2026-07-01T12:00:00.000Z"),
+    statusBefore: "interview",
+    statusAfter: "offer",
+  });
+  const offerResponseId = Number(offerResponse.insertId);
 
   const followUpApplicationResult = await createApplication({
     userId: user.id,
@@ -266,18 +278,19 @@ export async function seedDevReviewQueueUser(): Promise<User> {
 
   await createApplicationApproval({
     userId: user.id,
-    applicationId,
+    applicationId: respondedApplicationId,
     entityType: "application",
-    entityId: applicationId,
+    entityId: respondedApplicationId,
     approvalType: "offer_attribution",
     status: "pending",
-    riskLevel: "critical",
+    riskLevel: "high",
     requestedBy: "system",
-    title: "Review offer attribution evidence",
-    description: "A reported offer should be checked against the application ledger before success-fee billing can proceed.",
+    title: "Confirm offer attribution",
+    description: "Recruiter sent a written remote offer with salary and start-date details.",
     payload: JSON.stringify({
-      applicationId,
-      reason: "offer_success_fee_attribution",
+      applicationId: respondedApplicationId,
+      responseId: offerResponseId,
+      responseType: "offer",
       qaSeed: true,
     }),
   });
@@ -314,7 +327,7 @@ export async function seedDevReviewQueueUser(): Promise<User> {
   if (!hasQaSuccessFee) {
     await createSuccessFee({
       userId: user.id,
-      applicationId: respondedApplicationId,
+      applicationId: null,
       employerName: "QA Success Employer",
       jobTitle: "Remote Ledger Engineer",
       monthlySalary: 8000,

@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { Request } from "express";
 import { COOKIE_NAME } from "../shared/const";
 import { getUserOperatingLedger } from "./applicationCampaigns";
-import { getAdminReviewEvidenceSnapshot, getApplicationLedgerArtifacts, getUserApplications, getUserSuccessFees } from "./db";
+import {
+  getAdminReviewEvidenceSnapshot,
+  getApplicationLedgerArtifacts,
+  getUserApplications,
+  getUserOfferAttributionReviews,
+  getUserSuccessFees,
+} from "./db";
 import {
   DEV_ADMIN_EMAIL,
   DEV_ADMIN_OPEN_ID,
@@ -59,6 +65,7 @@ describe("development review queue seed", () => {
     const followUpArtifacts = await getApplicationLedgerArtifacts(followUpApplication!.id, authenticatedUser.id);
     const reviewEvidence = await getAdminReviewEvidenceSnapshot(adminLedger.queues.adminReviews[0].id);
     const successFees = await getUserSuccessFees(authenticatedUser.id);
+    const offerAttributionReviews = await getUserOfferAttributionReviews(authenticatedUser.id);
 
     expect(authenticatedUser.email).toBe(DEV_REVIEW_QUEUE_EMAIL);
     expect(ledger.queues.pendingApprovals).toHaveLength(2);
@@ -92,7 +99,7 @@ describe("development review queue seed", () => {
     expect(reviewEvidence.decision?.reviewReason).toContain("External application submission is blocked");
     expect(reviewEvidence.material?.claimsMade).toContain("supportedClaimsOnly");
     expect(reviewEvidence.approvals.map((approval) => approval.approvalType)).toEqual(
-      expect.arrayContaining(["application_submission", "offer_attribution"])
+      expect.arrayContaining(["application_submission"])
     );
     expect(reviewEvidence.auditEvents.map((event) => event.action)).toEqual(
       expect.arrayContaining(["application_prepared_for_review", "approval_requested"])
@@ -106,6 +113,15 @@ describe("development review queue seed", () => {
       event.action === "stale_follow_up_approvals_cancelled" &&
       event.afterState?.includes("interview_invite")
     )).toBe(true);
+    expect(offerAttributionReviews).toHaveLength(1);
+    expect(offerAttributionReviews[0]).toMatchObject({
+      application: { id: respondedApplication!.id },
+      latestEmployerResponse: {
+        responseType: "offer",
+        summary: "Recruiter sent a written remote offer with salary and start-date details.",
+      },
+      payload: { responseType: "offer" },
+    });
     expect(followUpArtifacts.auditEvents.some((event) =>
       event.action === "application_follow_up_due_seeded"
     )).toBe(true);
