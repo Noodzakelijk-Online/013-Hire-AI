@@ -323,12 +323,15 @@ export default function Profile() {
     }),
     [evidenceReadinessQuery.data, profileQuery.data]
   );
-  const githubConnected = evidenceControl.providers.some((provider) =>
-    provider.id === "github" && provider.status === "connected"
+  const isConnectorConnected = (providerId: ConnectorProviderId) => evidenceControl.providers.some((provider) =>
+    provider.id === providerId && provider.connectionStatus === "connected"
   );
-  const linkedInConnected = evidenceControl.providers.some((provider) =>
-    provider.id === "linkedin" && provider.connectionStatus === "connected"
-  );
+  const githubConnected = isConnectorConnected("github");
+  const linkedInConnected = isConnectorConnected("linkedin");
+  const googleDriveConnected = isConnectorConnected("google_drive");
+  const dropboxConnected = isConnectorConnected("dropbox");
+  const gmailConnected = isConnectorConnected("gmail");
+  const outlookConnected = isConnectorConnected("outlook");
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -442,6 +445,10 @@ export default function Profile() {
   };
 
   const handleCloudDiscovery = (provider: CloudResumeDocument["provider"]) => {
+    if (!isConnectorConnected(provider)) {
+      handleRequestConnectorConnection(provider);
+      return;
+    }
     discoverCloudDocuments.mutate({ provider });
   };
 
@@ -450,6 +457,10 @@ export default function Profile() {
   };
 
   const handleInboxDiscovery = (provider: InboxResponseCandidate["provider"]) => {
+    if (!isConnectorConnected(provider)) {
+      handleRequestConnectorConnection(provider);
+      return;
+    }
     discoverInboxResponses.mutate({ provider });
   };
 
@@ -627,48 +638,48 @@ export default function Profile() {
                 variant="outline"
                 className="h-24 flex-col gap-2 border-slate-700 hover:border-cyan-500 hover:bg-cyan-500/10"
                 onClick={() => handleCloudDiscovery("google_drive")}
-                disabled={discoverCloudDocuments.isPending}
+                disabled={startConnectorOAuth.isPending || discoverCloudDocuments.isPending}
               >
                 {discoverCloudDocuments.isPending ? (
                   <Loader2 className="w-6 h-6 animate-spin text-cyan-400" />
                 ) : (
                   <Cloud className="w-6 h-6 text-cyan-400" />
                 )}
-                <span className="text-white">Find Drive Resumes</span>
+                <span className="text-white">{googleDriveConnected ? "Find Drive Resumes" : "Connect Google Drive"}</span>
               </Button>
 
               <Button
                 variant="outline"
                 className="h-24 flex-col gap-2 border-slate-700 hover:border-cyan-500 hover:bg-cyan-500/10"
                 onClick={() => handleCloudDiscovery("dropbox")}
-                disabled={discoverCloudDocuments.isPending}
+                disabled={startConnectorOAuth.isPending || discoverCloudDocuments.isPending}
               >
                 {discoverCloudDocuments.isPending ? (
                   <Loader2 className="w-6 h-6 animate-spin text-cyan-400" />
                 ) : (
                   <Cloud className="w-6 h-6 text-cyan-400" />
                 )}
-                <span className="text-white">Find Dropbox Resumes</span>
+                <span className="text-white">{dropboxConnected ? "Find Dropbox Resumes" : "Connect Dropbox"}</span>
               </Button>
 
               <Button
                 variant="outline"
                 className="h-24 flex-col gap-2 border-slate-700 hover:border-cyan-500 hover:bg-cyan-500/10"
                 onClick={() => handleInboxDiscovery("gmail")}
-                disabled={discoverInboxResponses.isPending}
+                disabled={startConnectorOAuth.isPending || discoverInboxResponses.isPending}
               >
                 {discoverInboxResponses.isPending ? <Loader2 className="w-6 h-6 animate-spin text-cyan-400" /> : <Mail className="w-6 h-6 text-cyan-400" />}
-                <span className="text-white">Find Gmail Replies</span>
+                <span className="text-white">{gmailConnected ? "Find Gmail Replies" : "Connect Gmail"}</span>
               </Button>
 
               <Button
                 variant="outline"
                 className="h-24 flex-col gap-2 border-slate-700 hover:border-cyan-500 hover:bg-cyan-500/10"
                 onClick={() => handleInboxDiscovery("outlook")}
-                disabled={discoverInboxResponses.isPending}
+                disabled={startConnectorOAuth.isPending || discoverInboxResponses.isPending}
               >
                 {discoverInboxResponses.isPending ? <Loader2 className="w-6 h-6 animate-spin text-cyan-400" /> : <Mail className="w-6 h-6 text-cyan-400" />}
-                <span className="text-white">Find Outlook Replies</span>
+                <span className="text-white">{outlookConnected ? "Find Outlook Replies" : "Connect Outlook"}</span>
               </Button>
               
               <label>
