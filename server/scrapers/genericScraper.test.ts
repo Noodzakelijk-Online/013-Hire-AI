@@ -57,7 +57,7 @@ describe("generic scraper structured job extraction", () => {
     })]);
   });
 
-  it("ignores malformed structured data and retains the heuristic HTML fallback", async () => {
+  it("ignores malformed structured data and resolves heuristic HTML links against a nested source URL", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       text: async () => '<script type="application/ld+json">{not-json}</script><article class="job"><h2>Fallback Engineer</h2><a href="/jobs/fallback">Apply</a></article>',
@@ -65,7 +65,7 @@ describe("generic scraper structured job extraction", () => {
     const scraper = new GenericScraper({
       platformName: "Fallback Test Source",
       platformId: 73,
-      baseUrl: "https://jobs.example.com",
+      baseUrl: "https://jobs.example.com/careers/",
       rateLimit: 0,
       maxRetries: 0,
       type: "html",
@@ -78,5 +78,35 @@ describe("generic scraper structured job extraction", () => {
       title: "Fallback Engineer",
       applicationUrl: "https://jobs.example.com/jobs/fallback",
     });
+  });
+
+  it("keeps relative RSS links usable and excludes unsafe application destinations", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => `
+        <rss><channel>
+          <item><title>Safe Writer - Example Press</title><link>roles/writer</link><guid>writer-1</guid></item>
+          <item><title>Unsafe Writer - Example Press</title><link>javascript:alert(1)</link><guid>writer-2</guid></item>
+        </channel></rss>
+      `,
+    }) as typeof fetch;
+    const scraper = new GenericScraper({
+      platformName: "RSS Test Source",
+      platformId: 74,
+      baseUrl: "https://jobs.example.com/careers/",
+      rateLimit: 0,
+      maxRetries: 0,
+      type: "rss",
+    });
+
+    const result = await scraper.scrape();
+
+    expect(result.errors).toEqual([]);
+    expect(result.jobs).toEqual([expect.objectContaining({
+      title: "Safe Writer",
+      company: "Example Press",
+      applicationUrl: "https://jobs.example.com/careers/roles/writer",
+      externalId: "writer-1",
+    })]);
   });
 });

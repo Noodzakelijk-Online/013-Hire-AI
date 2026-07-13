@@ -265,12 +265,15 @@ export class GenericScraper extends BaseScraper {
         }
       }
 
+      const applicationUrl = this.absoluteUrl(link);
+      if (!jobTitle || !applicationUrl) continue;
+
       jobs.push({
         title: jobTitle,
         company,
         location: "Remote",
         description: this.cleanHtml(description),
-        applicationUrl: link,
+        applicationUrl,
         externalId: guid || link,
         postedDate: pubDate ? new Date(pubDate) : undefined,
       });
@@ -302,12 +305,13 @@ export class GenericScraper extends BaseScraper {
         const title = this.extractFromHtml(content, ["h2", "h3", "title", "job-title"]);
         const company = this.extractFromHtml(content, ["company", "employer", "organization"]);
 
-        if (title && link) {
+        const applicationUrl = this.absoluteUrl(link);
+        if (title && applicationUrl) {
           jobs.push({
             title: this.cleanHtml(title),
             company: company ? this.cleanHtml(company) : `Company via ${this.config.platformName}`,
             location: "Remote",
-            applicationUrl: link.startsWith("http") ? link : `${this.config.baseUrl}${link}`,
+            applicationUrl,
             externalId: link,
           });
         }
@@ -408,7 +412,8 @@ export class GenericScraper extends BaseScraper {
   private absoluteUrl(value?: string) {
     if (!value) return undefined;
     try {
-      return new URL(value, this.config.baseUrl).toString();
+      const url = new URL(value, this.config.baseUrl);
+      return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : undefined;
     } catch {
       return undefined;
     }
