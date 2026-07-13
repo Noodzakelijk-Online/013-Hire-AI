@@ -282,31 +282,37 @@ Return the data in a structured JSON format.`;
  * Convert parsed resume data to user profile format
  */
 export function resumeToProfileData(parsed: ParsedResume) {
-  // Combine skills into a comma-separated string
-  const skills = parsed.skills.join(", ");
+  const profileData: {
+    skills?: string;
+    experience?: string;
+    education?: string;
+    linkedinUrl?: string;
+    githubUrl?: string;
+    portfolioUrl?: string;
+  } = {};
+  const skills = Array.from(new Set(
+    parsed.skills.map((skill) => skill.trim()).filter(Boolean)
+  )).join(", ");
+  if (skills) profileData.skills = skills;
 
-  // Format experience as text
   const experience = parsed.experience
     .map(
       (exp) =>
         `${exp.title} at ${exp.company} (${exp.startDate} - ${exp.endDate})\n${exp.description}`
     )
+    .filter((entry) => entry.trim())
     .join("\n\n");
+  if (experience) profileData.experience = experience;
 
-  // Format education as text
   const education = parsed.education
     .map((edu) => `${edu.degree} in ${edu.field} from ${edu.institution} (${edu.graduationDate})`)
+    .filter((entry) => entry.trim())
     .join("\n");
+  if (education) profileData.education = education;
 
-  // Calculate years of experience
-  const yearsOfExperience = parsed.experience.length > 0 ? parsed.experience.length * 2 : 0;
+  if (parsed.linkedinUrl?.trim()) profileData.linkedinUrl = parsed.linkedinUrl.trim();
+  if (parsed.githubUrl?.trim()) profileData.githubUrl = parsed.githubUrl.trim();
+  if (parsed.portfolioUrl?.trim()) profileData.portfolioUrl = parsed.portfolioUrl.trim();
 
-  return {
-    skills,
-    experience: `${yearsOfExperience}+ years of experience\n\n${experience}`,
-    education,
-    linkedinUrl: parsed.linkedinUrl,
-    githubUrl: parsed.githubUrl,
-    portfolioUrl: parsed.portfolioUrl,
-  };
+  return profileData;
 }

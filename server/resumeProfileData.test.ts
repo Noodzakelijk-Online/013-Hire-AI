@@ -1,0 +1,43 @@
+import { describe, expect, it } from "vitest";
+import { resumeToProfileData, type ParsedResume } from "./resumeParser";
+
+const emptyResume: ParsedResume = {
+  skills: [],
+  experience: [],
+  education: [],
+  certifications: [],
+  languages: [],
+};
+
+describe("resume profile conversion", () => {
+  it("omits profile fields that have no resume evidence", () => {
+    expect(resumeToProfileData(emptyResume)).toEqual({});
+  });
+
+  it("keeps documented experience without manufacturing years from role count", () => {
+    const profileData = resumeToProfileData({
+      ...emptyResume,
+      skills: ["TypeScript", "React", "TypeScript"],
+      experience: [{
+        title: "Platform Engineer",
+        company: "Example Systems",
+        startDate: "2021-01",
+        endDate: "Present",
+        description: "Built reliable distributed services.",
+      }],
+      education: [{
+        degree: "BSc",
+        field: "Computer Science",
+        institution: "Example University",
+        graduationDate: "2020",
+      }],
+    });
+
+    expect(profileData).toMatchObject({
+      skills: "TypeScript, React",
+      experience: "Platform Engineer at Example Systems (2021-01 - Present)\nBuilt reliable distributed services.",
+      education: "BSc in Computer Science from Example University (2020)",
+    });
+    expect(profileData.experience).not.toContain("years of experience");
+  });
+});

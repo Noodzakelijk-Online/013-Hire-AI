@@ -24,7 +24,7 @@ vi.mock("./resumeParser", async (importOriginal) => ({
   resumeToProfileData: mocks.resumeToProfileData,
 }));
 
-import { getUserProfile } from "./db";
+import { getUserProfile, upsertUserProfile } from "./db";
 import { appRouter } from "./routers";
 
 function createContext(userId: number): TrpcContext {
@@ -93,6 +93,33 @@ describe("resume router synchronization", () => {
       resumeUrl: versionOne.fileUrl,
       resumeFileKey: versionOne.fileKey,
       skills: "TypeScript, React",
+    });
+  });
+
+  it("preserves existing profile evidence when a parser result has no supporting field data", async () => {
+    const partialUserId = 190073;
+    mocks.resumeToProfileData.mockReturnValue({});
+    await upsertUserProfile({
+      userId: partialUserId,
+      skills: "TypeScript, React, Node.js",
+      experience: "Six years building remote applications.",
+      education: "BSc Computer Science",
+      linkedinUrl: "https://linkedin.com/in/existing-candidate",
+    });
+    const caller = appRouter.createCaller(createContext(partialUserId));
+
+    await caller.resume.parseFile({
+      filename: "partial resume.txt",
+      mimeType: "text/plain",
+      fileData: Buffer.from("Candidate resume", "utf8").toString("base64"),
+    });
+
+    expect(await getUserProfile(partialUserId)).toMatchObject({
+      skills: "TypeScript, React, Node.js",
+      experience: "Six years building remote applications.",
+      education: "BSc Computer Science",
+      linkedinUrl: "https://linkedin.com/in/existing-candidate",
+      resumeFileKey: versionOne.fileKey,
     });
   });
 

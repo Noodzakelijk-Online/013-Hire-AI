@@ -320,9 +320,9 @@ export class GenericScraper extends BaseScraper {
   }
 
   private parseJsonLdJobPostings(html: string): any[] {
-    const scripts = html.matchAll(
+    const scripts = Array.from(html.matchAll(
       /<script\b[^>]*\btype\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
-    );
+    ));
     const jobs: any[] = [];
 
     for (const script of scripts) {
@@ -371,7 +371,7 @@ export class GenericScraper extends BaseScraper {
       title,
       company: this.stringValue(organization?.name) || `Company via ${this.config.platformName}`,
       location: this.jsonLdLocation(record),
-      description: this.cleanHtml(this.stringValue(record.description)),
+      description: this.cleanHtml(this.stringValue(record.description) || ""),
       applicationUrl,
       externalId: this.stringValue(identifier?.value) || this.stringValue(record.identifier) || applicationUrl,
       postedDate: this.stringValue(record.datePosted),
