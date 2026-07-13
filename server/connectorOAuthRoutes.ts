@@ -34,10 +34,31 @@ function connectorConsentScopes(provider: "gmail" | "google_drive" | "dropbox" |
   }
 }
 
-function hasRequiredOutboundScope(provider: "gmail" | "google_drive" | "dropbox" | "outlook" | "linkedin" | "github", grantedScopes: string[]) {
-  if (provider === "gmail") return grantedScopes.includes("https://www.googleapis.com/auth/gmail.send");
-  if (provider === "outlook") return grantedScopes.includes("Mail.Send");
-  return true;
+type ConnectorCallbackProvider = "gmail" | "google_drive" | "dropbox" | "outlook" | "linkedin" | "github";
+
+const requiredProviderScopes: Record<ConnectorCallbackProvider, readonly string[]> = {
+  gmail: [
+    "https://www.googleapis.com/auth/gmail.metadata",
+    "https://www.googleapis.com/auth/gmail.send",
+  ],
+  google_drive: ["https://www.googleapis.com/auth/drive.readonly"],
+  dropbox: ["files.metadata.read", "files.content.read"],
+  outlook: ["Mail.Read", "Mail.Send"],
+  linkedin: ["openid", "profile", "email"],
+  github: ["read:user"],
+};
+
+/**
+ * The internal consent labels describe the approved Hire.AI use case, while
+ * OAuth scopes prove whether the provider token can perform it. Do not mark a
+ * connector ready when those two records disagree.
+ */
+export function getMissingProviderScopes(
+  provider: ConnectorCallbackProvider,
+  grantedScopes: readonly string[]
+) {
+  const granted = new Set(grantedScopes.map((scope) => scope.trim()).filter(Boolean));
+  return requiredProviderScopes[provider].filter((scope) => !granted.has(scope));
 }
 
 function completeRedirect(provider: string, status: "connected" | "denied" | "failed") {
@@ -97,8 +118,9 @@ export function registerConnectorOAuthRoutes(app: Express) {
 
     try {
       const token = await exchangeConnectorAuthorizationCode(config, code);
-      if (!hasRequiredOutboundScope(provider, token.grantedScopes)) {
-        throw new Error("Required mailbox send consent was not granted.");
+      const missingScopes = getMissingProviderScopes(provider, token.grantedScopes);
+      if (missingScopes.length > 0) {
+        throw new Error("Required connector consent was not granted.");
       }
       await upsertConnectorAuthorization({
         userId: verifiedState.userId,
