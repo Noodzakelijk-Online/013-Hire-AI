@@ -35,6 +35,39 @@ const PERIOD_MULTIPLIERS: Record<string, number> = {
   yearly: 1,
 };
 
+function parseSalaryNumber(token: string): number | null {
+  const compact = token.replace(/\s/g, "");
+  const suffix = compact.match(/[km]$/i)?.[0].toLowerCase();
+  const value = suffix ? compact.slice(0, -1) : compact;
+  let normalized = value;
+
+  // Keep locale-formatted thousands intact: 60.000, 60,000, and 60 000
+  // all mean sixty thousand, while 1.234,50 is a decimal salary amount.
+  if (/^\d{1,3}(?:\.\d{3})+,\d+$/.test(value)) {
+    normalized = value.replace(/\./g, "").replace(",", ".");
+  } else if (/^\d{1,3}(?:,\d{3})+\.\d+$/.test(value)) {
+    normalized = value.replace(/,/g, "");
+  } else if (/^\d{1,3}(?:[.,]\d{3})+$/.test(value)) {
+    normalized = value.replace(/[.,]/g, "");
+  } else if (/^\d+(?:,\d+)?$/.test(value)) {
+    normalized = value.replace(",", ".");
+  }
+
+  const parsed = Number.parseFloat(normalized);
+  if (!Number.isFinite(parsed)) return null;
+
+  if (suffix === "k") return parsed * 1_000;
+  if (suffix === "m") return parsed * 1_000_000;
+  return parsed;
+}
+
+function extractSalaryValues(text: string): number[] {
+  const tokens = text.match(/\d{1,3}(?:[.,\s]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?(?:\s*[km])?/gi) || [];
+  return tokens
+    .map((token) => parseSalaryNumber(token))
+    .filter((value): value is number => value !== null);
+}
+
 function detectCurrency(text: string) {
   const codes = Array.from(new Set(Object.values(CURRENCY_SYMBOLS)));
   const explicitCode = codes.find((code) =>
@@ -74,28 +107,13 @@ export function normalizeSalary(salaryString: string | null | undefined): Normal
     result.period = "yearly";
   }
 
-  // Extract numbers
-  const numbers = text.match(/[\d,]+(?:\.\d+)?/g);
-  if (numbers) {
-    const parsed = numbers.map((n) => parseFloat(n.replace(/,/g, "")));
-    
-    // Handle "k" suffix (e.g., "100k")
-    const kMatches = text.match(/(\d+)k/gi);
-    if (kMatches) {
-      kMatches.forEach((match) => {
-        const num = parseFloat(match.replace(/k/i, "")) * 1000;
-        const idx = parsed.findIndex((p) => p === parseFloat(match.replace(/k/i, "")));
-        if (idx !== -1) parsed[idx] = num;
-      });
-    }
-
-    if (parsed.length === 1) {
-      result.min = parsed[0];
-      result.max = parsed[0];
-    } else if (parsed.length >= 2) {
-      result.min = Math.min(parsed[0], parsed[1]);
-      result.max = Math.max(parsed[0], parsed[1]);
-    }
+  const values = extractSalaryValues(text);
+  if (values.length === 1) {
+    result.min = values[0];
+    result.max = values[0];
+  } else if (values.length >= 2) {
+    result.min = Math.min(values[0], values[1]);
+    result.max = Math.max(values[0], values[1]);
   }
 
   // Normalize to yearly

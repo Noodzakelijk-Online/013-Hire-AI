@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeExperienceLevel, normalizeLocation, normalizeSalary } from "./jobNormalization";
+import { normalizeExperienceLevel, normalizeJob, normalizeLocation, normalizeSalary } from "./jobNormalization";
 
 describe("job normalization", () => {
   it("keeps explicit CAD and AUD compensation distinct from generic dollar salaries", () => {
@@ -14,6 +14,28 @@ describe("job normalization", () => {
       min: 85000,
       max: 95000,
     });
+  });
+
+  it("parses international thousands separators before downstream fit scoring", () => {
+    expect(normalizeSalary("EUR 60.000 - 75.000 annually")).toMatchObject({
+      currency: "EUR",
+      min: 60000,
+      max: 75000,
+      period: "yearly",
+      normalizedYearly: { min: 60000, max: 75000 },
+    });
+    expect(normalizeSalary("EUR 1.234,50 - 1.500,75 monthly")).toMatchObject({
+      currency: "EUR",
+      min: 1234.5,
+      max: 1500.75,
+      period: "monthly",
+      normalizedYearly: { min: 14814, max: 18009 },
+    });
+    expect(normalizeJob({
+      title: "Platform Engineer",
+      company: "Example Co",
+      salary: "EUR 60 000 - 75 000",
+    }).salary).toMatchObject({ min: 60000, max: 75000, currency: "EUR" });
   });
 
   it("recognizes complete country names without treating city text as a country code", () => {
