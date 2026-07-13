@@ -672,12 +672,10 @@ function addJobSearchFilterConditions(conditions: SQL[], filters: JobSearchFilte
       ? or(eq(jobs.salaryCurrency, selectedSalaryCurrency), isNull(jobs.salaryCurrency))
       : eq(jobs.salaryCurrency, selectedSalaryCurrency)
     : null;
-  const salaryOverlap = selectedSalaryCurrency
-    ? and(
-        or(isNull(jobs.salaryMin), lte(jobs.salaryMin, filters.salaryRange[1])),
-        or(isNull(jobs.salaryMax), gte(jobs.salaryMax, filters.salaryRange[0]))
-      )
-    : null;
+  const salaryOverlap = and(
+    or(isNull(jobs.salaryMin), lte(jobs.salaryMin, filters.salaryRange[1])),
+    or(isNull(jobs.salaryMax), gte(jobs.salaryMax, filters.salaryRange[0]))
+  );
   if (filters.salaryDisclosedOnly) {
     const hasSalary = or(isNotNull(jobs.salaryMin), isNotNull(jobs.salaryMax));
     if (hasSalary) conditions.push(hasSalary);

@@ -48,7 +48,7 @@ export const defaultJobSearchFilters: JobSearchFilterState = {
   jobType: "all",
   platformId: "all",
   salaryRange: [0, 300000],
-  salaryCurrency: "USD",
+  salaryCurrency: "all",
   remoteOnly: true,
   experienceLevel: "all",
   applicationProcess: "all",
@@ -145,15 +145,17 @@ export function filterJobListings<T extends JobSearchFilterJob>(jobs: T[], filte
       if (!processMatches) return false;
     }
 
-    const shouldCompareSalary = filters.salaryCurrency !== "all";
-    const salaryCurrencyMatches = !shouldCompareSalary ||
+    const hasSelectedSalaryCurrency = filters.salaryCurrency !== "all";
+    const salaryCurrencyMatches = !hasSelectedSalaryCurrency ||
       normalizeSalaryCurrency(job.salaryCurrency) === normalizeSalaryCurrency(filters.salaryCurrency);
     if (!salaryCurrencyMatches) return false;
 
-    const salaryOverlap = shouldCompareSalary ? hasSalaryOverlap(job, filters.salaryRange) : null;
+    // Preserve the established range-only API behavior when no currency is
+    // selected. The UI disables range controls until a source currency is set.
+    const salaryOverlap = hasSalaryOverlap(job, filters.salaryRange);
     const hasSalary = typeof job.salaryMin === "number" || typeof job.salaryMax === "number";
     if (filters.salaryDisclosedOnly && !hasSalary) return false;
-    return salaryOverlap !== false || !shouldCompareSalary;
+    return salaryOverlap !== false;
   });
 }
 
