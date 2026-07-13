@@ -41,6 +41,8 @@ function isCloudResumeMimeType(mimeType: string) {
     "application/pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "text/plain",
+    "text/rtf",
+    "application/rtf",
   ].includes(mimeType);
 }
 

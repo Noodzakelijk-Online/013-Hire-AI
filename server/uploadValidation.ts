@@ -10,7 +10,6 @@ export interface SensitiveUploadScanResult {
 export const RESUME_MIME_TYPES = new Set([
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/msword",
   "text/plain",
   "text/rtf",
   "application/rtf",
@@ -122,7 +121,11 @@ function hasExpectedSignature(data: Buffer, mimeType: string): boolean {
     return data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47;
   }
 
-  if (mimeType === "text/plain" || mimeType === "text/rtf" || mimeType === "application/rtf") {
+  if (mimeType === "text/rtf" || mimeType === "application/rtf") {
+    return /^\s*\{\\rtf\d+/i.test(data.subarray(0, Math.min(data.length, 512)).toString("utf8"));
+  }
+
+  if (mimeType === "text/plain") {
     return !data.subarray(0, Math.min(data.length, 512)).includes(0);
   }
 

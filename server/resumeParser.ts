@@ -66,6 +66,33 @@ export async function extractTextFromDOCX(buffer: Buffer): Promise<string> {
   }
 }
 
+/** Extract readable text from an RTF document without interpreting embedded objects. */
+export function extractTextFromRTF(buffer: Buffer): string {
+  const source = buffer.toString("utf8");
+  if (!/^\s*\{\\rtf\d+/i.test(source)) {
+    throw new Error("Failed to extract text from RTF");
+  }
+
+  return source
+    .replace(/\\u(-?\d+)\??/g, (_match, value: string) => {
+      const codePoint = Number(value);
+      const normalizedCodePoint = codePoint < 0 ? codePoint + 65_536 : codePoint;
+      return Number.isInteger(normalizedCodePoint) && normalizedCodePoint >= 0 && normalizedCodePoint <= 0x10ffff
+        ? String.fromCodePoint(normalizedCodePoint)
+        : "";
+    })
+    .replace(/\\'([0-9a-f]{2})/gi, (_match, value: string) => Buffer.from(value, "hex").toString("latin1"))
+    .replace(/\\(par|line)\b ?/gi, "\n")
+    .replace(/\\tab\b ?/gi, "\t")
+    .replace(/\\[a-z]+-?\d* ?/gi, "")
+    .replace(/\\([\\{}])/g, "$1")
+    .replace(/[{}]/g, "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 /**
  * Upload resume file to S3 and return the URL
  */
@@ -85,7 +112,7 @@ export async function uploadResumeToS3(
 }
 
 /**
- * Parse resume from file buffer (PDF, DOCX, or plain text)
+ * Parse resume from file buffer (PDF, DOCX, RTF, or plain text)
  */
 export async function parseResumeFromFile(
   buffer: Buffer,
@@ -97,10 +124,11 @@ export async function parseResumeFromFile(
     text = await extractTextFromPDF(buffer);
   } else if (
     mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-    mimeType.includes("docx") ||
-    mimeType.includes("word")
+    mimeType.includes("docx")
   ) {
     text = await extractTextFromDOCX(buffer);
+  } else if (mimeType === "text/rtf" || mimeType === "application/rtf") {
+    text = extractTextFromRTF(buffer);
   } else if (mimeType === "text/plain" || mimeType.includes("text")) {
     text = buffer.toString("utf-8");
   } else {

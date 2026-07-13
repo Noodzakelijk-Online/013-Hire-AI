@@ -367,7 +367,7 @@ export default function Profile() {
 
     const mimeType = getResumeMimeType(file);
     if (!mimeType) {
-      toast.error("Choose a PDF, DOC, DOCX, TXT, or RTF resume.");
+      toast.error("Choose a PDF, DOCX, TXT, or RTF resume.");
       e.target.value = "";
       return;
     }
@@ -665,7 +665,7 @@ export default function Profile() {
                 </Button>
                 <input
                   type="file"
-                  accept=".pdf,.doc,.docx,.txt,.rtf"
+                  accept=".pdf,.docx,.txt,.rtf"
                   className="hidden"
                   onChange={handleResumeUpload}
                   disabled={isUploading}
@@ -1809,7 +1809,6 @@ function getResumeMimeType(file: File): string | null {
   const mimeTypeByExtension: Record<string, string> = {
     pdf: "application/pdf",
     docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    doc: "application/msword",
     txt: "text/plain",
     rtf: "text/rtf",
   };

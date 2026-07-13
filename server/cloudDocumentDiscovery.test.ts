@@ -99,17 +99,24 @@ describe("cloud resume discovery", () => {
       entries: [
         { ".tag": "file", path_lower: "/cv.docx", name: "CV.docx", size: 402, client_modified: "2026-07-11T09:00:00Z" },
         { ".tag": "file", path_lower: "/cover.png", name: "cover.png", size: 40 },
-        { ".tag": "file", path_lower: "/legacy.rtf", name: "legacy.rtf", size: 40 },
+        { ".tag": "file", path_lower: "/resume.rtf", name: "resume.rtf", size: 40 },
       ],
     }), { status: 200 }));
 
     const documents = await discoverCloudResumeDocuments(501, "dropbox", discoveryOptions(fetcher));
 
-    expect(documents).toEqual([expect.objectContaining({
-      provider: "dropbox",
-      sourceId: "/cv.docx",
-      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    })]);
+    expect(documents).toEqual([
+      expect.objectContaining({
+        provider: "dropbox",
+        sourceId: "/cv.docx",
+        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      }),
+      expect.objectContaining({
+        provider: "dropbox",
+        sourceId: "/resume.rtf",
+        mimeType: "text/rtf",
+      }),
+    ]);
     expect(fetcher).toHaveBeenCalledWith(
       "https://api.dropboxapi.com/2/files/list_folder",
       expect.objectContaining({ method: "POST" })
