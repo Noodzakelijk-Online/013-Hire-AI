@@ -94,6 +94,7 @@ export abstract class BaseScraper {
       applicationUrl: rawJob.applicationUrl,
       externalId: rawJob.externalId || rawJob.id,
       postedDate: this.parseDate(rawJob.postedDate),
+      expiryDate: this.parseDate(rawJob.expiryDate),
       isActive: 1,
     };
   }

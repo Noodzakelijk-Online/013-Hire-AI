@@ -280,6 +280,9 @@ export class GenericScraper extends BaseScraper {
   }
 
   private parseHTML(html: string): any[] {
+    const structuredJobs = this.parseJsonLdJobPostings(html);
+    if (structuredJobs.length > 0) return structuredJobs;
+
     const jobs: any[] = [];
 
     // Try common job card patterns
@@ -314,6 +317,118 @@ export class GenericScraper extends BaseScraper {
     }
 
     return jobs;
+  }
+
+  private parseJsonLdJobPostings(html: string): any[] {
+    const scripts = html.matchAll(
+      /<script\b[^>]*\btype\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
+    );
+    const jobs: any[] = [];
+
+    for (const script of scripts) {
+      try {
+        const queue: unknown[] = [JSON.parse(script[1])];
+        while (queue.length > 0) {
+          const current = queue.shift();
+          if (Array.isArray(current)) {
+            queue.push(...current);
+            continue;
+          }
+          if (!current || typeof current !== "object") continue;
+
+          const record = current as Record<string, unknown>;
+          const types = Array.isArray(record["@type"])
+            ? record["@type"]
+            : [record["@type"]];
+          if (types.some((type) => type === "JobPosting")) {
+            const job = this.toJsonLdJobPosting(record);
+            if (job) jobs.push(job);
+          }
+
+          for (const value of Object.values(record)) {
+            if (value && typeof value === "object") queue.push(value);
+          }
+        }
+      } catch {
+        // Ignore malformed structured data and continue with other scripts or HTML heuristics.
+      }
+    }
+
+    return jobs;
+  }
+
+  private toJsonLdJobPosting(record: Record<string, unknown>) {
+    const title = this.stringValue(record.title);
+    const applicationUrl = this.absoluteUrl(this.stringValue(record.url));
+    if (!title || !applicationUrl) return null;
+
+    const organization = this.recordValue(record.hiringOrganization);
+    const identifier = this.recordValue(record.identifier);
+    const salary = this.recordValue(record.baseSalary);
+    const salaryValue = this.recordValue(salary?.value);
+
+    return {
+      title,
+      company: this.stringValue(organization?.name) || `Company via ${this.config.platformName}`,
+      location: this.jsonLdLocation(record),
+      description: this.cleanHtml(this.stringValue(record.description)),
+      applicationUrl,
+      externalId: this.stringValue(identifier?.value) || this.stringValue(record.identifier) || applicationUrl,
+      postedDate: this.stringValue(record.datePosted),
+      expiryDate: this.stringValue(record.validThrough),
+      jobType: this.jsonLdEmploymentType(record.employmentType),
+      salaryMin: this.numberValue(salaryValue?.minValue) ?? this.numberValue(salaryValue?.value),
+      salaryMax: this.numberValue(salaryValue?.maxValue) ?? this.numberValue(salaryValue?.value),
+      salaryCurrency: this.stringValue(salary?.currency),
+    };
+  }
+
+  private jsonLdLocation(record: Record<string, unknown>) {
+    if (this.stringValue(record.jobLocationType)?.toUpperCase() === "TELECOMMUTE") return "Remote";
+
+    const locations = Array.isArray(record.jobLocation) ? record.jobLocation : [record.jobLocation];
+    const parts = locations.flatMap((location) => {
+      const address = this.recordValue(this.recordValue(location)?.address);
+      return [
+        this.stringValue(address?.addressLocality),
+        this.stringValue(address?.addressRegion),
+        this.stringValue(address?.addressCountry),
+      ].filter((part): part is string => Boolean(part));
+    });
+    if (parts.length > 0) return Array.from(new Set(parts)).join(", ");
+
+    return "Remote";
+  }
+
+  private jsonLdEmploymentType(value: unknown) {
+    const employmentType = Array.isArray(value) ? value[0] : value;
+    return this.stringValue(employmentType)?.replace(/_/g, "-");
+  }
+
+  private absoluteUrl(value?: string) {
+    if (!value) return undefined;
+    try {
+      return new URL(value, this.config.baseUrl).toString();
+    } catch {
+      return undefined;
+    }
+  }
+
+  private recordValue(value: unknown) {
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : undefined;
+  }
+
+  private stringValue(value: unknown) {
+    return typeof value === "string" && value.trim() ? value.trim() : undefined;
+  }
+
+  private numberValue(value: unknown) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value !== "string" || !value.trim()) return undefined;
+    const parsed = Number(value.replace(/,/g, ""));
+    return Number.isFinite(parsed) ? parsed : undefined;
   }
 
   private extractTag(xml: string, tag: string): string {
