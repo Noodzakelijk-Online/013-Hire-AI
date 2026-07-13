@@ -53,6 +53,16 @@ describe("response and interview memory fallback", () => {
     let userApplications = await getUserApplications(userId);
     expect(userApplications.find((item) => item.id === applicationId)?.status).toBe("interview");
 
+    const ledgerAfterInvite = await getUserOperatingLedger(userId);
+    expect(ledgerAfterInvite.metrics.unreadInterviewNotifications).toBe(1);
+    expect(ledgerAfterInvite.queues.interviewNotifications).toMatchObject([
+      {
+        applicationId,
+        employerResponseId: interviewResponse.responseId,
+        notificationType: "interview_invite",
+      },
+    ]);
+
     const offerResponse = await recordEmployerResponse({
       applicationId,
       responseType: "offer",
@@ -64,6 +74,10 @@ describe("response and interview memory fallback", () => {
     expect(offerResponse.status).toBe("offer");
     userApplications = await getUserApplications(userId);
     expect(userApplications.find((item) => item.id === applicationId)?.status).toBe("offer");
+
+    const ledgerAfterOffer = await getUserOperatingLedger(userId);
+    expect(ledgerAfterOffer.metrics.unreadInterviewNotifications).toBe(0);
+    expect(ledgerAfterOffer.queues.interviewNotifications).toHaveLength(0);
 
     const artifacts = await getApplicationLedgerArtifacts(applicationId, userId);
     expect(artifacts.employerResponses).toHaveLength(2);
