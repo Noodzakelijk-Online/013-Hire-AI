@@ -112,6 +112,8 @@ export default function Applications() {
   const [followUpApplicationId, setFollowUpApplicationId] = useState<number | null>(null);
   const [followUpDraftPurpose, setFollowUpDraftPurpose] = useState<"routine_follow_up" | "employer_reply">("routine_follow_up");
   const [followUpSourceResponseId, setFollowUpSourceResponseId] = useState<number | null>(null);
+  const [confirmingFollowUpSentId, setConfirmingFollowUpSentId] = useState<number | null>(null);
+  const [followUpDeliveryConfirmation, setFollowUpDeliveryConfirmation] = useState("");
   const [pendingEmployerReplyApplicationId, setPendingEmployerReplyApplicationId] = useState<number | null>(null);
   const [confirmingApplication, setConfirmingApplication] = useState<any>(null);
   const [submissionSource, setSubmissionSource] = useState<SubmissionEvidenceSource>("employer_portal");
@@ -266,6 +268,8 @@ export default function Applications() {
   const markFollowUpSentMutation = trpc.applications.markFollowUpSent.useMutation({
     onSuccess: () => {
       toast.success("Follow-up marked as sent");
+      setConfirmingFollowUpSentId(null);
+      setFollowUpDeliveryConfirmation("");
       refetchFollowUps();
       refetchApprovals();
       refetch();
@@ -1926,7 +1930,10 @@ export default function Applications() {
                                         variant="ghost"
                                         size="sm"
                                         disabled={markFollowUpSentMutation.isPending}
-                                        onClick={() => markFollowUpSentMutation.mutate({ followUpId: followUp.id })}
+                                        onClick={() => {
+                                          setFollowUpDeliveryConfirmation("");
+                                          setConfirmingFollowUpSentId(followUp.id);
+                                        }}
                                       >
                                         <CheckCircle className="mr-1 h-4 w-4" />
                                         Mark Sent
@@ -1945,6 +1952,12 @@ export default function Applications() {
                                   ) : null}
                                 </div>
                                 <p className="whitespace-pre-wrap text-sm text-slate-400">{followUp.message}</p>
+                                {followUp.deliveryConfirmation && (
+                                  <div className="rounded border border-emerald-500/20 bg-emerald-500/5 p-2 text-xs text-emerald-100">
+                                    <span className="font-medium">Delivery confirmation: </span>
+                                    {followUp.deliveryConfirmation}
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
@@ -2588,6 +2601,64 @@ export default function Applications() {
               >
                 {createFollowUpMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 Save Draft
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={confirmingFollowUpSentId !== null}
+          onOpenChange={(open) => {
+            if (!open && !markFollowUpSentMutation.isPending) {
+              setConfirmingFollowUpSentId(null);
+              setFollowUpDeliveryConfirmation("");
+            }
+          }}
+        >
+          <DialogContent className="bg-slate-900 border-slate-700">
+            <DialogHeader>
+              <DialogTitle className="text-white">Confirm External Follow-up Delivery</DialogTitle>
+              <DialogDescription className="text-slate-400">
+                Confirm that you sent the approved draft outside Hire.AI. This creates a delivery attestation in the application ledger.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-300">Delivery confirmation</label>
+              <Textarea
+                value={followUpDeliveryConfirmation}
+                onChange={(event) => setFollowUpDeliveryConfirmation(event.target.value)}
+                className="min-h-28 bg-slate-800 border-slate-700 text-white"
+                maxLength={1000}
+                placeholder="For example: Sent via my email account to the recruiter on 13 July."
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                disabled={markFollowUpSentMutation.isPending}
+                onClick={() => {
+                  setConfirmingFollowUpSentId(null);
+                  setFollowUpDeliveryConfirmation("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                disabled={
+                  confirmingFollowUpSentId === null ||
+                  followUpDeliveryConfirmation.trim().length < 8 ||
+                  markFollowUpSentMutation.isPending
+                }
+                onClick={() => {
+                  if (confirmingFollowUpSentId === null) return;
+                  markFollowUpSentMutation.mutate({
+                    followUpId: confirmingFollowUpSentId,
+                    deliveryConfirmation: followUpDeliveryConfirmation,
+                  });
+                }}
+              >
+                {markFollowUpSentMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Confirm Sent
               </Button>
             </div>
           </DialogContent>

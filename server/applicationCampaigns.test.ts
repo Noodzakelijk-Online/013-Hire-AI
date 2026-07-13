@@ -812,7 +812,11 @@ describe("application campaign operating ledger", () => {
       action.includes("Record send handoff for 1 approved follow-up draft")
     )).toBe(true);
 
-    await markFollowUpSent(followUp.id, userId);
+    await markFollowUpSent(
+      followUp.id,
+      userId,
+      "Sent through the candidate's email account after approval."
+    );
     const ledgerAfterSent = await getUserOperatingLedger(userId);
 
     expect(ledgerAfterSent.metrics.approvedFollowUpsReadyToSend).toBe(0);

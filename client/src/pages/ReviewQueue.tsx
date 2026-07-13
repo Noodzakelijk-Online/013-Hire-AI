@@ -1,11 +1,13 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { getApplicationDeepLink } from "@/lib/applicationDeepLinks";
 import { getApprovalEvidenceGateSummary } from "@/lib/applicationEvidenceGates";
@@ -43,6 +45,8 @@ import {
 export default function ReviewQueue() {
   const { user, loading: authLoading } = useAuth();
   const [, setLocation] = useLocation();
+  const [sendHandoff, setSendHandoff] = useState<{ followUpId: number; label: string } | null>(null);
+  const [deliveryConfirmation, setDeliveryConfirmation] = useState("");
   const {
     data: operatingLedger,
     isLoading,
@@ -91,6 +95,8 @@ export default function ReviewQueue() {
   const markFollowUpSent = trpc.applications.markFollowUpSent.useMutation({
     onSuccess: async () => {
       toast.success("Follow-up send handoff recorded");
+      setSendHandoff(null);
+      setDeliveryConfirmation("");
       await Promise.all([refetch(), refetchAuditTrail()]);
     },
     onError: (error) => {
@@ -157,6 +163,11 @@ export default function ReviewQueue() {
 
   const getQueueAction = (kind: ReviewQueueActionKind, item: unknown) =>
     getReviewQueueActionSummary(kind, item as Record<string, unknown>);
+
+  const openSendHandoff = (followUpId: number, label: string) => {
+    setDeliveryConfirmation("");
+    setSendHandoff({ followUpId, label });
+  };
 
   const scrollToQueueSection = (section: string) => {
     const target = document.getElementById(`review-queue-section-${section}`);
@@ -404,7 +415,10 @@ export default function ReviewQueue() {
                               size="sm"
                               data-testid="mark-follow-up-sent"
                               disabled={markFollowUpSent.isPending}
-                              onClick={() => markFollowUpSent.mutate({ followUpId: item.followUpId })}
+                              onClick={() => openSendHandoff(
+                                item.followUpId,
+                                item.purpose === "employer_reply" ? "employer reply" : "follow-up"
+                              )}
                             >
                               {markFollowUpSent.isPending ? (
                                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1078,6 +1092,64 @@ export default function ReviewQueue() {
           </div>
         )}
       </div>
+      <Dialog
+        open={sendHandoff !== null}
+        onOpenChange={(open) => {
+          if (!open && !markFollowUpSent.isPending) {
+            setSendHandoff(null);
+            setDeliveryConfirmation("");
+          }
+        }}
+      >
+        <DialogContent className="bg-slate-900 border-slate-700">
+          <DialogHeader>
+            <DialogTitle className="text-white">Confirm External Delivery</DialogTitle>
+            <DialogDescription className="text-slate-400">
+              Confirm that you sent this {sendHandoff?.label || "follow-up"} through the external channel. Hire.AI does not send it for you.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-slate-200" htmlFor="follow-up-delivery-confirmation">
+              Delivery confirmation
+            </label>
+            <Textarea
+              id="follow-up-delivery-confirmation"
+              value={deliveryConfirmation}
+              onChange={(event) => setDeliveryConfirmation(event.target.value)}
+              placeholder="For example: Sent via my email account to the recruiter on 13 July."
+              className="min-h-24 bg-slate-800 border-slate-700 text-white"
+              maxLength={1000}
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={markFollowUpSent.isPending}
+              onClick={() => {
+                setSendHandoff(null);
+                setDeliveryConfirmation("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={markFollowUpSent.isPending || deliveryConfirmation.trim().length < 8 || !sendHandoff}
+              onClick={() => {
+                if (!sendHandoff) return;
+                markFollowUpSent.mutate({
+                  followUpId: sendHandoff.followUpId,
+                  deliveryConfirmation,
+                });
+              }}
+            >
+              {markFollowUpSent.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-2 h-4 w-4" />}
+              Confirm Sent
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

@@ -1796,10 +1796,13 @@ export const appRouter = router({
       }),
 
     markFollowUpSent: protectedProcedure
-      .input(z.object({ followUpId: z.number() }))
+      .input(z.object({
+        followUpId: z.number(),
+        deliveryConfirmation: z.string().trim().min(8).max(1000),
+      }).strict())
       .mutation(async ({ ctx, input }) => {
         try {
-          return await markFollowUpSent(input.followUpId, ctx.user.id);
+          return await markFollowUpSent(input.followUpId, ctx.user.id, input.deliveryConfirmation);
         } catch (error) {
           const message = error instanceof Error ? error.message : "Unable to update follow-up.";
           throw new TRPCError({

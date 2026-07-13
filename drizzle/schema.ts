@@ -528,6 +528,7 @@ export const followUps = mysqlTable("follow_ups", {
   applicationId: int("application_id").notNull(),
   message: text("message"),
   sentDate: timestamp("sent_date"),
+  deliveryConfirmation: text("delivery_confirmation"),
   responseReceived: int("response_received").default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

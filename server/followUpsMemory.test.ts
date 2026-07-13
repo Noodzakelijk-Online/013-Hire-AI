@@ -54,17 +54,28 @@ describe("follow-up memory fallback", () => {
       "Approved follow-up draft after review.",
       "user"
     );
-    await markFollowUpSent(created.id, userId);
+    await expect(markFollowUpSent(created.id, userId)).rejects.toThrow(
+      "A delivery confirmation is required before marking a follow-up sent."
+    );
+    await markFollowUpSent(
+      created.id,
+      userId,
+      "Sent through the candidate's recruiting email account after approval."
+    );
     await markFollowUpResponseReceived(created.id, userId);
 
     const followUps = await getFollowUps(applicationId, userId);
     expect(followUps).toHaveLength(1);
     expect(followUps[0].sentDate).toBeInstanceOf(Date);
+    expect(followUps[0].deliveryConfirmation).toContain("recruiting email account");
     expect(followUps[0].responseReceived).toBe(1);
 
     const auditEvents = await getAuditEventsForEntity(userId, "application", applicationId);
     expect(auditEvents.some((event) => event.action === "follow_up_draft_created")).toBe(true);
-    expect(auditEvents.some((event) => event.action === "follow_up_marked_sent")).toBe(true);
+    expect(auditEvents.some((event) =>
+      event.action === "follow_up_marked_sent" &&
+      event.afterState?.includes("recruiting email account")
+    )).toBe(true);
     expect(auditEvents.some((event) => event.action === "follow_up_response_marked_received")).toBe(true);
   });
 

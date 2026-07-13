@@ -2190,6 +2190,17 @@ export interface FollowUpInput {
   sourceResponseId?: number;
 }
 
+function normalizeFollowUpDeliveryConfirmation(value?: string): string {
+  const confirmation = value?.trim().replace(/\r\n/g, "\n") || "";
+  if (confirmation.length < 8) {
+    throw new Error("A delivery confirmation is required before marking a follow-up sent.");
+  }
+  if (confirmation.length > 1000) {
+    throw new Error("Follow-up delivery confirmation is too long.");
+  }
+  return confirmation;
+}
+
 const memoryFollowUps: (FollowUp & { id: number; createdAt: Date })[] = [];
 
 function nextMemoryFollowUpId() {
@@ -2295,6 +2306,7 @@ export async function createFollowUp(input: FollowUpInput, userId: number) {
       applicationId: input.applicationId,
       message,
       sentDate: null,
+      deliveryConfirmation: null,
       responseReceived: 0,
       createdAt: new Date(),
     };
@@ -2885,7 +2897,7 @@ export async function acceptOfferApplication(applicationId: number, userId: numb
   });
 }
 
-export async function markFollowUpSent(followUpId: number, userId: number) {
+export async function markFollowUpSent(followUpId: number, userId: number, deliveryConfirmation?: string) {
   const db = await getDb();
   if (!db) {
     const followUp = await findOwnedMemoryFollowUp(followUpId, userId);
@@ -2906,8 +2918,10 @@ export async function markFollowUpSent(followUpId: number, userId: number) {
       throw new Error("Follow-up approval is required before marking it sent.");
     }
 
+    const normalizedConfirmation = normalizeFollowUpDeliveryConfirmation(deliveryConfirmation);
     const sentAt = new Date();
     followUp.sentDate = sentAt;
+    followUp.deliveryConfirmation = normalizedConfirmation;
     await createAuditEvent({
       userId,
       entityType: "application",
@@ -2915,7 +2929,11 @@ export async function markFollowUpSent(followUpId: number, userId: number) {
       action: "follow_up_marked_sent",
       actor: "user",
       source: "applications.markFollowUpSent",
-      afterState: JSON.stringify({ followUpId, sentAt: sentAt.toISOString() }),
+      afterState: JSON.stringify({
+        followUpId,
+        sentAt: sentAt.toISOString(),
+        deliveryConfirmation: normalizedConfirmation,
+      }),
       riskLevel: "medium",
       approvalId: approval.id,
     });
@@ -2957,8 +2975,12 @@ export async function markFollowUpSent(followUpId: number, userId: number) {
       throw new Error("Follow-up approval is required before marking it sent.");
     }
 
+    const normalizedConfirmation = normalizeFollowUpDeliveryConfirmation(deliveryConfirmation);
     const sentAt = new Date();
-    await tx.update(followUps).set({ sentDate: sentAt }).where(eq(followUps.id, followUpId));
+    await tx
+      .update(followUps)
+      .set({ sentDate: sentAt, deliveryConfirmation: normalizedConfirmation })
+      .where(eq(followUps.id, followUpId));
     await tx
       .update(applications)
       .set({ lastActivity: sentAt })
@@ -2970,7 +2992,11 @@ export async function markFollowUpSent(followUpId: number, userId: number) {
       action: "follow_up_marked_sent",
       actor: "user",
       source: "applications.markFollowUpSent",
-      afterState: JSON.stringify({ followUpId, sentAt: sentAt.toISOString() }),
+      afterState: JSON.stringify({
+        followUpId,
+        sentAt: sentAt.toISOString(),
+        deliveryConfirmation: normalizedConfirmation,
+      }),
       riskLevel: "medium",
       approvalId: approval[0].id,
     });
