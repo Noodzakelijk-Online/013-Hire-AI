@@ -84,6 +84,7 @@ describe("autonomous submission approval gates", () => {
 
     expect(result.queuedReviewRecords + result.queuedApplicationRecords + result.queuedManualRecords).toBeGreaterThan(0);
     expect(applications.length).toBeGreaterThan(0);
+    expect(applications[0].coverLetter).toContain("this draft references only those recorded skills");
     expect(approvals.some((approval) =>
       approval.approvalType === "application_submission" &&
       approval.entityType === "application" &&
@@ -91,7 +92,9 @@ describe("autonomous submission approval gates", () => {
     )).toBe(true);
     expect(ledger.material?.sourceProfileSnapshot).toContain("autonomousService");
     expect(ledger.material?.resumeId).toBe(98000 + userId);
-    expect(ledger.material?.claimsMade).toContain("No qualifications");
+    expect(ledger.material?.coverLetter).toContain("this draft references only those recorded skills");
+    expect(ledger.material?.claimsMade).toContain("makes no claims about qualifications");
+    expect(ledger.material?.claimsMade).toContain("supportedSkills");
     expect(ledger.attempts[0].status).toBe("review_required");
     expect(ledger.attempts[0].confirmationText).toContain("No external submission was performed");
     expect(ledger.auditEvents.some((event) =>

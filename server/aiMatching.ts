@@ -1,5 +1,6 @@
 import { invokeLLM } from "./_core/llm";
 import type { Job, UserProfile } from "../drizzle/schema";
+import { buildEvidenceBoundApplicationDraft } from "./applicationMaterialDraft";
 
 /**
  * AI-powered job matching service
@@ -153,53 +154,7 @@ export async function generateCoverLetter(
   userProfile: UserProfile,
   job: Job
 ): Promise<string> {
-  try {
-    const prompt = `Generate a professional and personalized cover letter for the following job application:
-
-User Profile:
-- Name: (Will be filled by user)
-- Skills: ${userProfile.skills || "Not specified"}
-- Experience: ${userProfile.experience || "Not specified"}
-- Education: ${userProfile.education || "Not specified"}
-
-Job Details:
-- Title: ${job.title}
-- Company: ${job.company}
-- Requirements: ${job.requirements || "Not specified"}
-- Responsibilities: ${job.responsibilities || "Not specified"}
-
-Write a compelling cover letter that:
-1. Highlights relevant skills and experience
-2. Shows enthusiasm for the role and company
-3. Addresses key requirements from the job posting
-4. Is professional yet personable
-5. Is 3-4 paragraphs long
-
-Do not include placeholder text like [Your Name] or [Date]. Write the body of the letter only.`;
-
-    const response = await invokeLLM({
-      messages: [
-        {
-          role: "system",
-          content: "You are an expert career coach who writes compelling, personalized cover letters that help candidates stand out.",
-        },
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-    });
-
-    const coverLetter = response.choices[0]?.message?.content;
-    if (!coverLetter || typeof coverLetter !== "string") {
-      throw new Error("No response from LLM");
-    }
-
-    return coverLetter;
-  } catch (error) {
-    console.error("Error generating cover letter:", error);
-    return "Unable to generate cover letter at this time.";
-  }
+  return buildEvidenceBoundApplicationDraft(userProfile, job).coverLetter;
 }
 
 /**

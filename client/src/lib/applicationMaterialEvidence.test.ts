@@ -66,6 +66,19 @@ describe("application material evidence summary", () => {
     expect(summary.profileEvidence.skills).toBe("React, TypeScript");
   });
 
+  it("shows profile-backed skills stored by evidence-bound application drafts", () => {
+    const summary = getApplicationMaterialEvidenceSummary({
+      claimsMade: JSON.stringify({
+        supportedSkills: ["TypeScript", "AWS"],
+        note: "Only profile-backed skills are named.",
+      }),
+    });
+
+    expect(summary.supportSignals).toContain("Profile skill: TypeScript");
+    expect(summary.supportSignals).toContain("Profile skill: AWS");
+    expect(summary.honestyNote).toContain("Only profile-backed skills");
+  });
+
   it("returns safe defaults when no material exists", () => {
     const summary = getApplicationMaterialEvidenceSummary(null);
 

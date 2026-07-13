@@ -105,6 +105,7 @@ export function getApplicationMaterialEvidenceSummary(
   const sourceProfileSnapshot = parseJsonRecord(material?.sourceProfileSnapshot);
   const profile = getProfileRecord(sourceProfileSnapshot);
   const reasons = toStringList(claimsMade?.reasons);
+  const supportedSkills = toStringList(claimsMade?.supportedSkills);
   const blockers = toStringList(claimsMade?.blockers);
   const textClaims = !claimsMade && material?.claimsMade ? toStringList(material.claimsMade) : [];
   const automationNotes = toStringList(customAnswers?.automationNotes);
@@ -113,6 +114,7 @@ export function getApplicationMaterialEvidenceSummary(
     : [];
   const supportSignals = [
     ...reasons,
+    ...supportedSkills.map((skill) => `Profile skill: ${skill}`),
     ...textClaims,
     ...automationNotes.filter((note) => !/unsupported|requires manual|must be connected/i.test(note)),
   ].map((item) => compactText(item)).filter(Boolean) as string[];
@@ -140,7 +142,7 @@ export function getApplicationMaterialEvidenceSummary(
     coverLetterLabel: material?.coverLetter ? "Cover letter stored" : "No cover letter stored",
     customAnswerCount: customAnswerLabels.length,
     customAnswerLabels,
-    supportSignals: supportSignals.slice(0, 6),
+    supportSignals: Array.from(new Set(supportSignals)).slice(0, 6),
     blockers: blockers.map((item) => compactText(item)).filter(Boolean).slice(0, 6) as string[],
     honestyNote: firstNonEmpty(
       stringValue(claimsMade, "note"),

@@ -42,6 +42,7 @@ import {
 } from "../shared/autonomousEvidenceGates";
 import { getAutonomousEvidenceContext } from "./autonomousEvidence";
 import { getActiveResume } from "./resumeStorage";
+import { buildEvidenceBoundApplicationDraft, type EvidenceBoundApplicationDraft } from "./applicationMaterialDraft";
 
 export interface AutonomousRunResult extends AutonomousPlan {
   queuedApplicationRecords: number;
@@ -127,6 +128,7 @@ async function recordAutonomousApplicationLedgerArtifacts({
   applicationId,
   decision,
   profile,
+  draft,
   resume,
   platformId,
   branch,
@@ -136,6 +138,7 @@ async function recordAutonomousApplicationLedgerArtifacts({
   applicationId: number;
   decision: AutonomousJobDecision;
   profile: unknown;
+  draft: EvidenceBoundApplicationDraft;
   resume: { id: number; version: number; fileName: string; fileKey: string };
   platformId?: number | null;
   branch: "auto_apply" | "review" | "manual";
@@ -151,14 +154,17 @@ async function recordAutonomousApplicationLedgerArtifacts({
     : branch === "review"
       ? "autonomous_review_queued"
       : "autonomous_application_prepared";
+  const draftAnswers = JSON.parse(draft.customAnswers) as Record<string, unknown>;
+  const draftClaims = JSON.parse(draft.claimsMade) as Record<string, unknown>;
 
   const artifacts = await getApplicationLedgerArtifacts(applicationId, userId);
   if (!artifacts.material || artifacts.material.resumeId !== resume.id) {
     await createApplicationMaterial({
       applicationId,
       resumeId: resume.id,
-      coverLetter: `Autonomous preparation note for ${decision.title} at ${decision.company}.`,
+      coverLetter: draft.coverLetter,
       customAnswers: JSON.stringify({
+        ...draftAnswers,
         source: "autonomousService",
         action: decision.action,
         atsType: decision.atsType,
@@ -166,10 +172,10 @@ async function recordAutonomousApplicationLedgerArtifacts({
         automationNotes: decision.automationNotes,
       }),
       claimsMade: JSON.stringify({
+        ...draftClaims,
         supportedClaimsOnly: true,
         reasons: decision.reasons,
         blockers: decision.blockers,
-        note: "No qualifications, certifications, work authorization, salary history, or employment status were fabricated.",
       }),
       sourceProfileSnapshot: profileSnapshotForAutonomousRun(profile),
     });
@@ -402,11 +408,12 @@ async function executeAutonomousRun(
         await recordStaleJobPreparationBlocked(userId, decision);
         continue;
       }
+      const draft = buildEvidenceBoundApplicationDraft(profile, currentJob);
       const result = await createApplication({
         userId,
         jobId: decision.jobId,
         status: "pending",
-        coverLetter: `Autonomous queue prepared for ${decision.title} at ${decision.company}.`,
+        coverLetter: draft.coverLetter,
         notes: [
           "Autonomous queue: application materials prepared for final user review.",
           `Match score: ${decision.matchScore}.`,
@@ -451,6 +458,7 @@ async function executeAutonomousRun(
         applicationId,
         decision,
         profile,
+        draft,
         resume: activeResume!,
         platformId: currentJob.platformId,
         branch: "auto_apply",
@@ -472,11 +480,12 @@ async function executeAutonomousRun(
         await recordStaleJobPreparationBlocked(userId, decision);
         continue;
       }
+      const draft = buildEvidenceBoundApplicationDraft(profile, currentJob);
       const result = await createApplication({
         userId,
         jobId: decision.jobId,
         status: "pending",
-        coverLetter: `Review required before applying to ${decision.title} at ${decision.company}.`,
+        coverLetter: draft.coverLetter,
         notes: [
           "Autonomous review queue.",
           `Match score: ${decision.matchScore}.`,
@@ -521,6 +530,7 @@ async function executeAutonomousRun(
         applicationId,
         decision,
         profile,
+        draft,
         resume: activeResume!,
         platformId: currentJob.platformId,
         branch: "review",
@@ -542,11 +552,12 @@ async function executeAutonomousRun(
         await recordStaleJobPreparationBlocked(userId, decision);
         continue;
       }
+      const draft = buildEvidenceBoundApplicationDraft(profile, currentJob);
       const result = await createApplication({
         userId,
         jobId: decision.jobId,
         status: "pending",
-        coverLetter: `Manual application task prepared for ${decision.title} at ${decision.company}.`,
+        coverLetter: draft.coverLetter,
         notes: `Autonomous manual apply queue. Unsupported ATS/platform: ${decision.atsType}. Match score: ${decision.matchScore}.`,
         isAutoApplied: 0,
       });
@@ -586,6 +597,7 @@ async function executeAutonomousRun(
         applicationId,
         decision,
         profile,
+        draft,
         resume: activeResume!,
         platformId: currentJob.platformId,
         branch: "manual",
