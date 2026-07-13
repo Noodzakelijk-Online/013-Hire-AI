@@ -6,17 +6,30 @@ export type AutonomousSourceHealth = {
   id: number;
   lastScrapeStatus: "success" | "partial" | "failed" | null;
   lastScrapeJobCount: number | null;
+  lastScraped?: Date | string | null;
+  lastScrapeAttemptedAt?: Date | string | null;
 };
 
 export interface AutonomousJobSourceEligibility {
   eligible: boolean;
   sourcePlatformIds: number[];
   emptySourcePlatformIds: number[];
+  staleEmptySourcePlatformIds: number[];
   reason: string | null;
 }
 
 export const EMPTY_SOURCE_SCAN_REASON =
   "Every observed source for this job reported no listings in its latest clean scan.";
+export const EMPTY_SOURCE_SCAN_FRESHNESS_MS = 24 * 60 * 60 * 1000;
+
+function isFreshScanTimestamp(
+  value: Date | string | null | undefined,
+  now: Date
+): boolean {
+  if (!value) return false;
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) && timestamp <= now.getTime() && now.getTime() - timestamp <= EMPTY_SOURCE_SCAN_FRESHNESS_MS;
+}
 
 /**
  * A clean zero-listing scan is strong enough to halt autonomous preparation.
@@ -24,7 +37,8 @@ export const EMPTY_SOURCE_SCAN_REASON =
  */
 export function getAutonomousSourceEligibility(
   sources: AutonomousSourceObservation[],
-  platforms: AutonomousSourceHealth[]
+  platforms: AutonomousSourceHealth[],
+  now = new Date()
 ): AutonomousJobSourceEligibility {
   const sourcePlatformIds = Array.from(new Set(
     sources
@@ -32,10 +46,17 @@ export function getAutonomousSourceEligibility(
       .filter((platformId): platformId is number => typeof platformId === "number" && Number.isInteger(platformId) && platformId > 0)
   ));
   const platformHealth = new Map(platforms.map((platform) => [platform.id, platform]));
-  const emptySourcePlatformIds = sourcePlatformIds.filter((platformId) => {
+  const cleanZeroSourcePlatformIds = sourcePlatformIds.filter((platformId) => {
     const platform = platformHealth.get(platformId);
     return platform?.lastScrapeStatus === "success" && platform.lastScrapeJobCount === 0;
   });
+  const emptySourcePlatformIds = cleanZeroSourcePlatformIds.filter((platformId) => {
+    const platform = platformHealth.get(platformId);
+    return isFreshScanTimestamp(platform?.lastScrapeAttemptedAt ?? platform?.lastScraped, now);
+  });
+  const staleEmptySourcePlatformIds = cleanZeroSourcePlatformIds.filter((platformId) =>
+    !emptySourcePlatformIds.includes(platformId)
+  );
   const everyObservedSourceIsEmpty = sourcePlatformIds.length > 0
     && emptySourcePlatformIds.length === sourcePlatformIds.length;
 
@@ -43,6 +64,7 @@ export function getAutonomousSourceEligibility(
     eligible: !everyObservedSourceIsEmpty,
     sourcePlatformIds,
     emptySourcePlatformIds,
+    staleEmptySourcePlatformIds,
     reason: everyObservedSourceIsEmpty ? EMPTY_SOURCE_SCAN_REASON : null,
   };
 }

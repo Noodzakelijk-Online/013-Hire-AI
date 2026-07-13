@@ -811,6 +811,7 @@ export async function getAutonomousJobSourceEligibility(
       eligible: true,
       sourcePlatformIds: [],
       emptySourcePlatformIds: [],
+      staleEmptySourcePlatformIds: [],
       reason: null,
     };
   }
@@ -829,6 +830,8 @@ export async function getAutonomousJobSourceEligibility(
     : await db
       .select({
         id: jobPlatforms.id,
+        lastScraped: jobPlatforms.lastScraped,
+        lastScrapeAttemptedAt: jobPlatforms.lastScrapeAttemptedAt,
         lastScrapeStatus: jobPlatforms.lastScrapeStatus,
         lastScrapeJobCount: jobPlatforms.lastScrapeJobCount,
       })

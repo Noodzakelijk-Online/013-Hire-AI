@@ -212,6 +212,7 @@ async function recordEmptySourcePreparationBlocked(
       plannedAction: decision.action,
       sourcePlatformIds: sourceEligibility.sourcePlatformIds,
       emptySourcePlatformIds: sourceEligibility.emptySourcePlatformIds,
+      staleEmptySourcePlatformIds: sourceEligibility.staleEmptySourcePlatformIds,
       reason: sourceEligibility.reason,
       externalSubmissionPerformed: false,
     }),
