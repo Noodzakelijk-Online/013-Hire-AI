@@ -11,6 +11,7 @@ import {
   updateInterviewStatus,
 } from "./applicationFeatures";
 import { getUserOperatingLedger } from "./applicationCampaigns";
+import { OFFER_SOURCE_REFERENCE_REQUIRED_MESSAGE } from "./applicationResponses";
 import {
   createApplication,
   createInterviewNotification,
@@ -33,6 +34,29 @@ async function recordInterviewInvite(applicationId: number, userId: number) {
 }
 
 describe("response and interview memory fallback", () => {
+  it("does not complete an interview when an offer outcome lacks source evidence", async () => {
+    const userId = 98200;
+    const application = await createApplication({ userId, jobId: 1, status: "applied" });
+    const applicationId = Number(application.insertId);
+    await recordInterviewInvite(applicationId, userId);
+    const scheduled = await scheduleInterview({
+      applicationId,
+      interviewType: "video",
+      scheduledAt: new Date(Date.now() + 2 * 86_400_000),
+    }, userId);
+
+    await expect(recordInterviewOutcome({
+      interviewId: scheduled.id,
+      outcome: "offer",
+      source: "email",
+      summary: "Recruiter sent a written offer after the final interview.",
+    }, userId)).rejects.toThrow(OFFER_SOURCE_REFERENCE_REQUIRED_MESSAGE);
+
+    expect((await getInterviewSchedules(applicationId, userId)).find((item) => item.id === scheduled.id)?.status).toBe("scheduled");
+    expect((await getUserApplications(userId)).find((item) => item.id === applicationId)?.status).toBe("interview");
+    expect((await getUserOperatingLedger(userId)).metrics.pendingOfferAttributions).toBe(0);
+  });
+
   it("records employer responses, status transitions, offer attribution approvals, and admin review work", async () => {
     const userId = 98201;
     const application = await createApplication({
@@ -75,6 +99,7 @@ describe("response and interview memory fallback", () => {
       applicationId,
       responseType: "offer",
       source: "email",
+      sourceReference: `gmail-offer-${applicationId}`,
       summary: "Employer sent a written offer for the linked role.",
       receivedAt: new Date(),
     }, userId);
@@ -194,6 +219,7 @@ describe("response and interview memory fallback", () => {
       applicationId,
       responseType: "offer",
       source: "email",
+      sourceReference: `gmail-offer-withdrawal-${applicationId}`,
       summary: "Employer sent a written offer for the role.",
       receivedAt: new Date(),
     }, userId);

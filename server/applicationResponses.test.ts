@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   INTERVIEW_INVITE_SOURCE_REFERENCE_REQUIRED_MESSAGE,
+  OFFER_SOURCE_REFERENCE_REQUIRED_MESSAGE,
   normalizeEmployerResponse,
   normalizeEmployerResponseSourceReference,
   resolveEmployerResponseStatus,
@@ -60,6 +61,17 @@ describe("application employer response classification", () => {
         "applied"
       )
     ).toThrow(INTERVIEW_INVITE_SOURCE_REFERENCE_REQUIRED_MESSAGE);
+
+    expect(() =>
+      normalizeEmployerResponse(
+        {
+          responseType: "offer",
+          source: "email",
+          summary: "Employer sent a written offer for the linked role.",
+        },
+        "interview"
+      )
+    ).toThrow(OFFER_SOURCE_REFERENCE_REQUIRED_MESSAGE);
   });
 
   it("normalizes stable source references without storing message content", () => {

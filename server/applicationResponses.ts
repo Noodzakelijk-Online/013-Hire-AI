@@ -37,6 +37,9 @@ export interface NormalizedEmployerResponse {
 export const INTERVIEW_INVITE_SOURCE_REFERENCE_REQUIRED_MESSAGE =
   "Interview invites require a stable source reference before Hire.AI can create an interview notification.";
 
+export const OFFER_SOURCE_REFERENCE_REQUIRED_MESSAGE =
+  "Offers require a stable source reference before Hire.AI can open attribution or billing review.";
+
 export function normalizeEmployerResponseSourceReference(value?: string | null): string | null {
   if (value == null) return null;
 
@@ -111,6 +114,9 @@ export function normalizeEmployerResponse(
   }
   if (input.responseType === "interview_invite" && !sourceReference) {
     throw new Error(INTERVIEW_INVITE_SOURCE_REFERENCE_REQUIRED_MESSAGE);
+  }
+  if (input.responseType === "offer" && !sourceReference) {
+    throw new Error(OFFER_SOURCE_REFERENCE_REQUIRED_MESSAGE);
   }
 
   const receivedAt = input.receivedAt || now;

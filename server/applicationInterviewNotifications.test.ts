@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { TrpcContext } from "./_core/context";
 import { recordEmployerResponse, scheduleInterview } from "./applicationFeatures";
-import { INTERVIEW_INVITE_SOURCE_REFERENCE_REQUIRED_MESSAGE } from "./applicationResponses";
-import { getAuditEventsForEntity, createApplication, listUnreadInterviewNotifications, updateApplicationStatus } from "./db";
+import { INTERVIEW_INVITE_SOURCE_REFERENCE_REQUIRED_MESSAGE, OFFER_SOURCE_REFERENCE_REQUIRED_MESSAGE } from "./applicationResponses";
+import { getAuditEventsForEntity, createApplication, getUserApplications, listUnreadInterviewNotifications, updateApplicationStatus } from "./db";
 import { getUserOperatingLedger } from "./applicationCampaigns";
 import { appRouter } from "./routers";
 
@@ -45,6 +45,26 @@ describe("interview notification ledger", () => {
     });
 
     expect(await listUnreadInterviewNotifications(userId)).toHaveLength(0);
+  });
+
+  it("does not create offer attribution work from an unreferenced manual offer", async () => {
+    const userId = 99169;
+    const application = await createApplication({ userId, jobId: 1, status: "applied" });
+    const applicationId = Number(application.insertId);
+    const owner = appRouter.createCaller(createContext(userId));
+
+    await expect(owner.applications.recordResponse({
+      applicationId,
+      responseType: "offer",
+      source: "email",
+      summary: "Recruiter sent a written offer for the linked remote role.",
+    })).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: OFFER_SOURCE_REFERENCE_REQUIRED_MESSAGE,
+    });
+
+    expect((await getUserApplications(userId)).find((item) => item.id === applicationId)?.status).toBe("applied");
+    expect((await getUserOperatingLedger(userId)).metrics.pendingOfferAttributions).toBe(0);
   });
 
   it("creates one unread in-app notification only for an evidence-backed interview invite", async () => {

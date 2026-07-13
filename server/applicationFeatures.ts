@@ -970,6 +970,7 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
         responseType: response.responseType,
         receivedAt: response.receivedAt.toISOString(),
         source: response.source,
+        sourceReference: response.sourceReference,
       });
       await createApplicationApproval({
         userId,
@@ -1336,6 +1337,7 @@ export async function recordEmployerResponse(input: RecordEmployerResponseInput,
         responseType: response.responseType,
         receivedAt: response.receivedAt.toISOString(),
         source: response.source,
+        sourceReference: response.sourceReference,
       });
       if (existingApproval[0]) {
         await tx
@@ -2008,12 +2010,8 @@ export async function recordInterviewOutcome(input: RecordInterviewOutcomeInput,
     if (currentInterviewStatus === "cancelled") {
       throw new Error("Cancelled interviews cannot receive outcomes.");
     }
-
-    if (currentInterviewStatus !== "completed") {
-      await updateInterviewStatus(input.interviewId, "completed", userId);
-    }
-
-    const response = await recordEmployerResponse({
+    const application = await getInterviewApplication(interview.applicationId, userId);
+    const responseInput = {
       applicationId: interview.applicationId,
       interviewId: input.interviewId,
       responseType: interviewOutcomeResponseType(input.outcome),
@@ -2021,7 +2019,13 @@ export async function recordInterviewOutcome(input: RecordInterviewOutcomeInput,
       sourceReference: interviewOutcomeSourceReference(input),
       summary: interviewOutcomeSummary(input),
       receivedAt,
-    }, userId);
+    };
+    normalizeEmployerResponse(responseInput, application.status || "pending", receivedAt);
+
+    if (currentInterviewStatus !== "completed") {
+      await updateInterviewStatus(input.interviewId, "completed", userId);
+    }
+    const response = await recordEmployerResponse(responseInput, userId);
 
     await createAuditEvent({
       userId,
@@ -2047,6 +2051,7 @@ export async function recordInterviewOutcome(input: RecordInterviewOutcomeInput,
     .select({
       applicationId: interviewSchedules.applicationId,
       status: interviewSchedules.status,
+      applicationStatus: applications.status,
     })
     .from(interviewSchedules)
     .innerJoin(applications, eq(interviewSchedules.applicationId, applications.id))
@@ -2061,12 +2066,7 @@ export async function recordInterviewOutcome(input: RecordInterviewOutcomeInput,
   if (currentInterviewStatus === "cancelled") {
     throw new Error("Cancelled interviews cannot receive outcomes.");
   }
-
-  if (currentInterviewStatus !== "completed") {
-    await updateInterviewStatus(input.interviewId, "completed", userId);
-  }
-
-  const response = await recordEmployerResponse({
+  const responseInput = {
     applicationId: interview[0].applicationId,
     interviewId: input.interviewId,
     responseType: interviewOutcomeResponseType(input.outcome),
@@ -2074,7 +2074,13 @@ export async function recordInterviewOutcome(input: RecordInterviewOutcomeInput,
     sourceReference: interviewOutcomeSourceReference(input),
     summary: interviewOutcomeSummary(input),
     receivedAt,
-  }, userId);
+  };
+  normalizeEmployerResponse(responseInput, interview[0].applicationStatus || "pending", receivedAt);
+
+  if (currentInterviewStatus !== "completed") {
+    await updateInterviewStatus(input.interviewId, "completed", userId);
+  }
+  const response = await recordEmployerResponse(responseInput, userId);
 
   await createAuditEvent({
     userId,

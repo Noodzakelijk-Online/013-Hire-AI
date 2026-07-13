@@ -2280,13 +2280,13 @@ export default function Applications() {
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-300">
-                  Message or portal reference{employerResponseType === "interview_invite" ? " (required for interview alerts)" : ""}
+                  Message or portal reference{["interview_invite", "offer"].includes(employerResponseType) ? " (required for interview alerts and offer attribution)" : ""}
                 </label>
                 <Input
                   value={employerResponseSourceReference}
                   onChange={(event) => setEmployerResponseSourceReference(event.target.value)}
                   className="bg-slate-800 border-slate-700 text-white"
-                  placeholder={employerResponseType === "interview_invite" ? "Required: message, portal, phone, or LinkedIn reference" : "Optional: message or portal ID"}
+                  placeholder={["interview_invite", "offer"].includes(employerResponseType) ? "Required: message, portal, phone, or LinkedIn reference" : "Optional: message or portal ID"}
                 />
               </div>
               <div className="space-y-2 md:col-span-2">
@@ -2311,7 +2311,7 @@ export default function Applications() {
                 Cancel
               </Button>
               <Button
-                disabled={!employerResponseSummary.trim() || (employerResponseType === "interview_invite" && !employerResponseSourceReference.trim()) || recordResponseMutation.isPending}
+                disabled={!employerResponseSummary.trim() || (["interview_invite", "offer"].includes(employerResponseType) && !employerResponseSourceReference.trim()) || recordResponseMutation.isPending}
                 onClick={() => {
                   if (!responseApplication) return;
                   recordResponseMutation.mutate({
@@ -2397,13 +2397,13 @@ export default function Applications() {
               )}
               <div className="space-y-2 md:col-span-2">
                 <label className="text-sm font-medium text-slate-300">
-                  Message or portal reference{interviewOutcome === "next_round" ? " (required for a next-round invite)" : ""}
+                  Message or portal reference{["next_round", "offer"].includes(interviewOutcome) ? " (required for next-round invites and offer attribution)" : ""}
                 </label>
                 <Input
                   value={interviewOutcomeSourceReference}
                   onChange={(event) => setInterviewOutcomeSourceReference(event.target.value)}
                   className="bg-slate-800 border-slate-700 text-white"
-                  placeholder={interviewOutcome === "next_round" ? "Required: message, portal, phone, or LinkedIn reference" : "Optional: message or portal ID"}
+                  placeholder={["next_round", "offer"].includes(interviewOutcome) ? "Required: message, portal, phone, or LinkedIn reference" : "Optional: message or portal ID"}
                 />
               </div>
               <div className="space-y-2 md:col-span-2">
@@ -2428,7 +2428,7 @@ export default function Applications() {
                 Cancel
               </Button>
               <Button
-                disabled={!interviewOutcomeSummary.trim() || (interviewOutcome === "next_round" && !interviewOutcomeSourceReference.trim()) || recordInterviewOutcomeMutation.isPending}
+                disabled={!interviewOutcomeSummary.trim() || (["next_round", "offer"].includes(interviewOutcome) && !interviewOutcomeSourceReference.trim()) || recordInterviewOutcomeMutation.isPending}
                 onClick={() => {
                   if (!outcomeInterview) return;
                   recordInterviewOutcomeMutation.mutate({
