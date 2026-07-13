@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   mergeProfileSkillEvidence,
+  resolveProfileCandidateEvidence,
   resolveProfileSkillEvidence,
+  summarizeProfileWorkHistory,
 } from "@shared/profileSkillEvidence";
 import { buildEvidenceBoundApplicationDraft } from "./applicationMaterialDraft";
 import { buildAutonomousPlan } from "./autonomousOrchestrator";
@@ -21,6 +23,27 @@ describe("profile skill evidence", () => {
 
     expect(resolved).toEqual({ skills: "Python", desiredJobTypes: "Backend Engineer" });
     expect(profile.skills).toBeNull();
+  });
+
+  it("uses structured work history only when the profile has no experience summary", () => {
+    const profile = { skills: null, experience: null };
+    const resolved = resolveProfileCandidateEvidence(profile, [], [
+      { jobTitle: "  Platform Engineer ", company: " Example Co " },
+      { jobTitle: "Platform Engineer", company: "Example Co" },
+      { jobTitle: "Developer", company: "Remote Team" },
+    ]);
+
+    expect(resolved.experience).toBe(
+      "Recorded work history: Platform Engineer at Example Co; Developer at Remote Team."
+    );
+    expect(profile.experience).toBeNull();
+    expect(summarizeProfileWorkHistory([{ jobTitle: "Engineer", company: "Acme" }]))
+      .toBe("Recorded work history: Engineer at Acme.");
+    expect(resolveProfileCandidateEvidence(
+      { skills: null, experience: "Existing candidate summary" },
+      [],
+      [{ jobTitle: "Ignored", company: "Example Co" }]
+    ).experience).toBe("Existing candidate summary");
   });
 
   it("keeps structured-only skills consistent across planning and review material", () => {

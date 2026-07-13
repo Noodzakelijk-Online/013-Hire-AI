@@ -28,6 +28,7 @@ import {
   getUserApplications,
   getUserProfile,
   getUserSkills,
+  getWorkExperiences,
   renewAutonomousRunLease,
 } from "./db";
 import {
@@ -49,7 +50,7 @@ import { getActiveResume } from "./resumeStorage";
 import { buildEvidenceBoundApplicationDraft, type EvidenceBoundApplicationDraft } from "./applicationMaterialDraft";
 import { monitorInboxResponses } from "./inboxResponseMonitoring";
 import type { AutonomousJobSourceEligibility } from "./autonomousSourceEligibility";
-import { resolveProfileSkillEvidence } from "@shared/profileSkillEvidence";
+import { resolveProfileCandidateEvidence } from "@shared/profileSkillEvidence";
 
 export interface AutonomousRunResult extends AutonomousPlan {
   queuedApplicationRecords: number;
@@ -391,15 +392,16 @@ async function executeAutonomousRun(
   overrides: AutonomousPreferences = {},
   assertLeaseActive: () => void = () => {}
 ): Promise<AutonomousRunResult> {
-  const [jobList, profile, applications, activeResume, existingDecisions, skills] = await Promise.all([
+  const [jobList, profile, applications, activeResume, existingDecisions, skills, workExperiences] = await Promise.all([
     getActiveJobs(250, 0),
     getUserProfile(userId),
     getUserApplications(userId),
     getActiveResume(userId),
     getUserApplicationDecisions(userId),
     getUserSkills(userId),
+    getWorkExperiences(userId),
   ]);
-  const profileForMatching = resolveProfileSkillEvidence(profile, skills);
+  const profileForMatching = resolveProfileCandidateEvidence(profile, skills, workExperiences);
   const resolvedPreferences = {
     ...parseAutonomousPreferences(profile?.preferences),
     ...overrides,

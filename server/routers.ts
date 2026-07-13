@@ -10,7 +10,7 @@ import { eq } from "drizzle-orm";
 import { normalizeSalary, normalizeLocation, normalizeJobType, normalizeExperienceLevel, extractSkills, extractBenefits, getDeduplicator } from "./jobNormalization";
 import { isJobCurrentForAutonomousProcessing } from "./autonomousOrchestrator";
 import { isConnectorAuthorizationStale } from "@shared/profileEvidence";
-import { resolveProfileSkillEvidence } from "@shared/profileSkillEvidence";
+import { resolveProfileCandidateEvidence } from "@shared/profileSkillEvidence";
 import { getRecentJobs, searchJobs, getDiscoveryStats, getSubscriptionManager } from "./realTimeDiscovery";
 import { successFeesRouter } from "./routers/successFees";
 import { adminRouter } from "./routers/admin";
@@ -861,7 +861,12 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         const { createWorkExperience } = await import("./db");
-        return await createWorkExperience({ userId: ctx.user.id, ...input });
+        const workExperience = await createWorkExperience({ userId: ctx.user.id, ...input });
+        const matchRefresh = await (await import("./profileMatchLedger")).refreshProfileMatchLedger({
+          userId: ctx.user.id,
+          source: "profile.addWorkExperience",
+        });
+        return { ...workExperience, matchRefresh };
       }),
     updateWorkExperience: protectedProcedure
       .input(z.object({
@@ -879,13 +884,23 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;
         const { updateWorkExperience } = await import("./db");
-        return await updateWorkExperience(id, ctx.user.id, data);
+        const workExperience = await updateWorkExperience(id, ctx.user.id, data);
+        const matchRefresh = await (await import("./profileMatchLedger")).refreshProfileMatchLedger({
+          userId: ctx.user.id,
+          source: "profile.updateWorkExperience",
+        });
+        return { ...workExperience, matchRefresh };
       }),
     deleteWorkExperience: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
         const { deleteWorkExperience } = await import("./db");
-        return await deleteWorkExperience(input.id, ctx.user.id);
+        const workExperience = await deleteWorkExperience(input.id, ctx.user.id);
+        const matchRefresh = await (await import("./profileMatchLedger")).refreshProfileMatchLedger({
+          userId: ctx.user.id,
+          source: "profile.deleteWorkExperience",
+        });
+        return { ...workExperience, matchRefresh };
       }),
 
     // Education
@@ -1055,6 +1070,7 @@ export const appRouter = router({
           getCanonicalJobId,
           getUserProfile,
           getUserSkills,
+          getWorkExperiences,
           getUserApplications,
         } = await import("./db");
         const canonicalJobId = await getCanonicalJobId(input.jobId);
@@ -1085,11 +1101,12 @@ export const appRouter = router({
             message: applicationPreparationBlockMessage(preparationSafety),
           });
         }
-        const [profile, skills] = await Promise.all([
+        const [profile, skills, workExperiences] = await Promise.all([
           getUserProfile(ctx.user.id),
           getUserSkills(ctx.user.id),
+          getWorkExperiences(ctx.user.id),
         ]);
-        const profileForMaterial = resolveProfileSkillEvidence(profile, skills);
+        const profileForMaterial = resolveProfileCandidateEvidence(profile, skills, workExperiences);
         const { buildReviewApplicationMaterial } = await import("./applicationMaterialDraft");
         const existingApplication = (await getUserApplications(ctx.user.id)).find((application) =>
           application.jobId === input.jobId && (application.status || "pending") === "pending"
@@ -1215,6 +1232,7 @@ export const appRouter = router({
           getUserApplications,
           getUserProfile,
           getUserSkills,
+          getWorkExperiences,
           listUserApplicationApprovals,
           resolveApplicationApproval,
           updateApplicationStatus,
@@ -1314,7 +1332,11 @@ export const appRouter = router({
           ? await getUserProfile(ctx.user.id)
           : null;
         const profileForMaterial = profile
-          ? resolveProfileSkillEvidence(profile, await getUserSkills(ctx.user.id))
+          ? resolveProfileCandidateEvidence(
+            profile,
+            await getUserSkills(ctx.user.id),
+            await getWorkExperiences(ctx.user.id)
+          )
           : null;
         const { buildReviewApplicationMaterial } = await import("./applicationMaterialDraft");
         const existingPreparedApplication = createsPreparedApplication
@@ -2422,18 +2444,19 @@ export const appRouter = router({
     calculateMatch: protectedProcedure
       .input(z.object({ jobId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        const { getUserProfile, getUserSkills, getJobById, getCanonicalJobId } = await import("./db");
+        const { getUserProfile, getUserSkills, getWorkExperiences, getJobById, getCanonicalJobId } = await import("./db");
         const { calculateJobMatch } = await import("./aiMatching");
         const { createJobMatch } = await import("./db");
 
-        const [profile, skills] = await Promise.all([
+        const [profile, skills, workExperiences] = await Promise.all([
           getUserProfile(ctx.user.id),
           getUserSkills(ctx.user.id),
+          getWorkExperiences(ctx.user.id),
         ]);
         if (!profile) {
           throw new Error("User profile not found. Please complete your profile first.");
         }
-        const profileForMatching = resolveProfileSkillEvidence(profile, skills);
+        const profileForMatching = resolveProfileCandidateEvidence(profile, skills, workExperiences);
 
         const canonicalJobId = await getCanonicalJobId(input.jobId);
         if (canonicalJobId === null) throw new Error("Job not found");
@@ -2473,12 +2496,13 @@ export const appRouter = router({
     generateCoverLetter: protectedProcedure
       .input(z.object({ jobId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        const { getUserProfile, getUserSkills, getJobById } = await import("./db");
+        const { getUserProfile, getUserSkills, getWorkExperiences, getJobById } = await import("./db");
         const { generateCoverLetter } = await import("./aiMatching");
 
-        const [profile, skills] = await Promise.all([
+        const [profile, skills, workExperiences] = await Promise.all([
           getUserProfile(ctx.user.id),
           getUserSkills(ctx.user.id),
+          getWorkExperiences(ctx.user.id),
         ]);
         if (!profile) {
           throw new Error("User profile not found");
@@ -2489,7 +2513,10 @@ export const appRouter = router({
           throw new Error("Job not found");
         }
 
-        const coverLetter = await generateCoverLetter(resolveProfileSkillEvidence(profile, skills), job);
+        const coverLetter = await generateCoverLetter(
+          resolveProfileCandidateEvidence(profile, skills, workExperiences),
+          job
+        );
         return { coverLetter };
       }),
     identifyDecisionMakers: protectedProcedure
@@ -3417,6 +3444,7 @@ export const appRouter = router({
           getJobById,
           getUserProfile,
           getUserSkills,
+          getWorkExperiences,
           createApplication,
           createApplicationMaterial,
           createApplicationAttempt,
@@ -3452,9 +3480,10 @@ export const appRouter = router({
         }
 
         // Get user profile
-        const [profile, skills] = await Promise.all([
+        const [profile, skills, workExperiences] = await Promise.all([
           getUserProfile(ctx.user.id),
           getUserSkills(ctx.user.id),
+          getWorkExperiences(ctx.user.id),
         ]);
         if (!profile) {
           throw new Error("User profile not found. Please complete your profile first.");
@@ -3475,7 +3504,7 @@ export const appRouter = router({
           throw new Error(applicationPreparationBlockMessage(preparationSafety));
         }
         const profileForApplication = {
-          ...resolveProfileSkillEvidence(profile, skills),
+          ...resolveProfileCandidateEvidence(profile, skills, workExperiences),
           resumeUrl: activeResume.fileUrl,
           resumeFileKey: activeResume.fileKey,
         };

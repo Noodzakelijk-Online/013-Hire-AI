@@ -25,6 +25,7 @@ describe("evidence-bound application drafts", () => {
     expect(draft.coverLetter).not.toContain("React, AWS");
     expect(claims.supportedSkills).toEqual(["TypeScript", "AWS"]);
     expect(claims.matchedSkills).toEqual(["TypeScript", "AWS"]);
+    expect(claims.hasRecordedExperienceEvidence).toBe(true);
     expect(draft.coverLetter).toContain("does not assert unverified qualifications");
   });
 
@@ -39,6 +40,7 @@ describe("evidence-bound application drafts", () => {
     expect(draft.coverLetter).toContain("does not yet contain verified skill evidence");
     expect(claims.supportedSkills).toEqual([]);
     expect(claims.matchedSkills).toEqual([]);
+    expect(claims.hasRecordedExperienceEvidence).toBe(false);
   });
 
   it("preserves a candidate-authored letter while marking it for manual claim review", () => {

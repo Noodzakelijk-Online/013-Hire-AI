@@ -1,4 +1,4 @@
-import { resolveProfileSkillEvidence } from "@shared/profileSkillEvidence";
+import { resolveProfileCandidateEvidence } from "@shared/profileSkillEvidence";
 import { calculateDeterministicJobMatch } from "./aiMatching";
 import {
   createAuditEvent,
@@ -6,6 +6,7 @@ import {
   getActiveJobs,
   getUserProfile,
   getUserSkills,
+  getWorkExperiences,
 } from "./db";
 
 export interface ProfileMatchLedgerRefreshInput {
@@ -31,9 +32,10 @@ const MATCH_REFRESH_CONCURRENCY = 10;
 export async function refreshProfileMatchLedger(
   input: ProfileMatchLedgerRefreshInput
 ): Promise<ProfileMatchLedgerRefreshResult> {
-  const [profile, structuredSkills, jobs] = await Promise.all([
+  const [profile, structuredSkills, structuredWorkHistory, jobs] = await Promise.all([
     getUserProfile(input.userId),
     getUserSkills(input.userId),
+    getWorkExperiences(input.userId),
     getActiveJobs(250, 0),
   ]);
   if (!profile) {
@@ -45,7 +47,11 @@ export async function refreshProfileMatchLedger(
     };
   }
 
-  const profileForMatching = resolveProfileSkillEvidence(profile, structuredSkills);
+  const profileForMatching = resolveProfileCandidateEvidence(
+    profile,
+    structuredSkills,
+    structuredWorkHistory
+  );
   let refreshedMatches = 0;
   let failedMatches = 0;
 

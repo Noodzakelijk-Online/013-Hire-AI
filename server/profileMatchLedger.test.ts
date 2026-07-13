@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   getActiveJobs: vi.fn(),
   getUserProfile: vi.fn(),
   getUserSkills: vi.fn(),
+  getWorkExperiences: vi.fn(),
 }));
 
 vi.mock("./db", () => mocks);
@@ -19,7 +20,7 @@ describe("profile match ledger reconciliation", () => {
       id: 1,
       userId: 44,
       skills: null,
-      experience: "Built remote services",
+      experience: null,
       education: null,
       preferences: null,
       desiredJobTypes: "Platform Engineer",
@@ -37,6 +38,9 @@ describe("profile match ledger reconciliation", () => {
       updatedAt: new Date(),
     });
     mocks.getUserSkills.mockResolvedValue([{ skillName: "TypeScript" }]);
+    mocks.getWorkExperiences.mockResolvedValue([
+      { jobTitle: "Platform Engineer", company: "Example Co" },
+    ]);
     mocks.getActiveJobs.mockResolvedValue([
       {
         id: 11,
@@ -89,8 +93,10 @@ describe("profile match ledger reconciliation", () => {
       userId: 44,
       jobId: 11,
       skillsMatch: 50,
+      experienceMatch: 50,
       matchReasons: expect.stringContaining("Current candidate evidence was reconciled"),
     }));
+    expect(mocks.getWorkExperiences).toHaveBeenCalledWith(44);
     expect(mocks.createAuditEvent).toHaveBeenCalledWith(expect.objectContaining({
       action: "profile_match_ledger_refreshed",
       source: "profile.update",

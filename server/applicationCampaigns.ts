@@ -27,7 +27,7 @@ import {
   type ProfileEvidenceProvider,
 } from "@shared/profileEvidence";
 import { buildAutonomousEvidenceGates } from "@shared/autonomousEvidenceGates";
-import { resolveProfileSkillEvidence } from "@shared/profileSkillEvidence";
+import { resolveProfileCandidateEvidence } from "@shared/profileSkillEvidence";
 import { getFollowUps, getInterviewSchedules, getUpcomingInterviews } from "./applicationFeatures";
 import {
   getSuccessFeeComplianceQueue,
@@ -630,7 +630,7 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
     })),
   });
   const preferences = parseAutonomousPreferences(profile?.preferences);
-  const profileForMatching = resolveProfileSkillEvidence(profile, skills);
+  const profileForMatching = resolveProfileCandidateEvidence(profile, skills, workExperiences);
   const plan = buildAutonomousPlan(
     jobs,
     profileForMatching,

@@ -11,7 +11,7 @@ import { calculateProfileReadiness } from "./profileReadiness";
 import { getActiveResume } from "./resumeStorage";
 import { getProfileEvidenceControlSummary } from "@shared/profileEvidence";
 import { buildAutonomousEvidenceGates } from "@shared/autonomousEvidenceGates";
-import { resolveProfileSkillEvidence } from "@shared/profileSkillEvidence";
+import { resolveProfileCandidateEvidence } from "@shared/profileSkillEvidence";
 import { getConnectorReadinessQueue } from "./applicationCampaigns";
 
 type UserApplicationRecord = Awaited<ReturnType<typeof getUserApplications>>[number];
@@ -50,7 +50,7 @@ export async function getAutonomousEvidenceContext(
     skills,
     hasActiveResumeArtifact: Boolean(activeResume),
   });
-  const profileForMatching = resolveProfileSkillEvidence(profile, skills);
+  const profileForMatching = resolveProfileCandidateEvidence(profile, skills, workExperiences);
   const profileEvidence = getProfileEvidenceControlSummary({
     profile,
     readiness,

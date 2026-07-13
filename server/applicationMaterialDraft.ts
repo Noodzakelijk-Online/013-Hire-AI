@@ -37,6 +37,7 @@ export function buildEvidenceBoundApplicationDraft(
   job: JobEvidence
 ): EvidenceBoundApplicationDraft {
   const profileSkills = splitEvidence(profile?.skills).slice(0, 12);
+  const hasRecordedExperienceEvidence = Boolean(profile?.experience?.trim());
   const jobText = [job.skills, job.requirements, job.responsibilities, job.title]
     .filter((value): value is string => Boolean(value))
     .join(" ");
@@ -70,6 +71,9 @@ export function buildEvidenceBoundApplicationDraft(
       draftType: "profile_grounded",
       automationNotes: [
         "Draft references only skills explicitly recorded in the candidate profile.",
+        hasRecordedExperienceEvidence
+          ? "Recorded work-history evidence was available but is not stated as a qualification claim in this draft."
+          : "No recorded work-history evidence was available for this draft.",
         "User review is required before any external application submission.",
       ],
     }),
@@ -77,6 +81,7 @@ export function buildEvidenceBoundApplicationDraft(
       supportedClaimsOnly: true,
       supportedSkills: listedSkills,
       matchedSkills,
+      hasRecordedExperienceEvidence,
       note: "This review-only draft names only skills recorded in the candidate profile. It makes no claims about qualifications, credentials, work authorization, salary history, or employment status.",
     }),
   };
