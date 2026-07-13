@@ -7,6 +7,7 @@ import {
   type OAuthConnectorProvider,
 } from "./connectorOAuth";
 import {
+  findEmployerResponseBySourceReference,
   getConnectorAuthorization,
   getUserApplications,
   listUserConnectorAccounts,
@@ -35,6 +36,7 @@ const MAX_MESSAGES = 50;
 const TOKEN_EXPIRY_SKEW_MS = 60_000;
 
 export type InboxResponseDiscoveryDependencies = {
+  findEmployerResponseBySourceReference: typeof findEmployerResponseBySourceReference;
   getConnectorAuthorization: typeof getConnectorAuthorization;
   getUserApplications: typeof getUserApplications;
   listUserConnectorAccounts: typeof listUserConnectorAccounts;
@@ -47,6 +49,7 @@ export type InboxResponseDiscoveryDependencies = {
 };
 
 const defaults: InboxResponseDiscoveryDependencies = {
+  findEmployerResponseBySourceReference,
   getConnectorAuthorization,
   getUserApplications,
   listUserConnectorAccounts,
@@ -213,6 +216,22 @@ function findApplicationMatch(
   };
 }
 
+async function excludeRecordedInboxResponses(
+  userId: number,
+  candidates: InboxResponseCandidate[],
+  dependencies: InboxResponseDiscoveryDependencies
+) {
+  const unrecorded = await Promise.all(candidates.map(async (candidate) => {
+    const existing = await dependencies.findEmployerResponseBySourceReference({
+      userId,
+      source: "email",
+      sourceReference: `${candidate.provider}:${candidate.messageId}`,
+    });
+    return existing ? null : candidate;
+  }));
+  return unrecorded.filter((candidate): candidate is InboxResponseCandidate => candidate !== null);
+}
+
 function gmailHeaders(payload: Record<string, unknown>) {
   const headers = Array.isArray((payload.payload as { headers?: unknown } | undefined)?.headers)
     ? (payload.payload as { headers: Array<{ name?: unknown; value?: unknown }> }).headers
@@ -276,7 +295,7 @@ export async function discoverInboxResponseCandidates(
         suggestedResponseType: classifyResponse(`${headers.subject} ${preview}`),
       });
     }
-    return candidates;
+    return await excludeRecordedInboxResponses(userId, candidates, dependencies);
   }
 
   const response = await fetcher("https://graph.microsoft.com/v1.0/me/messages?" + new URLSearchParams({
@@ -287,7 +306,7 @@ export async function discoverInboxResponseCandidates(
   if (!response.ok) await throwInboxApiError(userId, account, "outlook", response.status, dependencies);
   const payload = await response.json() as { value?: Array<Record<string, unknown>> };
   await markInboxAccessVerified(userId, account, now, dependencies);
-  return (Array.isArray(payload.value) ? payload.value : []).flatMap((message): InboxResponseCandidate[] => {
+  const candidates = (Array.isArray(payload.value) ? payload.value : []).flatMap((message): InboxResponseCandidate[] => {
     const messageId = typeof message.id === "string" ? message.id : "";
     const subject = typeof message.subject === "string" ? message.subject : "";
     const preview = typeof message.bodyPreview === "string" ? message.bodyPreview.slice(0, 600) : "";
@@ -308,4 +327,5 @@ export async function discoverInboxResponseCandidates(
       suggestedResponseType: classifyResponse(`${subject} ${preview}`),
     }];
   });
+  return await excludeRecordedInboxResponses(userId, candidates, dependencies);
 }
