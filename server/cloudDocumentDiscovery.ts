@@ -35,6 +35,7 @@ export type DownloadedCloudDocument = {
 const MAX_DISCOVERED_DOCUMENTS = 50;
 const MAX_RESUME_BYTES = 10 * 1024 * 1024;
 const REFRESH_WINDOW_MS = 60_000;
+const CLOUD_DOCUMENT_READ_SCOPE = "files.content.read_resume_candidates";
 
 function isCloudResumeMimeType(mimeType: string) {
   return [
@@ -80,6 +81,19 @@ const defaultDependencies: CloudDocumentDiscoveryDependencies = {
   refreshConnectorAccessToken,
 };
 
+function parseScopes(value: string | null) {
+  try {
+    const parsed = value ? JSON.parse(value) : [];
+    return Array.isArray(parsed) ? parsed.filter((scope): scope is string => typeof scope === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function cloudProviderLabel(provider: CloudDocumentProvider) {
+  return provider === "google_drive" ? "Google Drive" : "Dropbox";
+}
+
 function assertConnectedCloudAccount(
   account: ConnectorAccount | undefined,
   provider: CloudDocumentProvider,
@@ -88,10 +102,10 @@ function assertConnectedCloudAccount(
   if (
     !account ||
     account.status !== "connected" ||
+    !parseScopes(account.consentScopes).includes(CLOUD_DOCUMENT_READ_SCOPE) ||
     isConnectorAuthorizationStale(account.lastVerifiedAt, now)
   ) {
-    const label = provider === "google_drive" ? "Google Drive" : "Dropbox";
-    throw new Error(`${label} must be freshly authorized before Hire.AI can discover cloud documents.`);
+    throw new Error(`${cloudProviderLabel(provider)} must be freshly authorized with resume-document read consent before Hire.AI can discover cloud documents.`);
   }
 }
 
@@ -212,9 +226,9 @@ function parseDropboxDocuments(payload: unknown): CloudResumeDocument[] {
 
 function cloudApiError(provider: CloudDocumentProvider, status: number) {
   if (status === 401 || status === 403) {
-    return new Error(`${provider === "google_drive" ? "Google Drive" : "Dropbox"} authorization is no longer valid. Reauthorize before document discovery.`);
+    return new Error(`${cloudProviderLabel(provider)} authorization is no longer valid. Reauthorize before document discovery.`);
   }
-  return new Error(`${provider === "google_drive" ? "Google Drive" : "Dropbox"} document discovery is temporarily unavailable.`);
+  return new Error(`${cloudProviderLabel(provider)} document discovery is temporarily unavailable.`);
 }
 
 export async function discoverCloudResumeDocuments(

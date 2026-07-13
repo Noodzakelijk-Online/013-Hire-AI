@@ -24,7 +24,7 @@ function connectedAccount(provider: "google_drive" | "dropbox") {
     userId: 501,
     provider,
     status: "connected" as const,
-    consentScopes: "[]",
+    consentScopes: JSON.stringify(["files.content.read_resume_candidates"]),
     externalAccountLabel: "candidate@example.com",
     connectionRequestedAt: now,
     lastVerifiedAt: now,
@@ -132,6 +132,19 @@ describe("cloud resume discovery", () => {
 
     await expect(discoverCloudResumeDocuments(501, "google_drive", discoveryOptions(fetcher))).rejects.toThrow(
       "Google Drive must be freshly authorized"
+    );
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("refuses cloud discovery without resume-document read consent", async () => {
+    mocks.listUserConnectorAccounts.mockResolvedValue([{
+      ...connectedAccount("google_drive"),
+      consentScopes: JSON.stringify(["files.metadata.read"]),
+    }]);
+    const fetcher = vi.fn<typeof fetch>();
+
+    await expect(discoverCloudResumeDocuments(501, "google_drive", discoveryOptions(fetcher))).rejects.toThrow(
+      "Google Drive must be freshly authorized with resume-document read consent"
     );
     expect(fetcher).not.toHaveBeenCalled();
   });

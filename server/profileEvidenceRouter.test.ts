@@ -109,7 +109,7 @@ describe("profile evidence readiness router", () => {
 
     await expect(caller.profile.discoverCloudDocuments({ provider: "google_drive" })).rejects.toMatchObject({
       code: "PRECONDITION_FAILED",
-      message: "Google Drive must be freshly authorized before Hire.AI can discover cloud documents.",
+      message: "Google Drive must be freshly authorized with resume-document read consent before Hire.AI can discover cloud documents.",
     });
   });
 });
