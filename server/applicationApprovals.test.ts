@@ -22,6 +22,7 @@ import {
 } from "./db";
 import { getFollowUps } from "./applicationFeatures";
 import { appRouter } from "./routers";
+import { sampleJobs } from "./sampleData";
 
 function createContext(userId: number): TrpcContext {
   return {
@@ -305,6 +306,84 @@ describe("application approval ledger", () => {
       event.action === "application_submission_approval_blocked_evidence" &&
       event.afterState?.includes("profile-core-evidence")
     )).toBe(true);
+  });
+
+  it("cancels a submission handoff when the job becomes unavailable after preparation", async () => {
+    const userId = 98010;
+    const job = sampleJobs[0];
+    const original = { isActive: job.isActive, expiryDate: job.expiryDate };
+    job.isActive = 1;
+    job.expiryDate = new Date(Date.now() - 60_000);
+    mocks.getActiveResume.mockResolvedValue({
+      id: 980101,
+      userId,
+      fileName: "active-resume.pdf",
+      fileUrl: "private://resumes/98010/active-resume.pdf",
+      fileKey: "resumes/98010/active-resume.pdf",
+      fileSize: 2048,
+      mimeType: "application/pdf",
+      version: 1,
+      isActive: true,
+      uploadedAt: new Date(),
+    });
+    await upsertUserProfile({
+      userId,
+      skills: "TypeScript, React, Node.js",
+      experience: "Built production web applications for five years.",
+      education: "BSc Computer Science",
+      desiredJobTypes: "Full Stack Engineer",
+      desiredLocations: "Remote",
+      resumeUrl: "private://resumes/98010/active-resume.pdf",
+      resumeFileKey: "resumes/98010/active-resume.pdf",
+    });
+
+    try {
+      const application = await createApplication({
+        userId,
+        jobId: job.id,
+        status: "pending",
+        notes: "Prepared application whose job listing closed before handoff.",
+      });
+      const applicationId = Number(application.insertId);
+      const approval = await createApplicationApproval({
+        userId,
+        applicationId,
+        entityType: "application",
+        entityId: applicationId,
+        approvalType: "application_submission",
+        status: "pending",
+        riskLevel: "high",
+        requestedBy: "system",
+        title: "Approve external application handoff",
+        description: "Prepared materials need confirmation before external handoff.",
+      });
+
+      const caller = appRouter.createCaller(createContext(userId));
+      await expect(caller.applications.resolveApproval({
+        approvalId: Number(approval.insertId),
+        status: "approved",
+        decisionNote: "Approve the external handoff.",
+      })).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message: "This job is no longer active. The external application handoff approval was cancelled.",
+      });
+
+      expect((await listUserApplicationApprovals(userId, "all")).find((item) => item.id === Number(approval.insertId))?.status)
+        .toBe("cancelled");
+      const artifacts = await getApplicationLedgerArtifacts(applicationId, userId);
+      expect(artifacts.attempts.some((attempt) =>
+        attempt.attemptType === "external_handoff" &&
+        attempt.status === "cancelled" &&
+        attempt.confirmationText?.includes("No external submission was recorded")
+      )).toBe(true);
+      expect(artifacts.auditEvents.some((event) =>
+        event.action === "application_submission_approval_cancelled_stale_job" &&
+        event.afterState?.includes('"externalSubmissionPerformed":false')
+      )).toBe(true);
+    } finally {
+      job.isActive = original.isActive;
+      job.expiryDate = original.expiryDate;
+    }
   });
 
   it("rejects forged delivery timestamps from the public follow-up draft procedure", async () => {

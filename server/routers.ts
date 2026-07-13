@@ -1264,8 +1264,62 @@ export const appRouter = router({
           if (
             input.status === "approved" &&
             approval?.approvalType === "application_submission" &&
-            approval.applicationId != null
+            approval.applicationId != null &&
+            approval.status === "pending"
           ) {
+            const userApplications = await getUserApplications(ctx.user.id);
+            const application = userApplications.find((item) => item.id === approval.applicationId);
+            const job = application ? await getJobById(application.jobId) : null;
+            if (!application || !job || !isJobCurrentForAutonomousProcessing(job)) {
+              const cancelled = await resolveApplicationApproval(
+                approval.id,
+                ctx.user.id,
+                "cancelled",
+                "The job listing is no longer active, so its external handoff approval was cancelled.",
+                undefined
+              );
+              let handoffAttemptId: number | null = null;
+              if (application) {
+                const attempt = await createApplicationAttempt({
+                  applicationId: application.id,
+                  userId: ctx.user.id,
+                  jobId: application.jobId,
+                  platformId: job?.platformId,
+                  attemptType: "external_handoff",
+                  status: getApplicationSubmissionGateAttemptStatus("cancelled"),
+                  startedAt: new Date(),
+                  finishedAt: new Date(),
+                  confirmationText: getApplicationSubmissionGateAttemptText(
+                    cancelled.approval,
+                    "cancelled",
+                    cancelled.approval.decisionNote
+                  ),
+                  retryCount: 0,
+                });
+                handoffAttemptId = Number(attempt.insertId);
+              }
+              await createAuditEvent({
+                userId: ctx.user.id,
+                entityType: "application",
+                entityId: approval.applicationId,
+                action: "application_submission_approval_cancelled_stale_job",
+                actor: "system",
+                source: "applications.resolveApproval",
+                approvalId: approval.id,
+                afterState: JSON.stringify({
+                  jobId: application?.jobId ?? null,
+                  requestedStatus: input.status,
+                  approvalStatus: "cancelled",
+                  handoffAttemptId,
+                  externalSubmissionPerformed: false,
+                }),
+                riskLevel: "high",
+              });
+              throw new TRPCError({
+                code: "PRECONDITION_FAILED",
+                message: "This job is no longer active. The external application handoff approval was cancelled.",
+              });
+            }
             const { getAutonomousEvidenceContext } = await import("./autonomousEvidence");
             const evidenceContext = await getAutonomousEvidenceContext(ctx.user.id);
             const blockingGates = evidenceContext.evidenceGates.filter((gate) =>
