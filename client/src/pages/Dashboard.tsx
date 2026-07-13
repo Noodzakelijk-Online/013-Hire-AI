@@ -49,6 +49,7 @@ export default function Dashboard() {
   const [selectedApplication, setSelectedApplication] = useState<any>(null);
   const [activeTab, setActiveTab] = useState("all");
   const [showTos, setShowTos] = useState(false);
+  const [showDashboardReviewQueue, setShowDashboardReviewQueue] = useState(false);
 
   // Fetch real data from API
   const { data: applications, isLoading: appsLoading, refetch: refetchApplications } = trpc.applications.list.useQuery();
@@ -734,20 +735,62 @@ export default function Dashboard() {
                   <div>
                     <p className="text-sm font-semibold text-white">Review Queue</p>
                     <p className="text-xs text-slate-500">
-                      Consequential actions and blockers waiting for a human decision
+                      Consequential actions stay in the dedicated queue until you are ready to review them.
                     </p>
                   </div>
-                  <Badge
-                    variant="outline"
-                    className={reviewQueueCount > 0
-                      ? "w-fit border-amber-500/40 text-amber-300"
-                      : "w-fit border-emerald-500/40 text-emerald-300"}
-                  >
-                    {reviewQueueCount} item{reviewQueueCount === 1 ? "" : "s"}
-                  </Badge>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge
+                      variant="outline"
+                      className={reviewQueueCount > 0
+                        ? "w-fit border-amber-500/40 text-amber-300"
+                        : "w-fit border-emerald-500/40 text-emerald-300"}
+                    >
+                      {reviewQueueCount} item{reviewQueueCount === 1 ? "" : "s"}
+                    </Badge>
+                    {reviewQueueCount > 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-slate-700 text-slate-300"
+                        onClick={() => setShowDashboardReviewQueue((visible) => !visible)}
+                      >
+                        {showDashboardReviewQueue ? "Hide preview" : "Preview here"}
+                      </Button>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-cyan-500/40 text-cyan-200"
+                      onClick={() => setLocation("/review-queue")}
+                    >
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                      Open queue
+                    </Button>
+                  </div>
                 </div>
 
-                {reviewQueueCount > 0 ? (
+                {reviewQueueCount > 0 && !showDashboardReviewQueue ? (
+                  <div
+                    data-testid="dashboard-review-queue-summary"
+                    className="flex flex-col gap-3 rounded-md border border-slate-800 bg-slate-950/40 p-4 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-200">
+                        {commandCenterSummary?.headline || "Your review queue has items that need a human decision."}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-400">
+                        Review by risk, evidence, and lifecycle state without crowding the command center.
+                      </p>
+                    </div>
+                    <Button
+                      className="shrink-0 bg-cyan-600 hover:bg-cyan-500"
+                      onClick={() => setLocation("/review-queue")}
+                    >
+                      Review {reviewQueueCount} item{reviewQueueCount === 1 ? "" : "s"}
+                      <ExternalLink className="ml-2 h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : reviewQueueCount > 0 ? (
                   <div className="grid gap-3 xl:grid-cols-2">
                     {operatingLedger.queues.pendingApprovals.map((approval) => {
                       const evidenceGate = getApprovalEvidenceGateSummary(
