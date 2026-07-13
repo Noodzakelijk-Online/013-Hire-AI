@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   applyToJob,
   detectATSType,
@@ -35,6 +35,21 @@ describe("guarded application preparation", () => {
       reviewRequired: true,
       atsType: "greenhouse",
     });
+  });
+
+  it("does not write application URLs or ATS data to server logs", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    try {
+      await applyToJob(
+        "https://boards.greenhouse.io/example/jobs/1?token=one-time-token",
+        applicationData
+      );
+
+      expect(log).not.toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+    }
   });
 
   it("does not claim it can prepare or access an employer portal form", () => {

@@ -79,9 +79,6 @@ export async function applyToJob(
 ): Promise<ApplicationResult> {
   const atsType = detectATSType(applicationUrl);
 
-  console.log(`[ApplicationAutomation] Detected ATS: ${atsType}`);
-  console.log(`[ApplicationAutomation] Application URL: ${applicationUrl}`);
-
   // Final submission remains disabled until a reviewable browser handoff exists.
   return {
     success: false,
