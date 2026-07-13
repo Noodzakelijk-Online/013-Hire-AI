@@ -1,5 +1,6 @@
 export type AutonomousPolicyControlStatus =
   | "blocked"
+  | "monitoring_attention"
   | "paused"
   | "review_ready"
   | "manual_ready"
@@ -12,6 +13,7 @@ export type AutonomousPolicyControlRisk = "low" | "medium" | "high";
 
 export type AutonomousPolicyControlActionId =
   | "fix_profile"
+  | "reconnect_inbox"
   | "resume_campaign"
   | "open_review_queue"
   | "open_applications"
@@ -53,6 +55,7 @@ export interface AutonomousPolicyControlSchedulerLike {
   isStarted?: boolean | null;
   userEnabled?: boolean | null;
   errorCount?: number | null;
+  inboxMonitoringFailures?: number | null;
   nextCycleAt?: string | Date | null;
 }
 
@@ -102,6 +105,7 @@ export function getAutonomousPolicyControlAction({
     typeof summary?.dailyRemaining === "number" && Number.isFinite(summary.dailyRemaining)
       ? summary.dailyRemaining
       : null;
+  const inboxMonitoringFailures = count(scheduler?.inboxMonitoringFailures);
 
   if (campaign?.status === "paused") {
     return {
@@ -144,6 +148,21 @@ export function getAutonomousPolicyControlAction({
       route: "/profile",
       risk: evidenceGate.severity === "high" ? "high" : "medium",
       approvalGated: true,
+      runsAgent: false,
+    };
+  }
+
+  if (inboxMonitoringFailures > 0) {
+    return {
+      id: "reconnect_inbox",
+      status: "monitoring_attention",
+      label: "Inbox monitoring needs attention",
+      headline: `${inboxMonitoringFailures} inbox monitor${inboxMonitoringFailures === 1 ? "" : "s"} failed during the latest autonomous run.`,
+      detail: "Reconnect or review Gmail and Outlook recruiting-message access before relying on Hire.AI to surface employer replies.",
+      cta: "Review inbox connection",
+      route: "/profile",
+      risk: "medium",
+      approvalGated: false,
       runsAgent: false,
     };
   }

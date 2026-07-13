@@ -75,7 +75,12 @@ export default function AIPreferences() {
     onSuccess: (result: any) => {
       const counts = getAutonomousRunCounts(result);
       const message = formatAutonomousRunSummary(result);
-      if (counts.failures > 0 || counts.resumeEvidenceBlockedActions > 0 || counts.profileReadinessBlockedActions > 0) {
+      if (
+        counts.failures > 0 ||
+        counts.inboxMonitoringFailures > 0 ||
+        counts.resumeEvidenceBlockedActions > 0 ||
+        counts.profileReadinessBlockedActions > 0
+      ) {
         toast.warning(message);
       } else {
         toast.success(message);
@@ -620,6 +625,13 @@ export default function AIPreferences() {
                       <span>{schedulerStatus.resumeEvidenceBlockedActions || 0} application preparation{schedulerStatus.resumeEvidenceBlockedActions === 1 ? "" : "s"} blocked by resume evidence</span>
                       <span>{schedulerStatus.profileReadinessBlockedActions || 0} application preparation{schedulerStatus.profileReadinessBlockedActions === 1 ? "" : "s"} blocked by profile readiness</span>
                       <span>{schedulerStatus.evidenceGatedActions || 0} external action{schedulerStatus.evidenceGatedActions === 1 ? "" : "s"} gated</span>
+                      <span>{schedulerStatus.inboxProvidersScanned || 0} inbox provider{schedulerStatus.inboxProvidersScanned === 1 ? "" : "s"} scanned</span>
+                      <span>{schedulerStatus.inboxCandidatesDiscovered || 0} inbox response candidate{schedulerStatus.inboxCandidatesDiscovered === 1 ? "" : "s"} pending review</span>
+                      {schedulerStatus.inboxMonitoringFailures ? (
+                        <span className="text-red-300">
+                          {schedulerStatus.inboxMonitoringFailures} inbox monitor{schedulerStatus.inboxMonitoringFailures === 1 ? "" : "s"} needs attention
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                 ) : null}

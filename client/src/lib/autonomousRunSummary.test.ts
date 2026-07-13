@@ -84,4 +84,10 @@ describe("autonomous run summary", () => {
       "Autonomous run completed with no new tasks; 1 job preparation blocked after a final listing freshness check"
     );
   });
+
+  it("reports inbox monitoring failures as attention-required work", () => {
+    expect(formatAutonomousRunSummary({
+      inboxMonitoringFailures: 1,
+    })).toBe("Autonomous run completed with no new tasks; 1 inbox monitor needs attention");
+  });
 });

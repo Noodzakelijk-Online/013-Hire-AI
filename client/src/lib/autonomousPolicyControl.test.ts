@@ -87,6 +87,26 @@ describe("autonomous policy control", () => {
     expect(action.risk).toBe("high");
   });
 
+  it("routes a failed inbox monitor to connector review before new autonomous work", () => {
+    const action = getAutonomousPolicyControlAction({
+      plan: {
+        summary: { eligible: 4 },
+        policyWarnings: [],
+      },
+      scheduler: {
+        inboxMonitoringFailures: 1,
+      },
+      settings: { autonomousEnabled: true, requireHumanReview: true },
+    });
+
+    expect(action).toMatchObject({
+      id: "reconnect_inbox",
+      status: "monitoring_attention",
+      route: "/profile",
+      runsAgent: false,
+    });
+  });
+
   it("surfaces manual application handoffs before follow-up drafting", () => {
     const action = getAutonomousPolicyControlAction({
       plan: {
