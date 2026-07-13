@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { 
@@ -71,6 +72,8 @@ type InboxResponseCandidate = {
   confidence: "high" | "medium";
 };
 
+type InboxResponseType = InboxResponseCandidate["suggestedResponseType"];
+
 type GitHubProfileCandidate = {
   username: string;
   profileUrl: string;
@@ -117,6 +120,7 @@ export default function Profile() {
   const [salaryMaximum, setSalaryMaximum] = useState("");
   const [needsVisaSponsorship, setNeedsVisaSponsorship] = useState(false);
   const [cloudResumeDocuments, setCloudResumeDocuments] = useState<CloudResumeDocument[]>([]);
+  const [inboxResponseTypeOverrides, setInboxResponseTypeOverrides] = useState<Record<number, InboxResponseType>>({});
   const [githubProfileCandidate, setGitHubProfileCandidate] = useState<GitHubProfileCandidate | null>(null);
   const [linkedInIdentityCandidate, setLinkedInIdentityCandidate] = useState<LinkedInIdentityCandidate | null>(null);
   const [selectedGitHubRepositoryUrls, setSelectedGitHubRepositoryUrls] = useState<string[]>([]);
@@ -248,6 +252,7 @@ export default function Profile() {
   const ingestInboxResponse = trpc.applications.ingestInboxResponse.useMutation({
     onSuccess: async (result) => {
       if (!result.existing) toast.success("Employer response recorded in the application ledger");
+      setInboxResponseTypeOverrides({});
       await inboxResponseCandidatesQuery.refetch();
     },
     onError: (error) => toast.error(error.message || "Unable to record this inbox response"),
@@ -255,6 +260,7 @@ export default function Profile() {
   const dismissInboxResponseCandidate = trpc.applications.dismissInboxResponseCandidate.useMutation({
     onSuccess: async () => {
       toast.success("Inbox response candidate dismissed");
+      setInboxResponseTypeOverrides({});
       await inboxResponseCandidatesQuery.refetch();
     },
     onError: (error) => toast.error(error.message || "Unable to dismiss this inbox response candidate"),
@@ -478,12 +484,12 @@ export default function Profile() {
     discoverInboxResponses.mutate({ provider });
   };
 
-  const handleInboxResponseConfirmation = (candidate: InboxResponseCandidate) => {
+  const handleInboxResponseConfirmation = (candidate: InboxResponseCandidate, responseType: InboxResponseType) => {
     ingestInboxResponse.mutate({
       applicationId: candidate.applicationId,
       provider: candidate.provider,
       messageId: candidate.messageId,
-      responseType: candidate.suggestedResponseType,
+      responseType,
       summary: `${candidate.subject}. ${candidate.preview}`.trim().slice(0, 5000),
       receivedAt: candidate.receivedAt,
     });
@@ -828,12 +834,35 @@ export default function Profile() {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => handleInboxResponseConfirmation(candidate)}
+                      onClick={() => handleInboxResponseConfirmation(
+                        candidate,
+                        inboxResponseTypeOverrides[candidate.id] ?? candidate.suggestedResponseType
+                      )}
                       disabled={ingestInboxResponse.isPending}
                     >
                       {ingestInboxResponse.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
                       Confirm
                     </Button>
+                    <div className="w-48">
+                      <Select
+                        value={inboxResponseTypeOverrides[candidate.id] ?? candidate.suggestedResponseType}
+                        onValueChange={(value: InboxResponseType) => setInboxResponseTypeOverrides((current) => ({
+                          ...current,
+                          [candidate.id]: value,
+                        }))}
+                      >
+                        <SelectTrigger aria-label={`Classification for ${candidate.subject || `application ${candidate.applicationId}`}`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="interview_invite">Interview invite</SelectItem>
+                          <SelectItem value="offer">Offer</SelectItem>
+                          <SelectItem value="employer_question">Employer question</SelectItem>
+                          <SelectItem value="rejection">Rejection</SelectItem>
+                          <SelectItem value="other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                     <Button
                       size="sm"
                       variant="ghost"
