@@ -23,6 +23,36 @@ import {
 import { eq, desc, and, lt, sql, isNotNull, or } from "drizzle-orm";
 import { getStripeClient } from "../stripeClient";
 
+type StripeSynchronizedFeeStatus = "not_required" | "paused" | "resumed" | "cancelled";
+
+async function synchronizeStripeForFeeStatusChange(
+  fee: { status: string; stripeSubscriptionId: string | null },
+  requestedStatus: string
+): Promise<StripeSynchronizedFeeStatus> {
+  if (!fee.stripeSubscriptionId || fee.status === requestedStatus) return "not_required";
+
+  if (["suspended", "disputed"].includes(requestedStatus)) {
+    await getStripeClient().subscriptions.update(fee.stripeSubscriptionId, {
+      pause_collection: { behavior: "void" },
+    });
+    return "paused";
+  }
+
+  if (requestedStatus === "active" && ["suspended", "disputed"].includes(fee.status)) {
+    await getStripeClient().subscriptions.update(fee.stripeSubscriptionId, {
+      pause_collection: "",
+    } as any);
+    return "resumed";
+  }
+
+  if (requestedStatus === "ended") {
+    await getStripeClient().subscriptions.cancel(fee.stripeSubscriptionId);
+    return "cancelled";
+  }
+
+  return "not_required";
+}
+
 export const adminRouter = router({
   getReviewQueue: adminProcedure
     .input(z.object({
@@ -270,35 +300,40 @@ export const adminRouter = router({
 
       if (!fee) throw new TRPCError({ code: "NOT_FOUND", message: "Success fee not found" });
 
-      // If suspending and has active Stripe subscription, pause it
-      if (input.status === "suspended" && fee.stripeSubscriptionId) {
-        try {
-          await getStripeClient().subscriptions.update(fee.stripeSubscriptionId, {
-            pause_collection: { behavior: "void" },
-          });
-        } catch (err) {
-          console.error("[Admin] Failed to pause Stripe subscription:", err);
-        }
-      }
-
-      // If reactivating from suspended, resume Stripe subscription
-      if (input.status === "active" && fee.status === "suspended" && fee.stripeSubscriptionId) {
-        try {
-          await getStripeClient().subscriptions.update(fee.stripeSubscriptionId, {
-            pause_collection: "",
-          } as any);
-        } catch (err) {
-          console.error("[Admin] Failed to resume Stripe subscription:", err);
-        }
-      }
-
-      // If ending, cancel Stripe subscription
-      if (input.status === "ended" && fee.stripeSubscriptionId) {
-        try {
-          await getStripeClient().subscriptions.cancel(fee.stripeSubscriptionId);
-        } catch (err) {
-          console.error("[Admin] Failed to cancel Stripe subscription:", err);
-        }
+      let stripeSynchronization: StripeSynchronizedFeeStatus;
+      try {
+        stripeSynchronization = await synchronizeStripeForFeeStatusChange(fee, input.status);
+      } catch {
+        console.error("[Admin] Stripe synchronization blocked fee status update.");
+        await createAuditEvent({
+          userId: fee.userId,
+          entityType: "success_fee",
+          entityId: input.feeId,
+          action: "success_fee_status_update_blocked_stripe_sync",
+          actor: "admin",
+          source: "admin.updateFeeStatus",
+          beforeState: JSON.stringify({ status: fee.status }),
+          afterState: JSON.stringify({
+            requestedStatus: input.status,
+            stripeSynchronization: "failed",
+            adminUserId: ctx.user.id,
+            localStatusChanged: false,
+          }),
+          riskLevel: "critical",
+        });
+        await createAdminReviewItem({
+          userId: fee.userId,
+          entityType: "success_fee",
+          entityId: input.feeId,
+          category: "payment_failed",
+          priority: "critical",
+          title: "Success-fee status change blocked by Stripe",
+          description: "Stripe did not confirm the requested billing synchronization. The local fee status was not changed; verify the provider before retrying.",
+        });
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Stripe could not synchronize this billing change. The local fee status was not changed.",
+        });
       }
 
       await db
@@ -318,7 +353,12 @@ export const adminRouter = router({
         actor: "admin",
         source: "admin.updateFeeStatus",
         beforeState: JSON.stringify({ status: fee.status }),
-        afterState: JSON.stringify({ status: input.status, notes: input.notes ?? null, adminUserId: ctx.user.id }),
+        afterState: JSON.stringify({
+          status: input.status,
+          notes: input.notes ?? null,
+          stripeSynchronization,
+          adminUserId: ctx.user.id,
+        }),
         riskLevel: input.status === "suspended" || input.status === "disputed" ? "high" : "medium",
       });
       if (input.status === "suspended" || input.status === "disputed") {
