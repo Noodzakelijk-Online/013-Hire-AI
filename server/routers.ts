@@ -3396,7 +3396,10 @@ export const appRouter = router({
     schedulerStatus: protectedProcedure.query(async ({ ctx }) => {
       const { getAutonomousScheduler } = await import("./autonomousScheduler");
       const { getAutonomousRunState, getUserProfile } = await import("./db");
-      const { parseAutonomousPreferences } = await import("./autonomousOrchestrator");
+      const {
+        getNextAutonomousRunAt,
+        parseAutonomousPreferences,
+      } = await import("./autonomousOrchestrator");
       const scheduler = getAutonomousScheduler();
       const status = scheduler.getStatus();
       const userStatus = scheduler.getUserStatus(ctx.user.id);
@@ -3409,14 +3412,22 @@ export const appRouter = router({
         : persistedRunState?.lastStartedAt || null;
       const profile = await getUserProfile(ctx.user.id);
       const preferences = parseAutonomousPreferences(profile?.preferences);
+      const userEnabled = preferences.autonomousEnabled === true;
+      const scanFrequency = preferences.scanFrequency || "daily";
+      const nextEligibleAt = userEnabled && persistedRunState?.lastStatus !== "running"
+        ? getNextAutonomousRunAt(persistedRunState?.lastCompletedAt, scanFrequency)
+        : null;
       return {
         isStarted: status.isStarted,
         isRunning: status.isRunning,
-        userEnabled: preferences.autonomousEnabled === true,
+        userEnabled,
+        scanFrequency,
         lastCycleAt: persistedRunAt || userStatus?.lastRunAt || null,
         lastStatus: persistedRunState?.lastStatus || null,
         lastError: persistedRunState?.lastError || null,
         nextCycleAt: status.nextCycleAt,
+        nextEligibleAt,
+        isDue: Boolean(nextEligibleAt && nextEligibleAt.getTime() <= Date.now()),
         usersRun: persistedRunState?.lastStatus === "completed" || (!persistedRunState && userStatus) ? 1 : 0,
         jobsQueued: (persistedSummary
           ? persistedSummary.queuedApplicationRecords + persistedSummary.queuedReviewRecords + persistedSummary.queuedManualRecords

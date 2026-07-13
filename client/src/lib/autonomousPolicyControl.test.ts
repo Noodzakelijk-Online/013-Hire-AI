@@ -203,7 +203,8 @@ describe("autonomous policy control", () => {
       scheduler: {
         isStarted: true,
         userEnabled: true,
-        nextCycleAt: "2026-07-01T09:00:00.000Z",
+        scanFrequency: "daily",
+        nextEligibleAt: "2026-07-01T09:00:00.000Z",
       },
       settings: { autonomousEnabled: true, requireHumanReview: true },
     });
@@ -211,5 +212,24 @@ describe("autonomous policy control", () => {
     expect(action.status).toBe("scheduled");
     expect(action.runsAgent).toBe(false);
     expect(action.route).toBe("/jobs");
+    expect(action.detail).toContain("Next eligible preparation run");
+  });
+
+  it("reports a due user cadence without confusing it with the worker poll tick", () => {
+    const action = getAutonomousPolicyControlAction({
+      plan: { summary: { eligible: 0 }, policyWarnings: [] },
+      scheduler: {
+        isStarted: true,
+        userEnabled: true,
+        scanFrequency: "twice-daily",
+        isDue: true,
+      },
+      settings: { autonomousEnabled: true, requireHumanReview: true },
+    });
+
+    expect(action).toMatchObject({
+      status: "scheduled",
+      detail: "The selected twice-daily cadence is due. Preparation will start on the next worker check.",
+    });
   });
 });

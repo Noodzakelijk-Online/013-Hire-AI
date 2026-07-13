@@ -5,6 +5,7 @@ import {
   completeAutonomousRunLease,
   getAutonomousRunState,
 } from "./db";
+import { getAutonomousScanIntervalMs } from "./autonomousOrchestrator";
 import { appRouter } from "./routers";
 
 function createContext(userId: number): TrpcContext {
@@ -101,5 +102,40 @@ describe("autonomous scheduler status", () => {
       errorCount: 1,
     });
     expect(status.lastCycleAt?.getTime()).toBe(persisted?.lastStartedAt?.getTime());
+  });
+
+  it("reports the user's cadence-based next eligible run instead of the worker poll tick", async () => {
+    const userId = 91008;
+    const caller = appRouter.createCaller(createContext(userId));
+    await caller.profile.update({
+      preferences: JSON.stringify({ autonomousEnabled: true, scanFrequency: "hourly" }),
+    });
+    expect(await acquireAutonomousRunLease(userId, "hourly-status", 0)).toBe(true);
+    await completeAutonomousRunLease(userId, "hourly-status", undefined, {
+      queuedApplicationRecords: 0,
+      queuedReviewRecords: 0,
+      queuedManualRecords: 0,
+      queuedFollowUps: 0,
+      skippedDuplicateFollowUps: 0,
+      skippedSafetyBlockedFollowUps: 0,
+      skippedResumeEvidenceActions: 0,
+      skippedProfileReadinessActions: 0,
+      skippedEvidenceGatedActions: 0,
+      skippedStaleJobActions: 0,
+      skippedEmptySourceActions: 0,
+      failedActions: 0,
+    });
+
+    const persisted = await getAutonomousRunState(userId);
+    const status = await caller.automation.schedulerStatus();
+
+    expect(status).toMatchObject({
+      userEnabled: true,
+      scanFrequency: "hourly",
+      isDue: false,
+    });
+    expect(status.nextEligibleAt?.getTime()).toBe(
+      persisted?.lastCompletedAt?.getTime()! + getAutonomousScanIntervalMs("hourly")
+    );
   });
 });

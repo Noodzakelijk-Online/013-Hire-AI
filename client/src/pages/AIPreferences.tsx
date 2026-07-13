@@ -600,11 +600,15 @@ export default function AIPreferences() {
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Next Scheduler Check</span>
+                  <span className="text-slate-400">Next Eligible Run</span>
                   <span className="text-white text-sm">
                     <Clock className="w-4 h-4 inline mr-1" />
-                    {schedulerStatus?.userEnabled && schedulerStatus?.nextCycleAt
-                      ? new Date(schedulerStatus.nextCycleAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                    {schedulerStatus?.isStarted && schedulerStatus?.userEnabled && schedulerStatus?.lastStatus === "running"
+                      ? "Running"
+                      : schedulerStatus?.isStarted && schedulerStatus?.userEnabled && schedulerStatus?.isDue
+                        ? "Due at next check"
+                        : schedulerStatus?.isStarted && schedulerStatus?.userEnabled && schedulerStatus?.nextEligibleAt
+                          ? new Date(schedulerStatus.nextEligibleAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
                       : "Not scheduled"}
                   </span>
                 </div>

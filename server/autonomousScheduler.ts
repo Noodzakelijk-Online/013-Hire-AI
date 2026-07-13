@@ -1,15 +1,8 @@
 import { getProfilesWithAutonomousPreferences } from "./db";
-import { parseAutonomousPreferences } from "./autonomousOrchestrator";
+import { getAutonomousScanIntervalMs, parseAutonomousPreferences } from "./autonomousOrchestrator";
 import { AUTONOMOUS_RUN_FAILURE, runScheduledAutonomousForUser } from "./autonomousService";
 
 const AUTONOMOUS_SCHEDULER_FAILURE = "Autonomous scheduler cycle could not complete.";
-
-const FREQUENCY_MS = {
-  continuous: 15 * 60 * 1000,
-  hourly: 60 * 60 * 1000,
-  "twice-daily": 12 * 60 * 60 * 1000,
-  daily: 24 * 60 * 60 * 1000,
-} as const;
 
 interface AutonomousSchedulerStatus {
   isStarted: boolean;
@@ -137,7 +130,7 @@ export class AutonomousScheduler {
         const preferences = parseAutonomousPreferences(profile.preferences);
         if (!preferences.autonomousEnabled) continue;
         const frequency = preferences.scanFrequency || "daily";
-        const interval = FREQUENCY_MS[frequency];
+        const interval = getAutonomousScanIntervalMs(frequency);
 
         try {
           const result = await runScheduledAutonomousForUser(profile.userId, interval);

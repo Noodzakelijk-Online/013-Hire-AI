@@ -58,7 +58,9 @@ export interface AutonomousPolicyControlSchedulerLike {
   errorCount?: number | null;
   inboxMonitoringFailures?: number | null;
   inboxReauthorizationRequired?: number | null;
-  nextCycleAt?: string | Date | null;
+  scanFrequency?: string | null;
+  nextEligibleAt?: string | Date | null;
+  isDue?: boolean | null;
 }
 
 export interface AutonomousPolicyControlSettingsLike {
@@ -266,9 +268,11 @@ export function getAutonomousPolicyControlAction({
       status: "scheduled",
       label: "Scheduled",
       headline: "Background preparation is scheduled under the current policy.",
-      detail: scheduler.nextCycleAt
-        ? `Next scheduler check is ${new Date(scheduler.nextCycleAt).toLocaleString()}.`
-        : "The scheduler is enabled and will create review-safe work as matching jobs appear.",
+      detail: scheduler.isDue
+        ? `The selected ${scheduler.scanFrequency || "daily"} cadence is due. Preparation will start on the next worker check.`
+        : scheduler.nextEligibleAt
+          ? `Next eligible preparation run is ${new Date(scheduler.nextEligibleAt).toLocaleString()}.`
+          : "The scheduler is enabled and will create review-safe work as matching jobs appear.",
       cta: "Review jobs",
       route: "/jobs",
       risk: "low",

@@ -19,6 +19,25 @@ export interface AutonomousPreferences {
   scanFrequency?: "continuous" | "hourly" | "twice-daily" | "daily";
 }
 
+export const AUTONOMOUS_SCAN_FREQUENCY_MS = {
+  continuous: 15 * 60 * 1000,
+  hourly: 60 * 60 * 1000,
+  "twice-daily": 12 * 60 * 60 * 1000,
+  daily: 24 * 60 * 60 * 1000,
+} as const;
+
+export function getAutonomousScanIntervalMs(frequency?: AutonomousPreferences["scanFrequency"]) {
+  return AUTONOMOUS_SCAN_FREQUENCY_MS[frequency || "daily"];
+}
+
+export function getNextAutonomousRunAt(
+  lastCompletedAt: Date | null | undefined,
+  frequency?: AutonomousPreferences["scanFrequency"]
+) {
+  if (!lastCompletedAt) return new Date();
+  return new Date(lastCompletedAt.getTime() + getAutonomousScanIntervalMs(frequency));
+}
+
 export interface AutonomousJobDecision {
   jobId: number;
   title: string;
