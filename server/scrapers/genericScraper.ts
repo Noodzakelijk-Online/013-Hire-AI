@@ -1,4 +1,5 @@
 import { BaseScraper, type ScrapeResult, type ScraperConfig } from "./baseScraper";
+import { getLocationPreferenceFit } from "../../shared/locationEligibility";
 
 /**
  * Generic scraper that can be configured for different platforms
@@ -87,17 +88,8 @@ export class GenericScraper extends BaseScraper {
       const parsedJobs = this.parseRSS(response);
 
       for (const rawJob of parsedJobs) {
-        if (options?.keywords) {
-          const keywords = options.keywords.toLowerCase();
-          const title = (rawJob.title || "").toLowerCase();
-          const description = (rawJob.description || "").toLowerCase();
-
-          if (!title.includes(keywords) && !description.includes(keywords)) {
-            continue;
-          }
-        }
-
         const normalizedJob = this.normalizeJob(rawJob);
+        if (!this.matchesRequestedOptions(normalizedJob, options)) continue;
         jobs.push(normalizedJob);
 
         if (options?.limit && jobs.length >= options.limit) {
@@ -127,10 +119,7 @@ export class GenericScraper extends BaseScraper {
       this.log("Starting API scrape...");
       await this.rateLimit();
 
-      let url = this.apiUrl || this.config.baseUrl;
-      if (options?.keywords) {
-        url += `?q=${encodeURIComponent(options.keywords)}`;
-      }
+      const url = this.buildApiUrl(options);
 
       const response = await this.retry(async () => {
         const res = await fetch(url, {
@@ -160,6 +149,7 @@ export class GenericScraper extends BaseScraper {
           postedDate: rawJob.date || rawJob.published_at || rawJob.created_at,
         });
 
+        if (!this.matchesRequestedOptions(normalizedJob, options)) continue;
         jobs.push(normalizedJob);
 
         if (options?.limit && jobs.length >= options.limit) {
@@ -208,16 +198,8 @@ export class GenericScraper extends BaseScraper {
       const parsedJobs = this.parseHTML(response);
 
       for (const rawJob of parsedJobs) {
-        if (options?.keywords) {
-          const keywords = options.keywords.toLowerCase();
-          const title = (rawJob.title || "").toLowerCase();
-
-          if (!title.includes(keywords)) {
-            continue;
-          }
-        }
-
         const normalizedJob = this.normalizeJob(rawJob);
+        if (!this.matchesRequestedOptions(normalizedJob, options)) continue;
         jobs.push(normalizedJob);
 
         if (options?.limit && jobs.length >= options.limit) {
@@ -407,6 +389,35 @@ export class GenericScraper extends BaseScraper {
   private jsonLdEmploymentType(value: unknown) {
     const employmentType = Array.isArray(value) ? value[0] : value;
     return this.stringValue(employmentType)?.replace(/_/g, "-");
+  }
+
+  private buildApiUrl(options?: { keywords?: string; location?: string }) {
+    const url = new URL(this.apiUrl || this.config.baseUrl);
+    if (options?.keywords?.trim()) url.searchParams.set("q", options.keywords.trim());
+    if (options?.location?.trim()) url.searchParams.set("location", options.location.trim());
+    return url.toString();
+  }
+
+  private matchesRequestedOptions(
+    job: { title?: string | null; company?: string | null; description?: string | null; location?: string | null },
+    options?: { keywords?: string; location?: string }
+  ) {
+    const keywords = options?.keywords?.trim().toLowerCase();
+    if (keywords) {
+      const searchable = [job.title, job.company, job.description]
+        .filter((value): value is string => typeof value === "string")
+        .join(" ")
+        .toLowerCase();
+      if (!searchable.includes(keywords)) return false;
+    }
+
+    // A generic remote listing without jurisdiction is still reviewable, but
+    // a source that explicitly conflicts with the requested geography is not.
+    if (options?.location?.trim() && getLocationPreferenceFit(job.location, options.location) === "gap") {
+      return false;
+    }
+
+    return true;
   }
 
   private absoluteUrl(value?: string) {

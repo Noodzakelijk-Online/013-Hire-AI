@@ -109,4 +109,50 @@ describe("generic scraper structured job extraction", () => {
       externalId: "writer-1",
     })]);
   });
+
+  it("preserves configured API query parameters and excludes known location conflicts", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        jobs: [
+          {
+            id: "eu-platform",
+            title: "Platform Engineer",
+            company: "European Systems",
+            location: "Remote - Netherlands",
+            description: "Build platform services for distributed teams.",
+            url: "https://jobs.example.com/eu-platform",
+          },
+          {
+            id: "us-platform",
+            title: "Platform Engineer",
+            company: "North American Systems",
+            location: "Remote - United States",
+            description: "Build platform services for distributed teams.",
+            url: "https://jobs.example.com/us-platform",
+          },
+        ],
+      }),
+    }) as typeof fetch;
+    const scraper = new GenericScraper({
+      platformName: "API Test Source",
+      platformId: 75,
+      baseUrl: "https://jobs.example.com",
+      apiUrl: "https://api.example.com/jobs?source=hire-ai",
+      rateLimit: 0,
+      maxRetries: 0,
+      type: "api",
+    });
+
+    const result = await scraper.scrape({ keywords: "Platform Engineer", location: "Europe" });
+
+    expect(result.errors).toEqual([]);
+    expect(result.jobs).toEqual([
+      expect.objectContaining({ externalId: "eu-platform", company: "European Systems" }),
+    ]);
+    const requestedUrl = new URL(String((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]));
+    expect(requestedUrl.searchParams.get("source")).toBe("hire-ai");
+    expect(requestedUrl.searchParams.get("q")).toBe("Platform Engineer");
+    expect(requestedUrl.searchParams.get("location")).toBe("Europe");
+  });
 });
