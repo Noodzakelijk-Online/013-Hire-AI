@@ -573,6 +573,82 @@ export const appRouter = router({
         return { success: true };
       }),
 
+    discoverGitHubProfile: protectedProcedure
+      .mutation(async ({ ctx }) => {
+        const { discoverGitHubProfile } = await import("./githubProfileDiscovery");
+        const { createAuditEvent } = await import("./db");
+        try {
+          const candidate = await discoverGitHubProfile(ctx.user.id);
+          await createAuditEvent({
+            userId: ctx.user.id,
+            entityType: "user",
+            entityId: ctx.user.id,
+            action: "github_profile_discovered",
+            actor: "user",
+            source: "profile.discoverGitHubProfile",
+            afterState: JSON.stringify({
+              username: candidate.username,
+              suggestedSkillCount: candidate.suggestedSkills.length,
+              publicRepositoryCandidateCount: candidate.repositories.length,
+            }),
+            riskLevel: "low",
+          });
+          return candidate;
+        } catch (error) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: error instanceof Error ? error.message : "GitHub profile discovery could not be completed.",
+          });
+        }
+      }),
+
+    importGitHubProfile: protectedProcedure
+      .input(z.object({
+        repositoryUrls: z.array(safeHttpUrl).max(10).default([]),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { discoverGitHubProfile, mergeGitHubSkills } = await import("./githubProfileDiscovery");
+        const { createAuditEvent, getUserProfile, upsertUserProfile } = await import("./db");
+        try {
+          // Re-read GitHub server-side so the client cannot supply unsupported skills or repositories.
+          const candidate = await discoverGitHubProfile(ctx.user.id);
+          const selectedUrls = new Set(input.repositoryUrls);
+          const selectedRepositories = candidate.repositories.filter((repository) => selectedUrls.has(repository.url));
+          const profile = await getUserProfile(ctx.user.id);
+          const mergedSkills = mergeGitHubSkills(profile?.skills, candidate.suggestedSkills);
+          await upsertUserProfile({
+            userId: ctx.user.id,
+            githubUrl: candidate.profileUrl,
+            skills: mergedSkills || undefined,
+          });
+          await createAuditEvent({
+            userId: ctx.user.id,
+            entityType: "user",
+            entityId: ctx.user.id,
+            action: "github_profile_imported",
+            actor: "user",
+            source: "profile.importGitHubProfile",
+            afterState: JSON.stringify({
+              username: candidate.username,
+              addedSkills: candidate.suggestedSkills,
+              selectedRepositoryCount: selectedRepositories.length,
+              selectedRepositoryNames: selectedRepositories.map((repository) => repository.name),
+            }),
+            riskLevel: "low",
+          });
+          return {
+            profileUrl: candidate.profileUrl,
+            addedSkills: candidate.suggestedSkills,
+            selectedRepositories,
+          };
+        } catch (error) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: error instanceof Error ? error.message : "GitHub profile import could not be completed.",
+          });
+        }
+      }),
+
     discoverCloudDocuments: protectedProcedure
       .input(z.object({ provider: z.enum(["google_drive", "dropbox"]) }))
       .mutation(async ({ ctx, input }) => {

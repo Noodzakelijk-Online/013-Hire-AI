@@ -72,6 +72,22 @@ type InboxResponseCandidate = {
   confidence: "high" | "medium";
 };
 
+type GitHubProfileCandidate = {
+  username: string;
+  profileUrl: string;
+  name: string | null;
+  bio: string | null;
+  publicRepositoryCount: number;
+  suggestedSkills: string[];
+  repositories: Array<{
+    name: string;
+    description: string | null;
+    url: string;
+    language: string | null;
+    stars: number;
+  }>;
+};
+
 export default function Profile() {
   const { loading, isAuthenticated } = useAuth();
   const [isUploading, setIsUploading] = useState(false);
@@ -97,6 +113,8 @@ export default function Profile() {
   const [needsVisaSponsorship, setNeedsVisaSponsorship] = useState(false);
   const [cloudResumeDocuments, setCloudResumeDocuments] = useState<CloudResumeDocument[]>([]);
   const [inboxResponseCandidates, setInboxResponseCandidates] = useState<InboxResponseCandidate[]>([]);
+  const [githubProfileCandidate, setGitHubProfileCandidate] = useState<GitHubProfileCandidate | null>(null);
+  const [selectedGitHubRepositoryUrls, setSelectedGitHubRepositoryUrls] = useState<string[]>([]);
 
   // Queries
   const profileQuery = trpc.profile.get.useQuery(undefined, {
@@ -170,6 +188,27 @@ export default function Profile() {
       ]);
     },
     onError: (error) => toast.error(error.message || "Unable to import this cloud resume"),
+  });
+  const discoverGitHubProfile = trpc.profile.discoverGitHubProfile.useMutation({
+    onSuccess: (candidate) => {
+      setGitHubProfileCandidate(candidate);
+      setSelectedGitHubRepositoryUrls([]);
+      toast.success("GitHub profile ready for review");
+    },
+    onError: (error) => toast.error(error.message || "Unable to discover this GitHub profile"),
+  });
+  const importGitHubProfile = trpc.profile.importGitHubProfile.useMutation({
+    onSuccess: async ({ addedSkills }) => {
+      toast.success(
+        addedSkills.length === 1
+          ? "1 GitHub-backed skill added to your profile"
+          : `${addedSkills.length} GitHub-backed skills added to your profile`
+      );
+      setGitHubProfileCandidate(null);
+      setSelectedGitHubRepositoryUrls([]);
+      await Promise.all([profileQuery.refetch(), evidenceReadinessQuery.refetch()]);
+    },
+    onError: (error) => toast.error(error.message || "Unable to import this GitHub profile"),
   });
   const discoverInboxResponses = trpc.applications.discoverInboxResponses.useMutation({
     onSuccess: (result) => {
@@ -269,6 +308,9 @@ export default function Profile() {
     }),
     [evidenceReadinessQuery.data, profileQuery.data]
   );
+  const githubConnected = evidenceControl.providers.some((provider) =>
+    provider.id === "github" && provider.status === "connected"
+  );
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -359,6 +401,21 @@ export default function Profile() {
   const handleLinkedInConnect = () => handleRequestConnectorConnection("linkedin");
 
   const handleGitHubConnect = () => handleRequestConnectorConnection("github");
+
+  const handleGitHubProfileDiscovery = () => {
+    if (githubConnected) {
+      discoverGitHubProfile.mutate();
+      return;
+    }
+    handleGitHubConnect();
+  };
+
+  const toggleGitHubRepository = (url: string, checked: boolean) => {
+    setSelectedGitHubRepositoryUrls((urls) => checked
+      ? Array.from(new Set([...urls, url]))
+      : urls.filter((value) => value !== url)
+    );
+  };
 
   const handleCloudDiscovery = (provider: CloudResumeDocument["provider"]) => {
     discoverCloudDocuments.mutate({ provider });
@@ -535,11 +592,11 @@ export default function Profile() {
               <Button
                 variant="outline"
                 className="h-24 flex-col gap-2 border-slate-700 hover:border-cyan-500 hover:bg-cyan-500/10"
-                onClick={handleGitHubConnect}
-                disabled={startConnectorOAuth.isPending}
+                onClick={handleGitHubProfileDiscovery}
+                disabled={startConnectorOAuth.isPending || discoverGitHubProfile.isPending}
               >
-                <Github className="w-6 h-6 text-white" />
-                <span className="text-white">Connect GitHub</span>
+                {discoverGitHubProfile.isPending ? <Loader2 className="w-6 h-6 animate-spin text-cyan-400" /> : <Github className="w-6 h-6 text-white" />}
+                <span className="text-white">{githubConnected ? "Review GitHub Profile" : "Connect GitHub"}</span>
               </Button>
 
               <Button
@@ -638,6 +695,57 @@ export default function Profile() {
                     </Button>
                   </div>
                 ))}
+              </div>
+            ) : null}
+            {githubProfileCandidate ? (
+              <div data-testid="github-profile-candidate" className="mt-4 space-y-3 rounded-md border border-slate-700/60 bg-slate-950/40 p-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-white">
+                      {githubProfileCandidate.name || githubProfileCandidate.username}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      Public GitHub evidence only. Review languages before adding them to your profile.
+                    </p>
+                  </div>
+                  <Badge variant="outline" className="border-slate-600 text-slate-300">
+                    {githubProfileCandidate.publicRepositoryCount} public repositories
+                  </Badge>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {githubProfileCandidate.suggestedSkills.length > 0 ? githubProfileCandidate.suggestedSkills.map((skill) => (
+                    <Badge key={skill} variant="outline" className="border-cyan-500/40 text-cyan-200">{skill}</Badge>
+                  )) : <span className="text-xs text-slate-500">No repository languages were available to add.</span>}
+                </div>
+                {githubProfileCandidate.repositories.length > 0 && (
+                  <div className="space-y-2 border-t border-slate-800 pt-3">
+                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Repository evidence for the import audit</p>
+                    {githubProfileCandidate.repositories.map((repository) => (
+                      <label key={repository.url} className="flex cursor-pointer items-start gap-2 rounded-md border border-slate-800 px-3 py-2 text-sm text-slate-300">
+                        <Checkbox
+                          checked={selectedGitHubRepositoryUrls.includes(repository.url)}
+                          onCheckedChange={(checked) => toggleGitHubRepository(repository.url, Boolean(checked))}
+                        />
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium text-white">{repository.name}</span>
+                          <span className="block text-xs text-slate-500">
+                            {repository.language || "No primary language"}{repository.description ? ` - ${repository.description}` : ""}
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <div className="flex justify-end">
+                  <Button
+                    size="sm"
+                    onClick={() => importGitHubProfile.mutate({ repositoryUrls: selectedGitHubRepositoryUrls })}
+                    disabled={importGitHubProfile.isPending}
+                  >
+                    {importGitHubProfile.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
+                    Import reviewed skills
+                  </Button>
+                </div>
               </div>
             ) : null}
             {inboxResponseCandidates.length > 0 ? (
