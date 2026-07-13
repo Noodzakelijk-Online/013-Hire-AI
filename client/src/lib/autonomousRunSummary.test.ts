@@ -116,6 +116,15 @@ describe("autonomous run summary", () => {
     })).toBe("Autonomous run completed with no new tasks; 1 inbox monitor needs attention");
   });
 
+  it("separates reauthorization work from a failed inbox monitor", () => {
+    const result = { inboxReauthorizationRequired: 1 };
+
+    expect(hasAutonomousRunAttention(result)).toBe(true);
+    expect(formatAutonomousRunSummary(result)).toBe(
+      "Autonomous run completed with no new tasks; 1 inbox connector needs reauthorization before monitoring resumes"
+    );
+  });
+
   it("marks blocked, gated, and failed work as requiring operator attention", () => {
     expect(hasAutonomousRunAttention({ queuedReviewRecords: 1 })).toBe(false);
     expect(hasAutonomousRunAttention({ inboxMonitoringFailures: 1 })).toBe(true);

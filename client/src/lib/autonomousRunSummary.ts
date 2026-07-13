@@ -12,6 +12,7 @@ export interface AutonomousRunSummaryInput {
   skippedEmptySourceActions?: number;
   userDecisionLockedJobs?: number;
   inboxProvidersScanned?: number;
+  inboxReauthorizationRequired?: number;
   inboxCandidatesDiscovered?: number;
   inboxMonitoringFailures?: number;
   evidenceGates?: Array<{ id?: string; label?: string; severity?: string }>;
@@ -44,6 +45,7 @@ export function getAutonomousRunCounts(result: AutonomousRunSummaryInput) {
     emptySourceActionsSkipped: result.skippedEmptySourceActions || 0,
     userDecisionLockedJobs: result.userDecisionLockedJobs || 0,
     inboxProvidersScanned: result.inboxProvidersScanned || 0,
+    inboxReauthorizationRequired: result.inboxReauthorizationRequired || 0,
     inboxCandidatesDiscovered: result.inboxCandidatesDiscovered || 0,
     inboxMonitoringFailures: result.inboxMonitoringFailures || 0,
     evidenceGates: result.evidenceGates?.length || 0,
@@ -62,6 +64,7 @@ export function hasAutonomousRunAttention(result: AutonomousRunSummaryInput) {
   return (
     counts.failures > 0 ||
     counts.inboxMonitoringFailures > 0 ||
+    counts.inboxReauthorizationRequired > 0 ||
     counts.resumeEvidenceBlockedActions > 0 ||
     counts.profileReadinessBlockedActions > 0 ||
     counts.evidenceGatedActions > 0 ||
@@ -117,6 +120,9 @@ export function formatAutonomousRunSummary(result: AutonomousRunSummaryInput) {
   }
   if (counts.inboxCandidatesDiscovered > 0) {
     notes.push(`${plural(counts.inboxCandidatesDiscovered, "inbox response candidate")} queued for confirmation`);
+  }
+  if (counts.inboxReauthorizationRequired > 0) {
+    notes.push(`${plural(counts.inboxReauthorizationRequired, "inbox connector")} ${counts.inboxReauthorizationRequired === 1 ? "needs" : "need"} reauthorization before monitoring resumes`);
   }
   if (counts.inboxMonitoringFailures > 0) {
     notes.push(`${plural(counts.inboxMonitoringFailures, "inbox monitor")} needs attention`);

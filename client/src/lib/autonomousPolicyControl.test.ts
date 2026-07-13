@@ -107,6 +107,23 @@ describe("autonomous policy control", () => {
     });
   });
 
+  it("routes required inbox reauthorization to connector review without reporting a monitor failure", () => {
+    const action = getAutonomousPolicyControlAction({
+      plan: { summary: { eligible: 4 }, policyWarnings: [] },
+      scheduler: { inboxReauthorizationRequired: 1 },
+      settings: { autonomousEnabled: true, requireHumanReview: true },
+    });
+
+    expect(action).toMatchObject({
+      id: "reconnect_inbox",
+      status: "monitoring_attention",
+      label: "Inbox reauthorization required",
+      headline: "1 inbox connector needs renewed authorization before monitoring resumes.",
+      cta: "Reconnect inbox",
+      route: "/profile",
+    });
+  });
+
   it("surfaces manual application handoffs before follow-up drafting", () => {
     const action = getAutonomousPolicyControlAction({
       plan: {

@@ -25,6 +25,7 @@ interface AutonomousSchedulerStatus {
   emptySourceActionsSkipped: number;
   userDecisionLockedJobs: number;
   inboxProvidersScanned: number;
+  inboxReauthorizationRequired: number;
   inboxCandidatesDiscovered: number;
   inboxMonitoringFailures: number;
   failedActions: number;
@@ -42,6 +43,7 @@ interface AutonomousUserRunStatus {
   emptySourceActionsSkipped: number;
   userDecisionLockedJobs: number;
   inboxProvidersScanned: number;
+  inboxReauthorizationRequired: number;
   inboxCandidatesDiscovered: number;
   inboxMonitoringFailures: number;
   failedActions: number;
@@ -69,6 +71,7 @@ export class AutonomousScheduler {
     emptySourceActionsSkipped: 0,
     userDecisionLockedJobs: 0,
     inboxProvidersScanned: 0,
+    inboxReauthorizationRequired: 0,
     inboxCandidatesDiscovered: 0,
     inboxMonitoringFailures: 0,
     failedActions: 0,
@@ -120,6 +123,7 @@ export class AutonomousScheduler {
     this.status.emptySourceActionsSkipped = 0;
     this.status.userDecisionLockedJobs = 0;
     this.status.inboxProvidersScanned = 0;
+    this.status.inboxReauthorizationRequired = 0;
     this.status.inboxCandidatesDiscovered = 0;
     this.status.inboxMonitoringFailures = 0;
     this.status.failedActions = 0;
@@ -150,6 +154,7 @@ export class AutonomousScheduler {
             this.status.emptySourceActionsSkipped += result.skippedEmptySourceActions || 0;
             this.status.userDecisionLockedJobs += result.userDecisionLockedJobs || 0;
             this.status.inboxProvidersScanned += result.inboxProvidersScanned || 0;
+            this.status.inboxReauthorizationRequired += result.inboxReauthorizationRequired || 0;
             this.status.inboxCandidatesDiscovered += result.inboxCandidatesDiscovered || 0;
             this.status.inboxMonitoringFailures += result.inboxMonitoringFailures || 0;
             this.status.failedActions += result.failedActions;
@@ -164,6 +169,7 @@ export class AutonomousScheduler {
               emptySourceActionsSkipped: result.skippedEmptySourceActions || 0,
               userDecisionLockedJobs: result.userDecisionLockedJobs || 0,
               inboxProvidersScanned: result.inboxProvidersScanned || 0,
+              inboxReauthorizationRequired: result.inboxReauthorizationRequired || 0,
               inboxCandidatesDiscovered: result.inboxCandidatesDiscovered || 0,
               inboxMonitoringFailures: result.inboxMonitoringFailures || 0,
               failedActions: result.failedActions,
@@ -188,6 +194,7 @@ export class AutonomousScheduler {
             emptySourceActionsSkipped: 0,
             userDecisionLockedJobs: 0,
             inboxProvidersScanned: 0,
+            inboxReauthorizationRequired: 0,
             inboxCandidatesDiscovered: 0,
             inboxMonitoringFailures: 0,
             failedActions: 0,

@@ -151,6 +151,7 @@ export interface AutonomousRunSummaryRecord {
   skippedEmptySourceActions: number;
   userDecisionLockedJobs?: number;
   inboxProvidersScanned?: number;
+  inboxReauthorizationRequired?: number;
   inboxCandidatesDiscovered?: number;
   inboxMonitoringFailures?: number;
   failedActions: number;
@@ -205,6 +206,10 @@ function parseAutonomousRunSummary(value: string | null | undefined): Autonomous
     summary.inboxProvidersScanned = typeof parsed.inboxProvidersScanned === "number"
       && Number.isFinite(parsed.inboxProvidersScanned)
       ? Math.max(0, Math.round(parsed.inboxProvidersScanned))
+      : 0;
+    summary.inboxReauthorizationRequired = typeof parsed.inboxReauthorizationRequired === "number"
+      && Number.isFinite(parsed.inboxReauthorizationRequired)
+      ? Math.max(0, Math.round(parsed.inboxReauthorizationRequired))
       : 0;
     summary.inboxCandidatesDiscovered = typeof parsed.inboxCandidatesDiscovered === "number"
       && Number.isFinite(parsed.inboxCandidatesDiscovered)

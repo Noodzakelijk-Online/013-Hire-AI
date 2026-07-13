@@ -22,6 +22,7 @@ function dependencies() {
       provider: "gmail",
       status: "connected",
       consentScopes: JSON.stringify(["email.messages.read_recruiting"]),
+      lastVerifiedAt: new Date(),
     }]),
     upsertInboxResponseCandidate: vi.fn().mockResolvedValue({ existing: false }),
     discoverInboxResponseCandidates: vi.fn().mockResolvedValue([candidate]),
@@ -34,6 +35,7 @@ describe("inbox response monitoring", () => {
 
     await expect(monitorInboxResponses(701, { dependencies: mocks })).resolves.toEqual({
       providersScanned: 1,
+      inboxReauthorizationRequired: 0,
       candidatesDiscovered: 1,
       monitoringFailures: 0,
       errors: [],
@@ -62,6 +64,26 @@ describe("inbox response monitoring", () => {
     await expect(monitorInboxResponses(701, { dependencies: mocks })).resolves.toMatchObject({
       providersScanned: 0,
       candidatesDiscovered: 0,
+    });
+    expect(mocks.discoverInboxResponseCandidates).not.toHaveBeenCalled();
+    expect(mocks.createAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("does not treat stale authorization as a monitor failure or read the inbox", async () => {
+    const mocks = dependencies();
+    mocks.listUserConnectorAccounts.mockResolvedValue([{
+      provider: "gmail",
+      status: "connected",
+      consentScopes: JSON.stringify(["email.messages.read_recruiting"]),
+      lastVerifiedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000),
+    }]);
+
+    await expect(monitorInboxResponses(701, { dependencies: mocks })).resolves.toEqual({
+      providersScanned: 0,
+      inboxReauthorizationRequired: 1,
+      candidatesDiscovered: 0,
+      monitoringFailures: 0,
+      errors: [],
     });
     expect(mocks.discoverInboxResponseCandidates).not.toHaveBeenCalled();
     expect(mocks.createAuditEvent).not.toHaveBeenCalled();

@@ -63,6 +63,7 @@ export interface AutonomousRunResult extends AutonomousPlan {
   skippedEmptySourceActions: number;
   userDecisionLockedJobs: number;
   inboxProvidersScanned: number;
+  inboxReauthorizationRequired: number;
   inboxCandidatesDiscovered: number;
   inboxMonitoringFailures: number;
   evidenceGates: AutonomousEvidenceGate[];
@@ -87,6 +88,7 @@ function persistableRunSummary(result: AutonomousRunResult) {
     skippedEmptySourceActions: result.skippedEmptySourceActions,
     userDecisionLockedJobs: result.userDecisionLockedJobs,
     inboxProvidersScanned: result.inboxProvidersScanned,
+    inboxReauthorizationRequired: result.inboxReauthorizationRequired,
     inboxCandidatesDiscovered: result.inboxCandidatesDiscovered,
     inboxMonitoringFailures: result.inboxMonitoringFailures,
     failedActions: result.failedActions,
@@ -434,6 +436,7 @@ async function executeAutonomousRun(
   let skippedStaleJobActions = 0;
   let skippedEmptySourceActions = 0;
   let inboxProvidersScanned = 0;
+  let inboxReauthorizationRequired = 0;
   let inboxCandidatesDiscovered = 0;
   let inboxMonitoringFailures = 0;
   let completedActions = 0;
@@ -823,6 +826,7 @@ async function executeAutonomousRun(
   assertLeaseActive();
   const inboxMonitoring = await monitorInboxResponses(userId);
   inboxProvidersScanned = inboxMonitoring.providersScanned;
+  inboxReauthorizationRequired = inboxMonitoring.inboxReauthorizationRequired;
   inboxCandidatesDiscovered = inboxMonitoring.candidatesDiscovered;
   inboxMonitoringFailures = inboxMonitoring.monitoringFailures;
 
@@ -845,6 +849,7 @@ async function executeAutonomousRun(
     skippedEmptySourceActions,
     userDecisionLockedJobs,
     inboxProvidersScanned,
+    inboxReauthorizationRequired,
     inboxCandidatesDiscovered,
     inboxMonitoringFailures,
     evidenceGates,

@@ -57,6 +57,7 @@ export interface AutonomousPolicyControlSchedulerLike {
   userEnabled?: boolean | null;
   errorCount?: number | null;
   inboxMonitoringFailures?: number | null;
+  inboxReauthorizationRequired?: number | null;
   nextCycleAt?: string | Date | null;
 }
 
@@ -107,6 +108,7 @@ export function getAutonomousPolicyControlAction({
       ? summary.dailyRemaining
       : null;
   const inboxMonitoringFailures = count(scheduler?.inboxMonitoringFailures);
+  const inboxReauthorizationRequired = count(scheduler?.inboxReauthorizationRequired);
 
   if (campaign?.status === "paused") {
     return {
@@ -161,6 +163,21 @@ export function getAutonomousPolicyControlAction({
       headline: `${inboxMonitoringFailures} inbox monitor${inboxMonitoringFailures === 1 ? "" : "s"} failed during the latest autonomous run.`,
       detail: "Reconnect or review Gmail and Outlook recruiting-message access before relying on Hire.AI to surface employer replies.",
       cta: "Review inbox connection",
+      route: "/profile",
+      risk: "medium",
+      approvalGated: false,
+      runsAgent: false,
+    };
+  }
+
+  if (inboxReauthorizationRequired > 0) {
+    return {
+      id: "reconnect_inbox",
+      status: "monitoring_attention",
+      label: "Inbox reauthorization required",
+      headline: `${inboxReauthorizationRequired} inbox connector${inboxReauthorizationRequired === 1 ? " needs" : "s need"} renewed authorization before monitoring resumes.`,
+      detail: "Reconnect Gmail or Outlook with recruiting-message access before relying on Hire.AI to surface employer replies.",
+      cta: "Reconnect inbox",
       route: "/profile",
       risk: "medium",
       approvalGated: false,

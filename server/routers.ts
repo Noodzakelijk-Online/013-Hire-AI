@@ -3143,6 +3143,7 @@ export const appRouter = router({
         emptySourceActionsSkipped: persistedSummary?.skippedEmptySourceActions ?? userStatus?.emptySourceActionsSkipped ?? 0,
         userDecisionLockedJobs: persistedSummary?.userDecisionLockedJobs ?? userStatus?.userDecisionLockedJobs ?? 0,
         inboxProvidersScanned: persistedSummary?.inboxProvidersScanned ?? userStatus?.inboxProvidersScanned ?? 0,
+        inboxReauthorizationRequired: persistedSummary?.inboxReauthorizationRequired ?? userStatus?.inboxReauthorizationRequired ?? 0,
         inboxCandidatesDiscovered: persistedSummary?.inboxCandidatesDiscovered ?? userStatus?.inboxCandidatesDiscovered ?? 0,
         inboxMonitoringFailures: persistedSummary?.inboxMonitoringFailures ?? userStatus?.inboxMonitoringFailures ?? 0,
         failedActions: persistedSummary?.failedActions ?? userStatus?.failedActions ?? 0,

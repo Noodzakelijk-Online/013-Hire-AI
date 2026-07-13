@@ -7,6 +7,7 @@ import {
   discoverInboxResponseCandidates,
   type InboxProvider,
 } from "./inboxResponseDiscovery";
+import { isConnectorAuthorizationStale } from "@shared/profileEvidence";
 
 const REQUIRED_SCOPE: Record<InboxProvider, string> = {
   gmail: "email.messages.read_recruiting",
@@ -22,8 +23,20 @@ function hasRequiredScope(value: string | null, provider: InboxProvider) {
   }
 }
 
+function needsInboxReauthorization(
+  account: Awaited<ReturnType<typeof listUserConnectorAccounts>>[number] | undefined,
+  provider: InboxProvider
+) {
+  return account?.status === "needs_reauth" || (
+    account?.status === "connected" &&
+    hasRequiredScope(account.consentScopes, provider) &&
+    isConnectorAuthorizationStale(account.lastVerifiedAt)
+  );
+}
+
 export type InboxMonitoringResult = {
   providersScanned: number;
+  inboxReauthorizationRequired: number;
   candidatesDiscovered: number;
   monitoringFailures: number;
   errors: string[];
@@ -55,10 +68,16 @@ export async function monitorInboxResponses(
   const accounts = await dependencies.listUserConnectorAccounts(userId);
   const providers = (["gmail", "outlook"] as const).filter((provider) => {
     const account = accounts.find((item) => item.provider === provider);
-    return account?.status === "connected" && hasRequiredScope(account.consentScopes, provider);
+    return account?.status === "connected" &&
+      hasRequiredScope(account.consentScopes, provider) &&
+      !isConnectorAuthorizationStale(account.lastVerifiedAt);
   });
+  const inboxReauthorizationRequired = (["gmail", "outlook"] as const).filter((provider) =>
+    needsInboxReauthorization(accounts.find((item) => item.provider === provider), provider)
+  ).length;
   const result: InboxMonitoringResult = {
     providersScanned: 0,
+    inboxReauthorizationRequired,
     candidatesDiscovered: 0,
     monitoringFailures: 0,
     errors: [],

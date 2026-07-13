@@ -628,6 +628,11 @@ export default function AIPreferences() {
                       <span>{schedulerStatus.userDecisionLockedJobs || 0} job{schedulerStatus.userDecisionLockedJobs === 1 ? "" : "s"} retained under user control</span>
                       <span>{schedulerStatus.inboxProvidersScanned || 0} inbox provider{schedulerStatus.inboxProvidersScanned === 1 ? "" : "s"} scanned</span>
                       <span>{schedulerStatus.inboxCandidatesDiscovered || 0} inbox response candidate{schedulerStatus.inboxCandidatesDiscovered === 1 ? "" : "s"} pending review</span>
+                      {schedulerStatus.inboxReauthorizationRequired ? (
+                        <span className="text-amber-300">
+                          {schedulerStatus.inboxReauthorizationRequired} inbox connector{schedulerStatus.inboxReauthorizationRequired === 1 ? " needs" : "s need"} reauthorization
+                        </span>
+                      ) : null}
                       {schedulerStatus.inboxMonitoringFailures ? (
                         <span className="text-red-300">
                           {schedulerStatus.inboxMonitoringFailures} inbox monitor{schedulerStatus.inboxMonitoringFailures === 1 ? "" : "s"} needs attention
