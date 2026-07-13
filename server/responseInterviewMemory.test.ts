@@ -13,6 +13,7 @@ import {
 import { getUserOperatingLedger } from "./applicationCampaigns";
 import {
   createApplication,
+  createInterviewNotification,
   getApplicationLedgerArtifacts,
   getUserApplications,
   getUserOfferAttributionReviews,
@@ -62,6 +63,11 @@ describe("response and interview memory fallback", () => {
         notificationType: "interview_invite",
       },
     ]);
+    await expect(createInterviewNotification({
+      userId,
+      applicationId,
+      employerResponseId: interviewResponse.responseId,
+    })).resolves.toMatchObject({ existing: true });
 
     const offerResponse = await recordEmployerResponse({
       applicationId,
@@ -78,6 +84,11 @@ describe("response and interview memory fallback", () => {
     const ledgerAfterOffer = await getUserOperatingLedger(userId);
     expect(ledgerAfterOffer.metrics.unreadInterviewNotifications).toBe(0);
     expect(ledgerAfterOffer.queues.interviewNotifications).toHaveLength(0);
+    await expect(createInterviewNotification({
+      userId,
+      applicationId,
+      employerResponseId: offerResponse.responseId,
+    })).rejects.toThrow("Interview notifications require a recorded interview invitation");
 
     const artifacts = await getApplicationLedgerArtifacts(applicationId, userId);
     expect(artifacts.employerResponses).toHaveLength(2);

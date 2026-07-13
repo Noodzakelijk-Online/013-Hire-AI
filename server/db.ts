@@ -2187,6 +2187,12 @@ export async function createInterviewNotification(input: {
 }) {
   const db = await getDb();
   if (!db) {
+    const response = (await getEmployerResponses(input.applicationId, input.userId))
+      .find((item) => item.id === input.employerResponseId);
+    if (!response || response.responseType !== "interview_invite") {
+      throw new Error("Interview notifications require a recorded interview invitation for the same application.");
+    }
+
     const existing = memoryApplicationNotifications.find((notification) =>
       notification.employerResponseId === input.employerResponseId
     );
@@ -2205,6 +2211,20 @@ export async function createInterviewNotification(input: {
     };
     memoryApplicationNotifications.push(notification);
     return { notification: notification as ApplicationNotification, existing: false };
+  }
+
+  const eligibleResponse = await db
+    .select({ id: employerResponses.id })
+    .from(employerResponses)
+    .where(and(
+      eq(employerResponses.id, input.employerResponseId),
+      eq(employerResponses.applicationId, input.applicationId),
+      eq(employerResponses.userId, input.userId),
+      eq(employerResponses.responseType, "interview_invite")
+    ))
+    .limit(1);
+  if (!eligibleResponse[0]) {
+    throw new Error("Interview notifications require a recorded interview invitation for the same application.");
   }
 
   const existing = await db
