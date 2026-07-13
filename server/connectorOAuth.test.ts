@@ -61,6 +61,13 @@ describe("external connector OAuth boundary", () => {
     expect(url.toString()).not.toContain(environment.googleOAuthClientSecret);
   });
 
+  it("requests Gmail metadata rather than full mailbox-read access", () => {
+    const config = getConnectorOAuthConfig("gmail", environment)!;
+
+    expect(config.scopes).toEqual(["https://www.googleapis.com/auth/gmail.metadata"]);
+    expect(config.scopes).not.toContain("https://www.googleapis.com/auth/gmail.readonly");
+  });
+
   it("accepts only untampered, short-lived OAuth state", () => {
     const state = createConnectorOAuthState(
       { provider: "gmail", userId: 73 },

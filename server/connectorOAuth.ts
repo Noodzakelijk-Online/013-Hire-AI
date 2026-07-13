@@ -75,7 +75,7 @@ const providerDefinitions: Record<OAuthConnectorProvider, OAuthProviderDefinitio
     tokenEndpoint: "https://oauth2.googleapis.com/token",
     clientIdEnv: "GOOGLE_OAUTH_CLIENT_ID",
     clientSecretEnv: "GOOGLE_OAUTH_CLIENT_SECRET",
-    scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+    scopes: ["https://www.googleapis.com/auth/gmail.metadata"],
     authorizationParams: { access_type: "offline", prompt: "consent" },
   },
   google_drive: {
