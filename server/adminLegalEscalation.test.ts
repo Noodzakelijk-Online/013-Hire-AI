@@ -129,4 +129,31 @@ describe("admin legal escalation", () => {
       priority: "critical",
     }));
   });
+
+  it("does not change local enforcement state when Stripe cannot pause legal-escalation billing", async () => {
+    mocks.stripeUpdate.mockRejectedValueOnce(new Error("provider unavailable"));
+    const caller = adminRouter.createCaller(createAdminContext(70));
+
+    await expect(caller.flagLegalEscalation({
+      feeId: 91,
+      reason: "Required employment verification remained unresolved.",
+    })).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: "Stripe could not synchronize this legal escalation. The local account and fee statuses were not changed.",
+    });
+
+    expect(mocks.updateSet).not.toHaveBeenCalled();
+    expect(mocks.createAuditEvent).toHaveBeenCalledWith(expect.objectContaining({
+      entityType: "success_fee",
+      entityId: 91,
+      action: "legal_escalation_blocked_stripe_sync",
+      riskLevel: "critical",
+    }));
+    expect(mocks.createAdminReviewItem).toHaveBeenCalledWith(expect.objectContaining({
+      entityType: "success_fee",
+      entityId: 91,
+      category: "payment_failed",
+      priority: "critical",
+    }));
+  });
 });

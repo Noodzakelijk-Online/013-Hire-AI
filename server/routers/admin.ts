@@ -53,6 +53,53 @@ async function synchronizeStripeForFeeStatusChange(
   return "not_required";
 }
 
+async function pauseStripeSubscriptions(
+  fees: Array<{ stripeSubscriptionId: string | null }>
+) {
+  for (const fee of fees) {
+    if (!fee.stripeSubscriptionId) continue;
+    await getStripeClient().subscriptions.update(fee.stripeSubscriptionId, {
+      pause_collection: { behavior: "void" },
+    });
+  }
+}
+
+async function recordBlockedBillingEnforcement(input: {
+  userId: number;
+  entityType: "user" | "success_fee";
+  entityId: number;
+  action: string;
+  source: string;
+  requestedAction: string;
+  adminUserId: number;
+  title: string;
+}) {
+  await createAuditEvent({
+    userId: input.userId,
+    entityType: input.entityType,
+    entityId: input.entityId,
+    action: input.action,
+    actor: "admin",
+    source: input.source,
+    afterState: JSON.stringify({
+      requestedAction: input.requestedAction,
+      stripeSynchronization: "failed",
+      adminUserId: input.adminUserId,
+      localStateChanged: false,
+    }),
+    riskLevel: "critical",
+  });
+  await createAdminReviewItem({
+    userId: input.userId,
+    entityType: input.entityType,
+    entityId: input.entityId,
+    category: "payment_failed",
+    priority: "critical",
+    title: input.title,
+    description: "Stripe did not confirm the requested billing pause. Local enforcement state was not changed; verify each affected provider subscription before retrying because some pauses may have succeeded.",
+  });
+}
+
 export const adminRouter = router({
   getReviewQueue: adminProcedure
     .input(z.object({
@@ -479,27 +526,38 @@ export const adminRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
-      await db
-        .update(users)
-        .set({ accountStatus: "suspended" })
-        .where(eq(users.id, input.userId));
-
       // Suspend all active fees for this user
       const userFees = await db
         .select()
         .from(successFees)
         .where(and(eq(successFees.userId, input.userId), eq(successFees.status, "active")));
 
+      try {
+        await pauseStripeSubscriptions(userFees);
+      } catch {
+        console.error("[Admin] Stripe synchronization blocked user suspension.");
+        await recordBlockedBillingEnforcement({
+          userId: input.userId,
+          entityType: "user",
+          entityId: input.userId,
+          action: "user_suspension_blocked_stripe_sync",
+          source: "admin.suspendUser",
+          requestedAction: "suspend_user_and_active_success_fees",
+          adminUserId: ctx.user.id,
+          title: "User suspension blocked by Stripe",
+        });
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Stripe could not synchronize this suspension. The local account and fee statuses were not changed.",
+        });
+      }
+
+      await db
+        .update(users)
+        .set({ accountStatus: "suspended" })
+        .where(eq(users.id, input.userId));
+
       for (const fee of userFees) {
-        if (fee.stripeSubscriptionId) {
-          try {
-            await getStripeClient().subscriptions.update(fee.stripeSubscriptionId, {
-              pause_collection: { behavior: "void" },
-            });
-          } catch (err) {
-            console.error("[Admin] Failed to pause subscription during user suspension:", err);
-          }
-        }
         await db
           .update(successFees)
           .set({ status: "suspended", notes: `Suspended: ${input.reason}` })
@@ -585,15 +643,24 @@ export const adminRouter = router({
         new Map([...activeUserFees, fee].map((item) => [item.id, item])).values()
       );
 
-      for (const feeToPause of feesToPause) {
-        if (!feeToPause.stripeSubscriptionId) continue;
-        try {
-          await getStripeClient().subscriptions.update(feeToPause.stripeSubscriptionId, {
-            pause_collection: { behavior: "void" },
-          });
-        } catch (err) {
-          console.error("[Admin] Failed to pause subscription during legal escalation:", err);
-        }
+      try {
+        await pauseStripeSubscriptions(feesToPause);
+      } catch {
+        console.error("[Admin] Stripe synchronization blocked legal escalation.");
+        await recordBlockedBillingEnforcement({
+          userId: fee.userId,
+          entityType: "success_fee",
+          entityId: input.feeId,
+          action: "legal_escalation_blocked_stripe_sync",
+          source: "admin.flagLegalEscalation",
+          requestedAction: "flag_legal_escalation_and_suspend_related_fees",
+          adminUserId: ctx.user.id,
+          title: "Legal escalation blocked by Stripe",
+        });
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Stripe could not synchronize this legal escalation. The local account and fee statuses were not changed.",
+        });
       }
 
       await db
