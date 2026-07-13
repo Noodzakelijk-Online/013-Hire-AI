@@ -46,20 +46,35 @@ describe("connector account tRPC procedures", () => {
       lastVerifiedAt: new Date(),
     });
 
+    const receivedAt = new Date(Date.now() - 60_000);
+    const candidate = await upsertInboxResponseCandidate({
+      userId,
+      applicationId,
+      provider: "gmail",
+      messageId: "gmail-message-99652",
+      sender: "recruiter@example.com",
+      subject: "First interview invitation",
+      preview: "Recruiter invited the candidate to a first interview next week.",
+      receivedAt,
+      suggestedResponseType: "interview_invite",
+      confidence: "high",
+    });
     const caller = appRouter.createCaller(createContext(userId));
     const input = {
-      applicationId,
-      provider: "gmail" as const,
-      messageId: "gmail-message-99652",
+      candidateId: candidate.candidate.id,
       responseType: "interview_invite" as const,
-      summary: "Recruiter invited the candidate to a first interview next week.",
     };
     const first = await caller.applications.ingestInboxResponse(input);
     const second = await caller.applications.ingestInboxResponse(input);
 
     expect(first.existing).toBe(false);
     expect(second.existing).toBe(true);
-    expect((await getEmployerResponses(applicationId, userId))).toHaveLength(1);
+    const responses = await getEmployerResponses(applicationId, userId);
+    expect(responses).toHaveLength(1);
+    expect(responses[0]).toMatchObject({
+      summary: expect.stringContaining("Recruiter invited the candidate to a first interview"),
+      receivedAt,
+    });
     expect((await getAuditEventsForUser(userId, 20)).filter((event) => event.action === "inbox_response_ingested")).toHaveLength(1);
   });
 
@@ -80,7 +95,8 @@ describe("connector account tRPC procedures", () => {
       externalAccountLabel: "candidate@example.com",
       lastVerifiedAt: new Date(),
     });
-    await upsertInboxResponseCandidate({
+    const receivedAt = new Date(Date.now() - 60_000);
+    const candidate = await upsertInboxResponseCandidate({
       userId,
       applicationId,
       provider: "outlook",
@@ -88,7 +104,7 @@ describe("connector account tRPC procedures", () => {
       sender: "recruiter@example.com",
       subject: "Interview invitation",
       preview: "We would like to arrange a conversation about your application.",
-      receivedAt: new Date(),
+      receivedAt,
       suggestedResponseType: "interview_invite",
       confidence: "high",
     });
@@ -98,15 +114,17 @@ describe("connector account tRPC procedures", () => {
     expect(await listUnreadInterviewNotifications(userId)).toHaveLength(0);
 
     await caller.applications.ingestInboxResponse({
-      applicationId,
-      provider: "outlook",
-      messageId: "outlook-candidate-99657",
+      candidateId: candidate.candidate.id,
       responseType: "interview_invite",
-      summary: "We would like to arrange a conversation about your application.",
     });
 
     expect(await listPendingInboxResponseCandidates(userId)).toEqual([]);
-    expect(await getEmployerResponses(applicationId, userId)).toHaveLength(1);
+    const responses = await getEmployerResponses(applicationId, userId);
+    expect(responses).toHaveLength(1);
+    expect(responses[0]).toMatchObject({
+      summary: expect.stringContaining("We would like to arrange a conversation"),
+      receivedAt,
+    });
     expect(await listUnreadInterviewNotifications(userId)).toHaveLength(1);
   });
 
@@ -220,14 +238,23 @@ describe("connector account tRPC procedures", () => {
       externalAccountLabel: "candidate@example.com",
       lastVerifiedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000),
     });
-
-    const caller = appRouter.createCaller(createContext(userId));
-    await expect(caller.applications.ingestInboxResponse({
+    const candidate = await upsertInboxResponseCandidate({
+      userId,
       applicationId: Number(application.insertId),
       provider: "gmail",
       messageId: "gmail-stale-99654",
+      sender: "recruiter@example.com",
+      subject: "Interview invitation",
+      preview: "Recruiter invited the candidate to an interview through a stale connection.",
+      receivedAt: new Date(),
+      suggestedResponseType: "interview_invite",
+      confidence: "high",
+    });
+
+    const caller = appRouter.createCaller(createContext(userId));
+    await expect(caller.applications.ingestInboxResponse({
+      candidateId: candidate.candidate.id,
       responseType: "interview_invite",
-      summary: "Recruiter invited the candidate to an interview through a stale connection.",
     })).rejects.toMatchObject({
       code: "PRECONDITION_FAILED",
       message: "Gmail must be currently verified with recruiting-message read consent before inbox responses can be ingested.",
@@ -258,14 +285,23 @@ describe("connector account tRPC procedures", () => {
       externalAccountLabel: "candidate@example.com",
       lastVerifiedAt: null,
     });
-
-    const caller = appRouter.createCaller(createContext(userId));
-    await expect(caller.applications.ingestInboxResponse({
+    const candidate = await upsertInboxResponseCandidate({
+      userId,
       applicationId: Number(application.insertId),
       provider: "gmail",
       messageId: "gmail-unverified-99655",
+      sender: "recruiter@example.com",
+      subject: "Interview invitation",
+      preview: "Recruiter invited the candidate to an interview through an unverified connection.",
+      receivedAt: new Date(),
+      suggestedResponseType: "interview_invite",
+      confidence: "high",
+    });
+
+    const caller = appRouter.createCaller(createContext(userId));
+    await expect(caller.applications.ingestInboxResponse({
+      candidateId: candidate.candidate.id,
       responseType: "interview_invite",
-      summary: "Recruiter invited the candidate to an interview through an unverified connection.",
     })).rejects.toMatchObject({
       code: "PRECONDITION_FAILED",
       message: "Gmail must be currently verified with recruiting-message read consent before inbox responses can be ingested.",
@@ -278,5 +314,53 @@ describe("connector account tRPC procedures", () => {
       authorizationStale: true,
     });
     expect(await getEmployerResponses(Number(application.insertId), userId)).toHaveLength(0);
+  });
+
+  it("rejects unrecorded or dismissed inbox evidence instead of accepting client-supplied message data", async () => {
+    const userId = 99658;
+    const application = await createApplication({
+      userId,
+      jobId: 4,
+      status: "applied",
+      notes: "Awaiting a consented recruiter reply.",
+    });
+    const applicationId = Number(application.insertId);
+    await upsertUserConnectorAccount({
+      userId,
+      provider: "gmail",
+      status: "connected",
+      consentScopes: JSON.stringify(["email.metadata.read", "email.messages.read_recruiting"]),
+      externalAccountLabel: "candidate@example.com",
+      lastVerifiedAt: new Date(),
+    });
+    const caller = appRouter.createCaller(createContext(userId));
+
+    await expect(caller.applications.ingestInboxResponse({
+      candidateId: 9_965_800,
+      responseType: "interview_invite",
+    })).rejects.toMatchObject({ code: "NOT_FOUND" });
+
+    const candidate = await upsertInboxResponseCandidate({
+      userId,
+      applicationId,
+      provider: "gmail",
+      messageId: "gmail-dismissed-99658",
+      sender: "recruiter@example.com",
+      subject: "Interview invitation",
+      preview: "Please choose a time for an interview next week.",
+      receivedAt: new Date(),
+      suggestedResponseType: "interview_invite",
+      confidence: "high",
+    });
+    await caller.applications.dismissInboxResponseCandidate({ candidateId: candidate.candidate.id });
+
+    await expect(caller.applications.ingestInboxResponse({
+      candidateId: candidate.candidate.id,
+      responseType: "interview_invite",
+    })).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "A dismissed inbox response candidate cannot be confirmed. Run discovery again if the message needs review.",
+    });
+    expect(await getEmployerResponses(applicationId, userId)).toHaveLength(0);
   });
 });

@@ -197,6 +197,7 @@ export default function ReviewQueue() {
   };
 
   const confirmInboxResponseCandidate = (candidate: {
+    id: number;
     applicationId: number;
     provider: "gmail" | "outlook";
     messageId: string;
@@ -205,20 +206,9 @@ export default function ReviewQueue() {
     preview: string;
     receivedAt: Date | string;
   }, responseType: InboxResponseType) => {
-    const discoveredSummary = [candidate.subject, candidate.preview]
-      .map((value) => value.trim())
-      .filter(Boolean)
-      .join(". ");
-    const summary = discoveredSummary.length >= 8
-      ? discoveredSummary
-      : "Application-linked inbox message awaiting confirmation.";
     ingestInboxResponse.mutate({
-      applicationId: candidate.applicationId,
-      provider: candidate.provider,
-      messageId: candidate.messageId,
+      candidateId: candidate.id,
       responseType,
-      summary: summary.slice(0, 5000),
-      receivedAt: new Date(candidate.receivedAt).toISOString(),
     });
   };
 

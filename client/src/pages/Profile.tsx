@@ -527,12 +527,8 @@ export default function Profile() {
 
   const handleInboxResponseConfirmation = (candidate: InboxResponseCandidate, responseType: InboxResponseType) => {
     ingestInboxResponse.mutate({
-      applicationId: candidate.applicationId,
-      provider: candidate.provider,
-      messageId: candidate.messageId,
+      candidateId: candidate.id,
       responseType,
-      summary: `${candidate.subject}. ${candidate.preview}`.trim().slice(0, 5000),
-      receivedAt: candidate.receivedAt,
     });
   };
 

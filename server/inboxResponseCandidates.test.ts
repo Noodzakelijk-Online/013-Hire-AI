@@ -33,6 +33,12 @@ describe("inbox response candidate ledger", () => {
       messageId: "candidate-99701",
       status: "dismissed",
     })).resolves.toEqual(expect.objectContaining({ status: "dismissed" }));
+    await expect(resolveInboxResponseCandidateBySourceReference({
+      userId,
+      provider: "gmail",
+      messageId: "candidate-99701",
+      status: "confirmed",
+    })).resolves.toEqual(expect.objectContaining({ status: "dismissed" }));
     await expect(listPendingInboxResponseCandidates(userId)).resolves.toEqual([]);
   });
 });

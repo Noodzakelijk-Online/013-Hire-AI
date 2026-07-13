@@ -2078,6 +2078,24 @@ export async function listPendingInboxResponseCandidates(userId: number) {
     .orderBy(desc(inboxResponseCandidates.receivedAt));
 }
 
+export async function getInboxResponseCandidate(candidateId: number, userId: number) {
+  const db = await getDb();
+  if (!db) {
+    return memoryInboxResponseCandidates.find((candidate) =>
+      candidate.id === candidateId && candidate.userId === userId
+    ) as InboxResponseCandidate | undefined;
+  }
+  const candidate = await db
+    .select()
+    .from(inboxResponseCandidates)
+    .where(and(
+      eq(inboxResponseCandidates.id, candidateId),
+      eq(inboxResponseCandidates.userId, userId)
+    ))
+    .limit(1);
+  return candidate[0];
+}
+
 export async function resolveInboxResponseCandidate(input: {
   id: number;
   userId: number;
@@ -2090,6 +2108,7 @@ export async function resolveInboxResponseCandidate(input: {
       item.id === input.id && item.userId === input.userId
     );
     if (!candidate) return null;
+    if (candidate.status !== "pending") return candidate as InboxResponseCandidate;
     candidate.status = input.status;
     candidate.reviewedAt = reviewedAt;
     candidate.updatedAt = reviewedAt;
@@ -2100,7 +2119,8 @@ export async function resolveInboxResponseCandidate(input: {
     .set({ status: input.status, reviewedAt })
     .where(and(
       eq(inboxResponseCandidates.id, input.id),
-      eq(inboxResponseCandidates.userId, input.userId)
+      eq(inboxResponseCandidates.userId, input.userId),
+      eq(inboxResponseCandidates.status, "pending")
     ));
   const candidate = await db
     .select()
@@ -2126,6 +2146,7 @@ export async function resolveInboxResponseCandidateBySourceReference(input: {
       item.userId === input.userId && item.provider === input.provider && item.messageId === input.messageId
     );
     if (!candidate) return null;
+    if (candidate.status !== "pending") return candidate as InboxResponseCandidate;
     candidate.status = input.status;
     candidate.reviewedAt = reviewedAt;
     candidate.updatedAt = reviewedAt;
@@ -2137,7 +2158,8 @@ export async function resolveInboxResponseCandidateBySourceReference(input: {
     .where(and(
       eq(inboxResponseCandidates.userId, input.userId),
       eq(inboxResponseCandidates.provider, input.provider),
-      eq(inboxResponseCandidates.messageId, input.messageId)
+      eq(inboxResponseCandidates.messageId, input.messageId),
+      eq(inboxResponseCandidates.status, "pending")
     ));
   const candidate = await db
     .select()

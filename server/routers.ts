@@ -1956,7 +1956,14 @@ export const appRouter = router({
     dismissInboxResponseCandidate: protectedProcedure
       .input(z.object({ candidateId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        const { createAuditEvent, resolveInboxResponseCandidate } = await import("./db");
+        const { createAuditEvent, getInboxResponseCandidate, resolveInboxResponseCandidate } = await import("./db");
+        const existing = await getInboxResponseCandidate(input.candidateId, ctx.user.id);
+        if (!existing) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Inbox response candidate not found." });
+        }
+        if (existing.status !== "pending") {
+          return { candidate: existing, existing: true };
+        }
         const candidate = await resolveInboxResponseCandidate({
           id: input.candidateId,
           userId: ctx.user.id,
@@ -1975,22 +1982,34 @@ export const appRouter = router({
           afterState: JSON.stringify({ candidateId: candidate.id, provider: candidate.provider, messageId: candidate.messageId }),
           riskLevel: "low",
         });
-        return { candidate };
+        return { candidate, existing: false };
       }),
     ingestInboxResponse: protectedProcedure
       .input(z.object({
-        applicationId: z.number(),
-        provider: z.enum(["gmail", "outlook"]),
-        messageId: z.string().trim().min(3).max(280).regex(/^\S+$/, "Message ID cannot contain whitespace."),
+        candidateId: z.number().int().positive(),
         responseType: z.enum(["viewed", "rejection", "interview_invite", "offer", "employer_question", "other"]),
-        summary: z.string().trim().min(8).max(5000),
-        receivedAt: z.string().datetime().transform((value) => new Date(value)).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        const { listUserConnectorAccounts, createAuditEvent, resolveInboxResponseCandidateBySourceReference } = await import("./db");
+        const {
+          createAuditEvent,
+          findEmployerResponseBySourceReference,
+          getInboxResponseCandidate,
+          listUserConnectorAccounts,
+          resolveInboxResponseCandidate,
+        } = await import("./db");
+        const candidate = await getInboxResponseCandidate(input.candidateId, ctx.user.id);
+        if (!candidate) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Inbox response candidate not found." });
+        }
+        if (candidate.status === "dismissed") {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "A dismissed inbox response candidate cannot be confirmed. Run discovery again if the message needs review.",
+          });
+        }
         const account = (await listUserConnectorAccounts(ctx.user.id))
-          .find((item) => item.provider === input.provider);
-        const requiredScope = input.provider === "gmail"
+          .find((item) => item.provider === candidate.provider);
+        const requiredScope = candidate.provider === "gmail"
           ? "email.messages.read_recruiting"
           : "mail.messages.read_recruiting";
         let scopes: string[] = [];
@@ -2007,30 +2026,55 @@ export const appRouter = router({
         ) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
-            message: `${input.provider === "gmail" ? "Gmail" : "Outlook"} must be currently verified with recruiting-message read consent before inbox responses can be ingested.`,
+            message: `${candidate.provider === "gmail" ? "Gmail" : "Outlook"} must be currently verified with recruiting-message read consent before inbox responses can be ingested.`,
           });
         }
 
         try {
+          const sourceReference = `${candidate.provider}:${candidate.messageId}`;
+          if (candidate.status === "confirmed") {
+            const existingResponse = await findEmployerResponseBySourceReference({
+              userId: ctx.user.id,
+              source: "email",
+              sourceReference,
+            });
+            if (!existingResponse) {
+              throw new Error("The confirmed inbox candidate has no recorded response evidence. Run discovery again before retrying.");
+            }
+            return {
+              success: true,
+              existing: true,
+              responseId: existingResponse.id,
+              status: existingResponse.statusAfter,
+              provider: candidate.provider,
+              candidateId: candidate.id,
+            };
+          }
+          const summary = [candidate.subject, candidate.preview]
+            .map((value) => value.trim())
+            .filter(Boolean)
+            .join(". ")
+            .slice(0, 5000);
           const result = await recordEmployerResponse({
-            applicationId: input.applicationId,
+            applicationId: candidate.applicationId,
             responseType: input.responseType,
             source: "email",
-            sourceReference: `${input.provider}:${input.messageId}`,
-            summary: input.summary,
-            receivedAt: input.receivedAt,
+            sourceReference,
+            summary: summary.length >= 8 ? summary : "Application-linked inbox message confirmed by the candidate.",
+            receivedAt: candidate.receivedAt,
           }, ctx.user.id);
           if (!result.existing) {
             await createAuditEvent({
               userId: ctx.user.id,
               entityType: "application",
-              entityId: input.applicationId,
+              entityId: candidate.applicationId,
               action: "inbox_response_ingested",
               actor: "system",
               source: "applications.ingestInboxResponse",
               afterState: JSON.stringify({
-                provider: input.provider,
-                messageId: input.messageId,
+                candidateId: candidate.id,
+                provider: candidate.provider,
+                messageId: candidate.messageId,
                 responseId: result.responseId,
                 existing: false,
                 responseType: input.responseType,
@@ -2038,13 +2082,15 @@ export const appRouter = router({
               riskLevel: input.responseType === "offer" ? "high" : input.responseType === "interview_invite" ? "medium" : "low",
             });
           }
-          await resolveInboxResponseCandidateBySourceReference({
+          const resolved = await resolveInboxResponseCandidate({
+            id: candidate.id,
             userId: ctx.user.id,
-            provider: input.provider,
-            messageId: input.messageId,
             status: "confirmed",
           });
-          return { ...result, provider: input.provider };
+          if (!resolved || resolved.status !== "confirmed") {
+            throw new Error("Inbox response candidate changed before confirmation. Refresh the review queue.");
+          }
+          return { ...result, provider: candidate.provider, candidateId: candidate.id };
         } catch (error) {
           const message = error instanceof Error ? error.message : "Unable to ingest inbox response.";
           throw new TRPCError({
