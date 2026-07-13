@@ -84,6 +84,28 @@ describe("job search filters", () => {
     expect(result.map((job) => job.id)).toEqual([1]);
   });
 
+  it("keeps a role that declares remote eligibility outside its location field", () => {
+    const result = filterJobListings([
+      ...jobs,
+      {
+        id: 4,
+        title: "Backend Engineer",
+        company: "Distributed Systems",
+        description: "This is a fully remote role for candidates worldwide.",
+        requirements: "4+ years Node.js",
+        location: "Amsterdam, Netherlands",
+        jobType: "full-time",
+        platformId: 4,
+        salaryMin: 100000,
+        salaryMax: 140000,
+        applicationProcess: "other",
+        postedDate: new Date("2026-07-09T12:00:00.000Z"),
+      },
+    ], defaultJobSearchFilters, new Date("2026-07-10T12:00:00.000Z"));
+
+    expect(result.map((job) => job.id)).toContain(4);
+  });
+
   it("does not treat unknown salary as a failed range unless disclosure is required", () => {
     const included = filterJobListings(jobs, {
       ...defaultJobSearchFilters,

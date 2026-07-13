@@ -528,7 +528,31 @@ function addJobSearchFilterConditions(conditions: SQL[], filters: JobSearchFilte
       like(jobs.location, "%anywhere%"),
       like(jobs.location, "%distributed%"),
       like(jobs.location, "%work from home%"),
-      like(jobs.location, "%wfh%")
+      like(jobs.location, "%wfh%"),
+      like(jobs.title, "%remote%"),
+      like(jobs.title, "%worldwide%"),
+      like(jobs.title, "%anywhere%"),
+      like(jobs.title, "%distributed%"),
+      like(jobs.title, "%work from home%"),
+      like(jobs.title, "%wfh%"),
+      like(jobs.description, "%remote%"),
+      like(jobs.description, "%worldwide%"),
+      like(jobs.description, "%anywhere%"),
+      like(jobs.description, "%distributed%"),
+      like(jobs.description, "%work from home%"),
+      like(jobs.description, "%wfh%"),
+      like(jobs.requirements, "%remote%"),
+      like(jobs.requirements, "%worldwide%"),
+      like(jobs.requirements, "%anywhere%"),
+      like(jobs.requirements, "%distributed%"),
+      like(jobs.requirements, "%work from home%"),
+      like(jobs.requirements, "%wfh%"),
+      like(jobs.responsibilities, "%remote%"),
+      like(jobs.responsibilities, "%worldwide%"),
+      like(jobs.responsibilities, "%anywhere%"),
+      like(jobs.responsibilities, "%distributed%"),
+      like(jobs.responsibilities, "%work from home%"),
+      like(jobs.responsibilities, "%wfh%")
     );
     if (remoteCondition) conditions.push(remoteCondition);
   }

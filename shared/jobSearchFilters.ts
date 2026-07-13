@@ -61,8 +61,21 @@ function text(job: JobSearchFilterJob) {
     .toLowerCase();
 }
 
-function isRemote(location?: string | null) {
-  return /\b(remote|worldwide|anywhere|distributed|work from home|wfh)\b/i.test(location || "");
+function hasRemoteSignal(value?: string | null) {
+  return /\b(remote|worldwide|anywhere|distributed|work from home|wfh)\b/i.test(value || "");
+}
+
+function isRemote(job: JobSearchFilterJob) {
+  if (hasRemoteSignal(job.location)) return true;
+
+  // Some sources retain a geographic location while placing the remote
+  // eligibility in the role title or posting body.
+  return hasRemoteSignal([
+    job.title,
+    job.description,
+    job.requirements,
+    job.responsibilities,
+  ].filter(Boolean).join(" "));
 }
 
 function experienceLevel(job: JobSearchFilterJob): Exclude<JobExperienceLevel, "all"> | "unknown" {
@@ -102,7 +115,7 @@ export function filterJobListings<T extends JobSearchFilterJob>(jobs: T[], filte
     if (queryTerms.length > 0 && !queryTerms.every((term) => text(job).includes(term))) return false;
     if (filters.jobType !== "all" && job.jobType !== filters.jobType) return false;
     if (filters.platformId !== "all" && String(job.platformId) !== filters.platformId) return false;
-    if (filters.remoteOnly && !isRemote(job.location)) return false;
+    if (filters.remoteOnly && !isRemote(job)) return false;
     if (filters.experienceLevel !== "all" && experienceLevel(job) !== filters.experienceLevel) return false;
     if (filters.visaSponsorshipOnly && !hasFlag(job.visaSponsorshipAvailable)) return false;
     if (filters.openHiringSupportOnly && !hasFlag(job.openHiringSupport)) return false;
