@@ -3,7 +3,7 @@
  * Handles S3 storage for resume files with version history
  */
 
-import { storagePut, storageGet } from "./storage";
+import { storageDelete, storagePut, storageGet } from "./storage";
 import { getDb } from "./db";
 import { userResumes } from "../drizzle/schema";
 import { eq, desc, and } from "drizzle-orm";
@@ -294,7 +294,11 @@ export async function deleteResumeVersion(userId: number, version: number): Prom
   const resume = await getResumeVersion(userId, version);
   if (!resume) return false;
 
-  // Delete from database (S3 cleanup can be done separately)
+  // Remove the private object first. Keep the ledger record if storage cleanup
+  // fails so the file remains discoverable and can be retried by the user.
+  await storageDelete(resume.fileKey);
+
+  // Delete the version record only after physical storage cleanup succeeds.
   const result = await db
     .delete(userResumes)
     .where(and(eq(userResumes.userId, userId), eq(userResumes.version, version)));

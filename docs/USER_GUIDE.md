@@ -7,7 +7,7 @@
 3. [Setting Up Your Profile](#setting-up-your-profile)
 4. [Job Search](#job-search)
 5. [AI-Powered Features](#ai-powered-features)
-6. [Automated Applications](#automated-applications)
+6. [Application Preparation And Handoffs](#application-preparation-and-handoffs)
 7. [Application Tracking](#application-tracking)
 8. [Career Intelligence](#career-intelligence)
 9. [Diversity & Inclusion Support](#diversity--inclusion-support)
@@ -34,6 +34,9 @@ Hire.AI V2 is a job-search operating platform that helps you discover remote rol
 ## Dashboard Overview
 
 The dashboard uses a **health monitoring metaphor** to visualize your job search progress:
+
+The ranges below are illustrative planning benchmarks, not Hire.AI product
+results, promises, or user outcome statistics.
 
 ### Vital Signs
 
@@ -201,6 +204,13 @@ Use this information to:
 - **Blacklist**: Exclude specific companies or job types
 - **Approval And Evidence**: External delivery is never assumed; confirmation evidence is required before an application becomes applied
 - **Pause/Resume**: Control autonomous preparation at any time
+
+### Sensitive Document Retention And Deletion
+
+- Resume versions, offer letters, and verification documents are stored as private object references, never as public asset URLs. Downloads are requested through the authenticated backend and use a fresh storage-provider URL.
+- Uploads are limited to 10 MiB, checked against allowed MIME types and file signatures before storage, and require a configured malware scanner in production. A scanner failure rejects the upload.
+- Deleting a resume version first removes its private storage object. Its ledger record is removed only after that cleanup succeeds; a failed deletion leaves the record intact so the user can retry.
+- Offer and quarterly-verification documents are compliance evidence. They remain retained while the associated success-fee obligation, verification review, payment recovery, dispute, or legal review is open. They require an operator-controlled retention decision once those obligations are closed.
 
 ---
 
