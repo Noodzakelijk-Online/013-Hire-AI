@@ -57,6 +57,34 @@ describe("generic scraper structured job extraction", () => {
     })]);
   });
 
+  it("annualizes locale-formatted JSON-LD compensation before source jobs are persisted", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => `
+        <script type="application/ld+json">
+          {"@type":"JobPosting","title":"European Platform Engineer","url":"/jobs/european-platform-engineer","hiringOrganization":{"name":"European Systems"},"jobLocationType":"TELECOMMUTE","baseSalary":{"currency":"EUR","value":{"minValue":"40","maxValue":"50","unitText":"HOUR"}}}
+        </script>
+      `,
+    }) as typeof fetch;
+    const scraper = new GenericScraper({
+      platformName: "Structured EU Test Source",
+      platformId: 76,
+      baseUrl: "https://jobs.example.com",
+      rateLimit: 0,
+      maxRetries: 0,
+      type: "html",
+    });
+
+    const result = await scraper.scrape();
+
+    expect(result.errors).toEqual([]);
+    expect(result.jobs).toEqual([expect.objectContaining({
+      salaryMin: 83200,
+      salaryMax: 104000,
+      salaryCurrency: "EUR",
+    })]);
+  });
+
   it("ignores malformed structured data and resolves heuristic HTML links against a nested source URL", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,

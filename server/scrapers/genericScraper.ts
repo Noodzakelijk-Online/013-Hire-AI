@@ -1,5 +1,6 @@
 import { BaseScraper, type ScrapeResult, type ScraperConfig } from "./baseScraper";
 import { getLocationPreferenceFit } from "../../shared/locationEligibility";
+import { normalizeSalary } from "../jobNormalization";
 
 /**
  * Generic scraper that can be configured for different platforms
@@ -352,6 +353,7 @@ export class GenericScraper extends BaseScraper {
     const identifier = this.recordValue(record.identifier);
     const salary = this.recordValue(record.baseSalary);
     const salaryValue = this.recordValue(salary?.value);
+    const normalizedSalary = this.normalizeJsonLdSalary(salary, salaryValue);
 
     return {
       title,
@@ -363,9 +365,9 @@ export class GenericScraper extends BaseScraper {
       postedDate: this.stringValue(record.datePosted),
       expiryDate: this.stringValue(record.validThrough),
       jobType: this.jsonLdEmploymentType(record.employmentType),
-      salaryMin: this.numberValue(salaryValue?.minValue) ?? this.numberValue(salaryValue?.value),
-      salaryMax: this.numberValue(salaryValue?.maxValue) ?? this.numberValue(salaryValue?.value),
-      salaryCurrency: this.stringValue(salary?.currency),
+      salaryMin: normalizedSalary.min,
+      salaryMax: normalizedSalary.max,
+      salaryCurrency: normalizedSalary.currency,
     };
   }
 
@@ -440,11 +442,28 @@ export class GenericScraper extends BaseScraper {
     return typeof value === "string" && value.trim() ? value.trim() : undefined;
   }
 
-  private numberValue(value: unknown) {
-    if (typeof value === "number" && Number.isFinite(value)) return value;
-    if (typeof value !== "string" || !value.trim()) return undefined;
-    const parsed = Number(value.replace(/,/g, ""));
-    return Number.isFinite(parsed) ? parsed : undefined;
+  private normalizeJsonLdSalary(
+    salary?: Record<string, unknown>,
+    salaryValue?: Record<string, unknown>
+  ) {
+    const min = salaryValue?.minValue ?? salaryValue?.value;
+    const max = salaryValue?.maxValue ?? salaryValue?.value;
+    const currency = this.stringValue(salary?.currency);
+    const unit = this.stringValue(salaryValue?.unitText) || this.stringValue(salary?.unitText);
+    const values = [min, max]
+      .filter((value) => typeof value === "string" || (typeof value === "number" && Number.isFinite(value)))
+      .map(String);
+
+    if (values.length === 0) {
+      return { min: undefined, max: undefined, currency };
+    }
+
+    const normalized = normalizeSalary([...values, currency, unit].filter(Boolean).join(" - "));
+    return {
+      min: normalized.normalizedYearly.min ?? undefined,
+      max: normalized.normalizedYearly.max ?? undefined,
+      currency: normalized.currency,
+    };
   }
 
   private extractTag(xml: string, tag: string): string {

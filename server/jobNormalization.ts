@@ -97,11 +97,11 @@ export function normalizeSalary(salaryString: string | null | undefined): Normal
   result.currency = detectCurrency(text);
 
   // Detect period
-  if (text.includes("/hr") || text.includes("per hour") || text.includes("hourly") || text.includes("/hour")) {
+  if (text.includes("/hr") || text.includes("per hour") || text.includes("hourly") || text.includes("/hour") || /\bhours?\b/.test(text)) {
     result.period = "hourly";
-  } else if (text.includes("/wk") || text.includes("per week") || text.includes("weekly") || text.includes("/week")) {
+  } else if (text.includes("/wk") || text.includes("per week") || text.includes("weekly") || text.includes("/week") || /\bweeks?\b/.test(text)) {
     result.period = "weekly";
-  } else if (text.includes("/mo") || text.includes("per month") || text.includes("monthly") || text.includes("/month")) {
+  } else if (text.includes("/mo") || text.includes("per month") || text.includes("monthly") || text.includes("/month") || /\bmonths?\b/.test(text)) {
     result.period = "monthly";
   } else {
     result.period = "yearly";
