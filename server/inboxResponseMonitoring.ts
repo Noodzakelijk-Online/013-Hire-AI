@@ -110,7 +110,7 @@ export async function monitorInboxResponses(
     try {
       const candidates = await dependencies.discoverInboxResponseCandidates(userId, provider);
       result.providersScanned += 1;
-      const persisted = await Promise.all(candidates.map((candidate) =>
+      const persistenceResults = await Promise.allSettled(candidates.map((candidate) =>
         dependencies.upsertInboxResponseCandidate({
           userId,
           applicationId: candidate.applicationId,
@@ -124,17 +124,34 @@ export async function monitorInboxResponses(
           confidence: candidate.confidence,
         })
       ));
+      const persisted = persistenceResults.flatMap((outcome) =>
+        outcome.status === "fulfilled" ? [outcome.value] : []
+      );
+      const persistenceFailures = persistenceResults.filter((outcome) => outcome.status === "rejected").length;
       const newCandidates = persisted.filter((item) => !item.existing).length;
       result.candidatesDiscovered += newCandidates;
+      if (persistenceFailures > 0) {
+        result.monitoringFailures += 1;
+        result.errors.push(
+          `${provider}: ${persistenceFailures} inbox response candidate${persistenceFailures === 1 ? "" : "s"} could not be persisted`
+        );
+      }
       const auditError = await recordMonitoringAudit(dependencies, {
         userId,
         entityType: "user",
         entityId: userId,
-        action: "inbox_response_monitoring_scanned",
+        action: persistenceFailures > 0
+          ? "inbox_response_monitoring_partial"
+          : "inbox_response_monitoring_scanned",
         actor: "system",
         source: "autonomousService",
-        afterState: JSON.stringify({ provider, candidateCount: newCandidates, externalWritePerformed: false }),
-        riskLevel: "low",
+        afterState: JSON.stringify({
+          provider,
+          candidateCount: newCandidates,
+          persistenceFailures,
+          externalWritePerformed: false,
+        }),
+        riskLevel: persistenceFailures > 0 ? "medium" : "low",
       });
       if (auditError) {
         result.monitoringFailures += 1;

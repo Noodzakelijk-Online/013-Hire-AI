@@ -159,4 +159,28 @@ describe("inbox response monitoring", () => {
       messageId: "message-701",
     }));
   });
+
+  it("retains successfully persisted candidates when one candidate write fails", async () => {
+    const mocks = dependencies();
+    mocks.discoverInboxResponseCandidates.mockResolvedValue([
+      candidate,
+      { ...candidate, messageId: "message-702", applicationId: 702 },
+    ]);
+    mocks.upsertInboxResponseCandidate
+      .mockResolvedValueOnce({ existing: false })
+      .mockRejectedValueOnce(new Error("Candidate store is unavailable."));
+
+    await expect(monitorInboxResponses(701, { dependencies: mocks })).resolves.toEqual({
+      providersScanned: 1,
+      inboxReauthorizationRequired: 0,
+      candidatesDiscovered: 1,
+      monitoringFailures: 1,
+      errors: ["gmail: 1 inbox response candidate could not be persisted"],
+    });
+    expect(mocks.createAuditEvent).toHaveBeenCalledWith(expect.objectContaining({
+      action: "inbox_response_monitoring_partial",
+      riskLevel: "medium",
+      afterState: expect.stringContaining('"persistenceFailures":1'),
+    }));
+  });
 });
