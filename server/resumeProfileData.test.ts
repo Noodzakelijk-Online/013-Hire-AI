@@ -40,4 +40,26 @@ describe("resume profile conversion", () => {
     });
     expect(profileData.experience).not.toContain("years of experience");
   });
+
+  it("keeps only social links that pass the profile validation rules", () => {
+    const profileData = resumeToProfileData({
+      ...emptyResume,
+      linkedinUrl: "javascript:alert(1)",
+      githubUrl: "https://example.com/not-github",
+      portfolioUrl: "file:///private/resume.html",
+    });
+
+    expect(profileData).toEqual({});
+
+    expect(resumeToProfileData({
+      ...emptyResume,
+      linkedinUrl: "https://www.linkedin.com/in/example-candidate",
+      githubUrl: "https://github.com/example-candidate",
+      portfolioUrl: "https://example-candidate.dev",
+    })).toMatchObject({
+      linkedinUrl: "https://www.linkedin.com/in/example-candidate",
+      githubUrl: "https://github.com/example-candidate",
+      portfolioUrl: "https://example-candidate.dev",
+    });
+  });
 });

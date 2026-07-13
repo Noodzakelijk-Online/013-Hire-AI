@@ -2,6 +2,7 @@ import { invokeLLM } from "./_core/llm";
 import { createRequire } from "module";
 import mammoth from "mammoth";
 import { storagePut } from "./storage";
+import { validateGitHubUrl, validateLinkedInUrl, validatePortfolioUrl } from "./socialConnections";
 
 // pdf-parse is a CJS module; use createRequire to avoid ESM default-export error in production
 const require = createRequire(import.meta.url);
@@ -310,9 +311,12 @@ export function resumeToProfileData(parsed: ParsedResume) {
     .join("\n");
   if (education) profileData.education = education;
 
-  if (parsed.linkedinUrl?.trim()) profileData.linkedinUrl = parsed.linkedinUrl.trim();
-  if (parsed.githubUrl?.trim()) profileData.githubUrl = parsed.githubUrl.trim();
-  if (parsed.portfolioUrl?.trim()) profileData.portfolioUrl = parsed.portfolioUrl.trim();
+  const linkedinUrl = parsed.linkedinUrl?.trim();
+  const githubUrl = parsed.githubUrl?.trim();
+  const portfolioUrl = parsed.portfolioUrl?.trim();
+  if (linkedinUrl && validateLinkedInUrl(linkedinUrl)) profileData.linkedinUrl = linkedinUrl;
+  if (githubUrl && validateGitHubUrl(githubUrl)) profileData.githubUrl = githubUrl;
+  if (portfolioUrl && validatePortfolioUrl(portfolioUrl)) profileData.portfolioUrl = portfolioUrl;
 
   return profileData;
 }
