@@ -10,7 +10,7 @@ vi.mock("./resumeStorage", async (importOriginal) => ({
   getActiveResume: mocks.getActiveResume,
 }));
 import { upsertUserProfile } from "./db";
-import { appRouter } from "./routers";
+import { appRouter, safeExternalConnectorErrorMessage } from "./routers";
 
 function createContext(userId: number): TrpcContext {
   return {
@@ -109,7 +109,17 @@ describe("profile evidence readiness router", () => {
 
     await expect(caller.profile.discoverCloudDocuments({ provider: "google_drive" })).rejects.toMatchObject({
       code: "PRECONDITION_FAILED",
-      message: "Google Drive must be freshly authorized with resume-document read consent before Hire.AI can discover cloud documents.",
+      message: "Cloud document discovery could not be completed. Verify connector consent and reauthorize before retrying.",
     });
+  });
+
+  it("never returns raw connector failure details to the candidate", () => {
+    const message = safeExternalConnectorErrorMessage(
+      new Error("Gmail OAuth rejected Bearer provider-secret"),
+      "Inbox response discovery could not be completed. Verify connector consent and reauthorize before retrying."
+    );
+
+    expect(message).toBe("Inbox response discovery could not be completed. Verify connector consent and reauthorize before retrying.");
+    expect(message).not.toContain("provider-secret");
   });
 });

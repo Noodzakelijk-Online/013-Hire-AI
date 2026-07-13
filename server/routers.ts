@@ -190,6 +190,15 @@ function resolveConnectorScopes(
   return requested;
 }
 
+/**
+ * Connector implementations can receive provider, transport, and token
+ * errors. Those details are useful only in protected server diagnostics and
+ * must never be returned through a candidate-facing API response.
+ */
+export function safeExternalConnectorErrorMessage(_error: unknown, fallback: string) {
+  return fallback;
+}
+
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
   system: systemRouter,
@@ -619,7 +628,10 @@ export const appRouter = router({
         } catch (error) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
-            message: error instanceof Error ? error.message : "LinkedIn identity discovery could not be completed.",
+            message: safeExternalConnectorErrorMessage(
+              error,
+              "LinkedIn identity discovery could not be completed. Verify connector consent and reauthorize before retrying."
+            ),
           });
         }
       }),
@@ -648,7 +660,10 @@ export const appRouter = router({
         } catch (error) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
-            message: error instanceof Error ? error.message : "GitHub profile discovery could not be completed.",
+            message: safeExternalConnectorErrorMessage(
+              error,
+              "GitHub profile discovery could not be completed. Verify connector consent and reauthorize before retrying."
+            ),
           });
         }
       }),
@@ -695,7 +710,10 @@ export const appRouter = router({
         } catch (error) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
-            message: error instanceof Error ? error.message : "GitHub profile import could not be completed.",
+            message: safeExternalConnectorErrorMessage(
+              error,
+              "GitHub profile import could not be completed. Verify connector consent and reauthorize before retrying."
+            ),
           });
         }
       }),
@@ -721,7 +739,10 @@ export const appRouter = router({
         } catch (error) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
-            message: error instanceof Error ? error.message : "Cloud document discovery could not be completed.",
+            message: safeExternalConnectorErrorMessage(
+              error,
+              "Cloud document discovery could not be completed. Verify connector consent and reauthorize before retrying."
+            ),
           });
         }
       }),
@@ -780,7 +801,10 @@ export const appRouter = router({
         } catch (error) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
-            message: error instanceof Error ? error.message : "Cloud resume import could not be completed.",
+            message: safeExternalConnectorErrorMessage(
+              error,
+              "Cloud resume import could not be completed. Verify the selected document and connector consent before retrying."
+            ),
           });
         }
       }),
@@ -1949,7 +1973,10 @@ export const appRouter = router({
         } catch (error) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
-            message: error instanceof Error ? error.message : "Inbox response discovery could not be completed.",
+            message: safeExternalConnectorErrorMessage(
+              error,
+              "Inbox response discovery could not be completed. Verify connector consent and reauthorize before retrying."
+            ),
           });
         }
       }),
