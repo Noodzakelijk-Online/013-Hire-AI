@@ -167,7 +167,7 @@ function assertJobSearchTermsAccepted(user: {
   if (!user.tosAcceptedAt) {
     throw new TRPCError({
       code: "PRECONDITION_FAILED",
-      message: "Accept the Terms of Service before preparing, confirming, or sending job-search actions.",
+      message: "Accept the Terms of Service before managing job-search applications, interviews, follow-ups, or offers.",
     });
   }
 }
@@ -1601,6 +1601,7 @@ export const appRouter = router({
         decisionNote: z.string().trim().max(5000).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
+        assertJobSearchTermsAccepted(ctx.user);
         const {
           resolveApplicationApproval,
           createAuditEvent,
@@ -1782,6 +1783,7 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
+        assertJobSearchTermsAccepted(ctx.user);
         try {
           const result = await withdrawApplication(input.applicationId, ctx.user.id);
           const { createAuditEvent } = await import("./db");
@@ -1815,6 +1817,7 @@ export const appRouter = router({
         acceptanceNote: z.string().trim().min(8).max(5000),
       }))
       .mutation(async ({ ctx, input }) => {
+        assertJobSearchTermsAccepted(ctx.user);
         const { createAuditEvent } = await import("./db");
 
         try {
@@ -1853,6 +1856,7 @@ export const appRouter = router({
         declineNote: z.string().trim().min(8).max(5000),
       }))
       .mutation(async ({ ctx, input }) => {
+        assertJobSearchTermsAccepted(ctx.user);
         const { createAuditEvent, getUserApplications } = await import("./db");
         const application = (await getUserApplications(ctx.user.id)).find((item) => item.id === input.applicationId);
         if (!application) {
@@ -1927,6 +1931,7 @@ export const appRouter = router({
         receivedAt: z.string().datetime().transform((s) => new Date(s)).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
+        assertJobSearchTermsAccepted(ctx.user);
         try {
           return await recordEmployerResponse(input, ctx.user.id);
         } catch (error) {
@@ -1940,6 +1945,7 @@ export const appRouter = router({
     discoverInboxResponses: protectedProcedure
       .input(z.object({ provider: z.enum(["gmail", "outlook"]) }))
       .mutation(async ({ ctx, input }) => {
+        assertJobSearchTermsAccepted(ctx.user);
         const { discoverInboxResponseCandidates } = await import("./inboxResponseDiscovery");
         const { createAuditEvent, upsertInboxResponseCandidate } = await import("./db");
         try {
@@ -2017,6 +2023,7 @@ export const appRouter = router({
         responseType: z.enum(["viewed", "rejection", "interview_invite", "offer", "employer_question", "other"]),
       }))
       .mutation(async ({ ctx, input }) => {
+        assertJobSearchTermsAccepted(ctx.user);
         const {
           createAuditEvent,
           findEmployerResponseBySourceReference,
@@ -2170,6 +2177,7 @@ export const appRouter = router({
         notes: z.string().max(10_000).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
+        assertJobSearchTermsAccepted(ctx.user);
         try {
           return await scheduleInterview(input, ctx.user.id);
         } catch (error) {
@@ -2198,6 +2206,7 @@ export const appRouter = router({
         status: z.enum(["scheduled", "completed", "cancelled", "rescheduled"]),
       }))
       .mutation(async ({ ctx, input }) => {
+        assertJobSearchTermsAccepted(ctx.user);
         try {
           return await updateInterviewStatus(input.interviewId, input.status, ctx.user.id);
         } catch (error) {
@@ -2219,6 +2228,7 @@ export const appRouter = router({
         receivedAt: z.string().datetime().transform((s) => new Date(s)).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
+        assertJobSearchTermsAccepted(ctx.user);
         try {
           return await recordInterviewOutcome(input, ctx.user.id);
         } catch (error) {
@@ -2236,6 +2246,7 @@ export const appRouter = router({
         newDate: z.string().datetime().transform((s) => new Date(s)),
       }))
       .mutation(async ({ ctx, input }) => {
+        assertJobSearchTermsAccepted(ctx.user);
         try {
           return await rescheduleInterview(input.interviewId, input.newDate, ctx.user.id);
         } catch (error) {

@@ -4,7 +4,7 @@ import { appRouter } from "./routers";
 import { createApplication, getApplicationLedgerArtifacts, getAuditEventsForUser, getUserApplications, listUnreadInterviewNotifications, listUserApplicationApprovals, resolveApplicationApproval, updateApplicationStatus } from "./db";
 import { createFollowUp, getInterviewSchedules, getUpcomingInterviews, markFollowUpSent, recordEmployerResponse, scheduleInterview } from "./applicationFeatures";
 
-function createContext(userId: number): TrpcContext {
+function createContext(userId: number, tosAcceptedAt: Date | null = new Date()): TrpcContext {
   return {
     user: {
       id: userId,
@@ -14,7 +14,7 @@ function createContext(userId: number): TrpcContext {
       loginMethod: "test",
       role: "user",
       accountStatus: "active",
-      tosAcceptedAt: new Date(),
+      tosAcceptedAt,
       createdAt: new Date(),
       updatedAt: new Date(),
       lastSignedIn: new Date(),
@@ -25,6 +25,55 @@ function createContext(userId: number): TrpcContext {
 }
 
 describe("application status controls", () => {
+  it("requires accepted terms before consequential application operations", async () => {
+    const caller = appRouter.createCaller(createContext(99300, null));
+    const tomorrow = new Date(Date.now() + 86_400_000).toISOString();
+    const operations = [
+      () => caller.applications.resolveApproval({ approvalId: 1, status: "rejected" }),
+      () => caller.applications.updateStatus({ applicationId: 1, status: "withdrawn" }),
+      () => caller.applications.confirmOfferAcceptance({
+        applicationId: 1,
+        confirmed: true,
+        acceptanceNote: "I accepted the employer's written offer.",
+      }),
+      () => caller.applications.declineOffer({
+        applicationId: 1,
+        confirmed: true,
+        declineNote: "I declined the employer's written offer.",
+      }),
+      () => caller.applications.recordResponse({
+        applicationId: 1,
+        responseType: "offer",
+        source: "email",
+        sourceReference: "gmail-offer-99300",
+        summary: "Recruiter sent a written offer for the linked role.",
+      }),
+      () => caller.applications.discoverInboxResponses({ provider: "gmail" }),
+      () => caller.applications.ingestInboxResponse({ candidateId: 1, responseType: "offer" }),
+      () => caller.applications.scheduleInterview({
+        applicationId: 1,
+        interviewType: "video",
+        scheduledAt: tomorrow,
+      }),
+      () => caller.applications.updateInterviewStatus({ interviewId: 1, status: "completed" }),
+      () => caller.applications.recordInterviewOutcome({
+        interviewId: 1,
+        outcome: "offer",
+        source: "email",
+        sourceReference: "gmail-offer-outcome-99300",
+        summary: "Recruiter sent a written offer after the final interview.",
+      }),
+      () => caller.applications.rescheduleInterview({ interviewId: 1, newDate: tomorrow }),
+    ];
+
+    for (const operation of operations) {
+      await expect(operation()).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message: expect.stringContaining("Accept the Terms of Service"),
+      });
+    }
+  });
+
   it("reserves generic status updates for user withdrawal", async () => {
     const userId = 99301;
     const application = await createApplication({ userId, jobId: 1, status: "applied" });
