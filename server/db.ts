@@ -514,7 +514,7 @@ export async function getActiveJobs(limit = 100, offset = 0, filters: Partial<Jo
   }
   const conditions: SQL[] = [
     eq(jobs.isActive, 1),
-    or(isNull(jobs.expiryDate), gt(jobs.expiryDate, now))!,
+    currentListingCondition(now),
     canonicalJobCondition,
   ];
   addJobSearchFilterConditions(conditions, resolvedFilters, now);
