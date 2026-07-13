@@ -9,6 +9,7 @@ export type ReviewQueueActionKind =
   | "interview_scheduling"
   | "interview_preparation"
   | "interview_outcome"
+  | "inbox_response_candidate"
   | "employer_reply"
   | "follow_up"
   | "success_fee"
@@ -43,6 +44,7 @@ export type ReviewQueueControlSection =
   | "interview-scheduling"
   | "interview-preparation"
   | "interview-outcomes"
+  | "inbox-response-candidates"
   | "employer-replies"
   | "follow-ups"
   | "success-fees"
@@ -72,6 +74,7 @@ export interface OperatingReviewQueueInput {
     interviewScheduling?: unknown[];
     interviewPreparationNeeded?: unknown[];
     interviewOutcomesNeeded?: unknown[];
+    inboxResponseCandidates?: unknown[];
     employerResponsesNeedingReply?: unknown[];
     followUpsDue?: unknown[];
     approvedFollowUpsReadyToSend?: unknown[];
@@ -253,6 +256,16 @@ export function getReviewQueueActionSummary(
         approvalGated: false,
         externalAction: "none",
       };
+    case "inbox_response_candidate":
+      return {
+        label: "Inbox response candidate",
+        detail: "A consented inbox scan found a message linked to this application. Confirm or dismiss the proposed classification before it changes the application ledger.",
+        cta: "Review inbox candidate",
+        route: "/review-queue",
+        risk: "medium",
+        approvalGated: false,
+        externalAction: "none",
+      };
     case "employer_reply":
       return {
         label: "Employer reply",
@@ -405,6 +418,7 @@ export function getOperatingReviewQueueCounts(input?: OperatingReviewQueueInput 
   const interviewScheduling = input?.queues?.interviewScheduling?.length ?? 0;
   const interviewPreparationNeeded = input?.queues?.interviewPreparationNeeded?.length ?? 0;
   const interviewOutcomesNeeded = input?.queues?.interviewOutcomesNeeded?.length ?? 0;
+  const inboxResponseCandidates = input?.queues?.inboxResponseCandidates?.length ?? 0;
   const employerResponsesNeedingReply = input?.queues?.employerResponsesNeedingReply?.length ?? 0;
   const followUpsDue = input?.queues?.followUpsDue?.length ?? 0;
   const approvedFollowUpsReadyToSend = input?.queues?.approvedFollowUpsReadyToSend?.length ?? 0;
@@ -423,6 +437,7 @@ export function getOperatingReviewQueueCounts(input?: OperatingReviewQueueInput 
     interviewScheduling,
     interviewPreparationNeeded,
     interviewOutcomesNeeded,
+    inboxResponseCandidates,
     employerResponsesNeedingReply,
     followUpsDue,
     approvedFollowUpsReadyToSend,
@@ -432,7 +447,7 @@ export function getOperatingReviewQueueCounts(input?: OperatingReviewQueueInput 
     adminReviews,
     profileBlockers,
     profileWarnings,
-    total: pendingApprovals + reviewDecisions + interviewScheduling + interviewPreparationNeeded + interviewOutcomesNeeded + employerResponsesNeedingReply + followUpsDue + approvedFollowUpsReadyToSend + evidenceGates + successFeeCompliance + connectorReadiness + adminReviews + profileBlockers + profileWarnings,
+    total: pendingApprovals + reviewDecisions + interviewScheduling + interviewPreparationNeeded + interviewOutcomesNeeded + inboxResponseCandidates + employerResponsesNeedingReply + followUpsDue + approvedFollowUpsReadyToSend + evidenceGates + successFeeCompliance + connectorReadiness + adminReviews + profileBlockers + profileWarnings,
   };
 }
 
@@ -543,6 +558,21 @@ export function getReviewQueueControlSummary(
       section: "connector-readiness",
       route: "/profile",
       count: counts.connectorReadiness,
+      risk: "medium",
+      approvalGated: false,
+      externalAction: "none",
+    });
+  }
+
+  if (counts.inboxResponseCandidates > 0) {
+    return controlSummary({
+      status: "attention",
+      label: "Inbox response candidate",
+      headline: `${counts.inboxResponseCandidates} inbox response candidate${counts.inboxResponseCandidates === 1 ? " needs" : "s need"} confirmation.`,
+      detail: "Hire.AI found application-linked inbox messages but will not change application status or send an interview alert until you confirm the classification.",
+      cta: "Review inbox responses",
+      section: "inbox-response-candidates",
+      count: counts.inboxResponseCandidates,
       risk: "medium",
       approvalGated: false,
       externalAction: "none",

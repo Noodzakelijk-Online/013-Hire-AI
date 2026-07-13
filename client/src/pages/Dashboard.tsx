@@ -818,6 +818,42 @@ export default function Dashboard() {
                       );
                     })}
 
+                    {operatingLedger.queues.inboxResponseCandidates.map((candidate) => (
+                      <div
+                        key={`inbox-response-candidate-${candidate.id}`}
+                        data-testid={`dashboard-inbox-response-candidate-${candidate.id}`}
+                        className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-medium text-white">
+                            {candidate.job?.title || `Application #${candidate.applicationId}`}
+                          </p>
+                          <Badge variant="outline" className="border-amber-500/40 text-amber-300">
+                            Inbox response candidate
+                          </Badge>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {candidate.job?.company || "Employer"}
+                          {candidate.job?.location ? ` - ${candidate.job.location}` : ""}
+                        </p>
+                        <p className="mt-2 line-clamp-2 text-sm text-slate-300">
+                          {candidate.subject || "A consented inbox scan found an application-linked message."}
+                        </p>
+                        <p className="mt-1 text-xs text-amber-100">
+                          Confirm or dismiss the {candidate.suggestedResponseType.replace(/_/g, " ")} classification before Hire.AI changes the application ledger.
+                        </p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-3 border-amber-500/40 text-amber-200"
+                          onClick={() => setLocation("/review-queue#review-queue-section-inbox-response-candidates")}
+                        >
+                          <Mail className="mr-2 h-4 w-4" />
+                          Review inbox response
+                        </Button>
+                      </div>
+                    ))}
+
                     {operatingLedger.queues.reviewDecisions.map((decision) => {
                       const actionSummary = getReviewQueueActionSummary("job_decision", decision);
                       const jobTitle = decision.job?.title || `Job #${decision.jobId}`;

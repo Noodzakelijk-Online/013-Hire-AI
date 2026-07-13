@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TrpcContext } from "./_core/context";
-import { createApplication, getAuditEventsForUser, getEmployerResponses, listUserConnectorAccounts, upsertUserConnectorAccount, upsertUserProfile } from "./db";
+import { createApplication, getAuditEventsForUser, getEmployerResponses, listPendingInboxResponseCandidates, listUnreadInterviewNotifications, listUserConnectorAccounts, upsertInboxResponseCandidate, upsertUserConnectorAccount, upsertUserProfile } from "./db";
 import { appRouter } from "./routers";
 
 function createContext(userId: number): TrpcContext {
@@ -61,6 +61,53 @@ describe("connector account tRPC procedures", () => {
     expect(second.existing).toBe(true);
     expect((await getEmployerResponses(applicationId, userId))).toHaveLength(1);
     expect((await getAuditEventsForUser(userId, 20)).filter((event) => event.action === "inbox_response_ingested")).toHaveLength(1);
+  });
+
+  it("consumes a persisted inbox candidate only after the user confirms its classification", async () => {
+    const userId = 99657;
+    const application = await createApplication({
+      userId,
+      jobId: 3,
+      status: "applied",
+      notes: "Awaiting an application-linked inbox response.",
+    });
+    const applicationId = Number(application.insertId);
+    await upsertUserConnectorAccount({
+      userId,
+      provider: "outlook",
+      status: "connected",
+      consentScopes: JSON.stringify(["mail.messages.read_recruiting"]),
+      externalAccountLabel: "candidate@example.com",
+      lastVerifiedAt: new Date(),
+    });
+    await upsertInboxResponseCandidate({
+      userId,
+      applicationId,
+      provider: "outlook",
+      messageId: "outlook-candidate-99657",
+      sender: "recruiter@example.com",
+      subject: "Interview invitation",
+      preview: "We would like to arrange a conversation about your application.",
+      receivedAt: new Date(),
+      suggestedResponseType: "interview_invite",
+      confidence: "high",
+    });
+
+    const caller = appRouter.createCaller(createContext(userId));
+    expect(await caller.applications.listInboxResponseCandidates()).toHaveLength(1);
+    expect(await listUnreadInterviewNotifications(userId)).toHaveLength(0);
+
+    await caller.applications.ingestInboxResponse({
+      applicationId,
+      provider: "outlook",
+      messageId: "outlook-candidate-99657",
+      responseType: "interview_invite",
+      summary: "We would like to arrange a conversation about your application.",
+    });
+
+    expect(await listPendingInboxResponseCandidates(userId)).toEqual([]);
+    expect(await getEmployerResponses(applicationId, userId)).toHaveLength(1);
+    expect(await listUnreadInterviewNotifications(userId)).toHaveLength(1);
   });
 
   it("records connector intent, feeds evidence readiness, and audits without tokens", async () => {

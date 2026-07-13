@@ -65,6 +65,7 @@ describe("operating review queue helpers", () => {
         interviewScheduling: [{ applicationId: 5 }],
         interviewPreparationNeeded: [{ applicationId: 9 }],
         interviewOutcomesNeeded: [{ applicationId: 10 }],
+        inboxResponseCandidates: [{ id: 11 }],
         employerResponsesNeedingReply: [{ applicationId: 6 }],
         followUpsDue: [{ applicationId: 7 }],
         approvedFollowUpsReadyToSend: [{ followUpId: 8 }],
@@ -82,6 +83,7 @@ describe("operating review queue helpers", () => {
       interviewScheduling: 1,
       interviewPreparationNeeded: 1,
       interviewOutcomesNeeded: 1,
+      inboxResponseCandidates: 1,
       employerResponsesNeedingReply: 1,
       followUpsDue: 1,
       approvedFollowUpsReadyToSend: 1,
@@ -91,7 +93,7 @@ describe("operating review queue helpers", () => {
       adminReviews: 0,
       profileBlockers: 1,
       profileWarnings: 2,
-      total: 15,
+      total: 16,
     });
   });
 
@@ -188,6 +190,20 @@ describe("operating review queue helpers", () => {
       label: "Interview outcome",
       cta: "Record outcome",
       route: "/applications?applicationId=9&action=record-interview-outcome&interviewId=17",
+      risk: "medium",
+      approvalGated: false,
+      externalAction: "none",
+    });
+  });
+
+  it("keeps inbox response candidates internal until the user confirms their classification", () => {
+    expect(getReviewQueueActionSummary("inbox_response_candidate", {
+      applicationId: 9,
+      suggestedResponseType: "interview_invite",
+    })).toMatchObject({
+      label: "Inbox response candidate",
+      cta: "Review inbox candidate",
+      route: "/review-queue",
       risk: "medium",
       approvalGated: false,
       externalAction: "none",
@@ -296,6 +312,23 @@ describe("operating review queue helpers", () => {
       count: 1,
       approvalGated: false,
       externalAction: "blocked_until_evidence",
+    });
+  });
+
+  it("surfaces persisted inbox candidates before employer-reply drafting", () => {
+    const summary = getReviewQueueControlSummary({
+      queues: {
+        inboxResponseCandidates: [{ id: 5 }],
+        employerResponsesNeedingReply: [{ applicationId: 3 }],
+      },
+    });
+
+    expect(summary).toMatchObject({
+      status: "attention",
+      section: "inbox-response-candidates",
+      count: 1,
+      approvalGated: false,
+      externalAction: "none",
     });
   });
 

@@ -538,6 +538,7 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
     decision.reviewRequired === 1 || ["review", "manual_apply"].includes(decision.decision)
   );
   const applicationsByJobId = new Map(applications.map((application) => [application.jobId, application]));
+  const applicationsById = new Map(applications.map((application) => [application.id, application]));
   const reviewDecisionQueue = reviewDecisions.map((decision) => {
     const application = applicationsByJobId.get(decision.jobId);
 
@@ -578,6 +579,18 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
     applications,
     providers: profileEvidence.providers,
     hasActiveResumeArtifact: Boolean(activeResume),
+  });
+  const inboxResponseCandidateQueue = inboxResponseCandidates.map((candidate) => {
+    const application = applicationsById.get(candidate.applicationId);
+    return {
+      ...candidate,
+      job: application?.job ? {
+        id: application.job.id,
+        title: application.job.title,
+        company: application.job.company,
+        location: application.job.location,
+      } : null,
+    };
   });
   const evidenceGates = buildAutonomousEvidenceGates({
     profileEvidence,
@@ -694,7 +707,7 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
       employerResponsesNeedingReply: employerResponseQueue.length,
       interviews: applicationStatusCount(applications, ["interview"]),
       unreadInterviewNotifications: interviewNotificationQueue.length,
-      inboxResponseCandidates: inboxResponseCandidates.length,
+      inboxResponseCandidates: inboxResponseCandidateQueue.length,
       interviewSchedulingNeeded: interviewSchedulingQueue.length,
       interviewPreparationNeeded: interviewPreparationQueue.length,
       interviewOutcomesNeeded: interviewOutcomeQueue.length,
@@ -720,7 +733,7 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
       adminReviews: userAdminReviews.slice(0, 5),
       reviewDecisions: reviewDecisionQueue.slice(0, 5),
       interviewNotifications: interviewNotificationQueue,
-      inboxResponseCandidates: inboxResponseCandidates.slice(0, 5),
+      inboxResponseCandidates: inboxResponseCandidateQueue.slice(0, 5),
       interviewScheduling: interviewSchedulingQueue.slice(0, 5),
       interviewPreparationNeeded: interviewPreparationQueue.slice(0, 5),
       interviewOutcomesNeeded: interviewOutcomeQueue.slice(0, 5),

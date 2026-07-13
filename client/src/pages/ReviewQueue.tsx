@@ -103,6 +103,24 @@ export default function ReviewQueue() {
       toast.error(error.message || "Unable to record follow-up send handoff");
     },
   });
+  const ingestInboxResponse = trpc.applications.ingestInboxResponse.useMutation({
+    onSuccess: async (result) => {
+      toast.success(result.existing ? "Existing employer response kept" : "Employer response recorded");
+      await Promise.all([refetch(), refetchAuditTrail()]);
+    },
+    onError: (error) => {
+      toast.error(error.message || "Unable to confirm inbox response");
+    },
+  });
+  const dismissInboxResponseCandidate = trpc.applications.dismissInboxResponseCandidate.useMutation({
+    onSuccess: async () => {
+      toast.success("Inbox response candidate dismissed");
+      await Promise.all([refetch(), refetchAuditTrail()]);
+    },
+    onError: (error) => {
+      toast.error(error.message || "Unable to dismiss inbox response candidate");
+    },
+  });
 
   const counts = useMemo(
     () => getOperatingReviewQueueCounts(operatingLedger),
@@ -119,6 +137,7 @@ export default function ReviewQueue() {
     ["Interviews", counts.interviewScheduling],
     ["Interview prep", counts.interviewPreparationNeeded],
     ["Outcomes", counts.interviewOutcomesNeeded],
+    ["Inbox responses", counts.inboxResponseCandidates],
     ["Evidence gates", counts.evidenceGates],
     ["Connectors", counts.connectorReadiness],
     ["Employer replies", counts.employerResponsesNeedingReply],
@@ -167,6 +186,32 @@ export default function ReviewQueue() {
   const openSendHandoff = (followUpId: number, label: string) => {
     setDeliveryConfirmation("");
     setSendHandoff({ followUpId, label });
+  };
+
+  const confirmInboxResponseCandidate = (candidate: {
+    applicationId: number;
+    provider: "gmail" | "outlook";
+    messageId: string;
+    suggestedResponseType: "rejection" | "interview_invite" | "offer" | "employer_question" | "other";
+    subject: string;
+    preview: string;
+    receivedAt: Date | string;
+  }) => {
+    const discoveredSummary = [candidate.subject, candidate.preview]
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .join(". ");
+    const summary = discoveredSummary.length >= 8
+      ? discoveredSummary
+      : "Application-linked inbox message awaiting confirmation.";
+    ingestInboxResponse.mutate({
+      applicationId: candidate.applicationId,
+      provider: candidate.provider,
+      messageId: candidate.messageId,
+      responseType: candidate.suggestedResponseType,
+      summary: summary.slice(0, 5000),
+      receivedAt: new Date(candidate.receivedAt).toISOString(),
+    });
   };
 
   const scrollToQueueSection = (section: string) => {
@@ -793,6 +838,73 @@ export default function ReviewQueue() {
                   </div>
                 ) : (
                   <EmptyQueueLine label="No completed interviews need an outcome." />
+                )}
+              </section>
+
+              <section id="review-queue-section-inbox-response-candidates" data-testid="review-queue-section-inbox-response-candidates" className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-lg font-semibold">Inbox Response Candidates</h2>
+                  <Badge variant="outline">{counts.inboxResponseCandidates}</Badge>
+                </div>
+                {operatingLedger?.queues.inboxResponseCandidates.length ? (
+                  <div className="space-y-3">
+                    {operatingLedger.queues.inboxResponseCandidates.map((candidate) => (
+                      <Card key={candidate.id} data-testid={`review-inbox-response-candidate-${candidate.id}`}>
+                        <CardContent className="space-y-4 pt-6">
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0">
+                              <p className="truncate font-medium">{candidate.job?.title || `Application #${candidate.applicationId}`}</p>
+                              <p className="mt-1 text-sm text-muted-foreground">
+                                {candidate.job?.company || "Employer"}
+                                {candidate.job?.location ? ` - ${candidate.job.location}` : ""}
+                              </p>
+                            </div>
+                            <Badge variant="outline" className="border-amber-500/40 text-amber-300">
+                              {candidate.suggestedResponseType.replace(/_/g, " ")}
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground">{candidate.subject || "Application-linked inbox message"}</p>
+                          {candidate.preview ? (
+                            <p className="line-clamp-3 text-sm text-muted-foreground">{candidate.preview}</p>
+                          ) : null}
+                          <QueueActionStrip
+                            summary={getQueueAction("inbox_response_candidate", candidate)}
+                            onOpen={setLocation}
+                            showAction={false}
+                          />
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              size="sm"
+                              onClick={() => confirmInboxResponseCandidate(candidate)}
+                              disabled={ingestInboxResponse.isPending || dismissInboxResponseCandidate.isPending}
+                            >
+                              {ingestInboxResponse.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-2 h-4 w-4" />}
+                              Confirm classification
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => dismissInboxResponseCandidate.mutate({ candidateId: candidate.id })}
+                              disabled={ingestInboxResponse.isPending || dismissInboxResponseCandidate.isPending}
+                            >
+                              <XCircle className="mr-2 h-4 w-4" />
+                              Dismiss
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setLocation(getApplicationDeepLink(candidate.applicationId, "view"))}
+                            >
+                              <Briefcase className="mr-2 h-4 w-4" />
+                              Open Application
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyQueueLine label="No application-linked inbox messages need confirmation." />
                 )}
               </section>
 
