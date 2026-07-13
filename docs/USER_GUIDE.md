@@ -53,7 +53,7 @@ The dashboard uses a **health monitoring metaphor** to visualize your job search
 
 ### Quick Actions
 
-- **Apply to Top Matches**: One-click apply to your best-matched jobs
+- **Prepare Top Matches**: Create reviewable materials for high-match roles, then complete the employer handoff yourself
 - **Review Pending Applications**: Check status of submitted applications
 - **Schedule Interviews**: Manage upcoming interview appointments
 - **Update Profile**: Keep your information current

@@ -82,7 +82,7 @@ export default function TermsOfService() {
               <div>
                 <h3 className="text-base font-semibold text-cyan-400 mb-2">4.2 Triggering Event</h3>
                 <p>
-                  The success fee obligation is triggered when: (a) you receive and accept an offer of employment from an employer to whom the Platform submitted an application on your behalf; (b) you commence employment at that position; and (c) your gross monthly compensation equals or exceeds <strong className="text-white">three hundred US dollars (USD $300)</strong> per month. Positions with compensation below this threshold are exempt from the success fee.
+                  The success fee obligation is triggered when: (a) you receive and accept an offer of employment attributable to a Hire.AI application record that you completed through the employer's channel; (b) you commence employment at that position; and (c) your gross monthly compensation equals or exceeds <strong className="text-white">three hundred US dollars (USD $300)</strong> per month. Positions with compensation below this threshold are exempt from the success fee.
                 </p>
               </div>
 
@@ -188,7 +188,7 @@ export default function TermsOfService() {
           <section>
             <h2 className="text-xl font-semibold text-white mb-3">8. Privacy and Data</h2>
             <p>
-              By using the Platform, you consent to the collection, processing, and use of your personal data, including your resume, employment history, and compensation information, for the purpose of providing the Platform's services. Your data is processed in accordance with our Privacy Policy. You acknowledge that your resume and profile information will be submitted to third-party employers on your behalf.
+              By using the Platform, you consent to the collection, processing, and use of your personal data, including your resume, employment history, and compensation information, for the purpose of providing the Platform's services. Your data is processed in accordance with our Privacy Policy. Hire.AI prepares and records application materials, but does not submit your resume or profile information to third-party employers. You control what is shared through each employer's channel.
             </p>
           </section>
 

@@ -563,7 +563,7 @@ Detect the ATS type from a job URL.
 ```
 
 ### `automation.apply`
-Automatically apply to a job.
+Prepare a review-gated application handoff for a job. This procedure never opens an employer portal, fills a third-party form, uploads documents, or submits an application externally.
 
 **Type:** Mutation (Protected)
 
@@ -579,9 +579,15 @@ Automatically apply to a job.
 ```typescript
 {
   success: boolean;
-  status: "submitted" | "partial" | "failed" | "captcha_required" | "login_required";
+  prepared: boolean;
+  submissionAttempted: false;
+  externalSubmissionPerformed: false;
+  reviewRequired: true;
+  atsType: string;
+  applicationRecordId: number;
+  applicationUrl: string;
   message: string;
-  confirmationNumber?: string;
+  error?: string;
 }
 ```
 
