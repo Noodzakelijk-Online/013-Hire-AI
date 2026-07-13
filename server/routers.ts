@@ -38,6 +38,9 @@ import {
   markFollowUpSent,
   markFollowUpResponseReceived,
   generateInterviewPreparationForApplication,
+  generateInterviewQuestionsForApplication,
+  conductMockInterviewForApplication,
+  getVideoInterviewTipsForApplication,
   generateEmployerReplyEmail,
   generateFollowUpEmail,
   createJobAlert,
@@ -45,9 +48,6 @@ import {
   updateJobAlert,
   toggleJobAlert,
   deleteJobAlert,
-  generateInterviewQuestions,
-  conductMockInterview,
-  getVideoInterviewTips,
 } from "./applicationFeatures";
 import { MAX_FOLLOW_UP_MESSAGE_CHARS } from "./messageSanitization";
 
@@ -2435,17 +2435,9 @@ export const appRouter = router({
         return await identifyDecisionMakers(input.company, input.jobTitle);
       }),
     generateInterviewPrep: protectedProcedure
-      .input(z.object({ jobId: z.number() }))
-      .mutation(async ({ input }) => {
-        const { getJobById } = await import("./db");
-        const { generateInterviewPreparation } = await import("./aiMatching");
-
-        const job = await getJobById(input.jobId);
-        if (!job) {
-          throw new Error("Job not found");
-        }
-
-        return await generateInterviewPreparation(job);
+      .input(z.object({ applicationId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        return await generateInterviewPreparationForApplication(input.applicationId, ctx.user.id);
       }),
   }),
 
@@ -3700,25 +3692,30 @@ export const appRouter = router({
   // Interview Preparation
   interviewPrep: router({
     generateQuestions: protectedProcedure
-      .input(z.object({ jobId: z.number() }))
-      .mutation(async ({ input }) => {
-        return await generateInterviewQuestions(input.jobId);
+      .input(z.object({ applicationId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        return await generateInterviewQuestionsForApplication(input.applicationId, ctx.user.id);
       }),
 
     mockInterview: protectedProcedure
       .input(z.object({
-        jobId: z.number(),
-        userResponse: z.string(),
-        questionIndex: z.number(),
+        applicationId: z.number(),
+        userResponse: z.string().trim().min(1).max(10_000),
+        questionIndex: z.number().int().min(0).max(100),
       }))
-      .mutation(async ({ input }) => {
-        return await conductMockInterview(input.jobId, input.userResponse, input.questionIndex);
+      .mutation(async ({ ctx, input }) => {
+        return await conductMockInterviewForApplication(
+          input.applicationId,
+          input.userResponse,
+          input.questionIndex,
+          ctx.user.id
+        );
       }),
 
     videoTips: protectedProcedure
-      .input(z.object({ jobTitle: z.string() }))
-      .query(async ({ input }) => {
-        return await getVideoInterviewTips(input.jobTitle);
+      .input(z.object({ applicationId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        return await getVideoInterviewTipsForApplication(input.applicationId, ctx.user.id);
       }),
   }),
   successFees: successFeesRouter,

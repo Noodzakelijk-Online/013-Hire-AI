@@ -1769,22 +1769,22 @@ function buildFallbackInterviewPreparation(job: {
   };
 }
 
-export async function generateInterviewPreparationForApplication(applicationId: number, userId: number) {
-  const applicationsForUser = await getUserApplications(userId);
-  const application = applicationsForUser.find((item) => item.id === applicationId);
-  if (!application) {
-    throw new Error("Application not found.");
+export async function getOwnedUpcomingInterviewContext(applicationId: number, userId: number) {
+  const application = await getInterviewApplication(applicationId, userId);
+  const now = new Date();
+  const interview = (await getInterviewSchedules(applicationId, userId)).find((candidate) =>
+    ["scheduled", "rescheduled"].includes(candidate.status || "scheduled") &&
+    candidate.scheduledAt >= now
+  );
+  if (!interview) {
+    throw new Error("Interview must be scheduled before interview preparation can be used.");
   }
 
-  const schedules = await getInterviewSchedules(applicationId, userId);
-  const now = new Date();
-  const activeInterview = schedules.find((interview) =>
-    ["scheduled", "rescheduled"].includes(interview.status || "scheduled") &&
-    interview.scheduledAt >= now
-  );
-  if (!activeInterview) {
-    throw new Error("Interview must be scheduled before preparation can be generated.");
-  }
+  return { application, interview };
+}
+
+export async function generateInterviewPreparationForApplication(applicationId: number, userId: number) {
+  const { application, interview: activeInterview } = await getOwnedUpcomingInterviewContext(applicationId, userId);
 
   const existing = await getInterviewPreparationForJob(userId, application.jobId);
   if (existing) {
@@ -3478,20 +3478,10 @@ export async function generateInterviewQuestions(jobId: number): Promise<{
   situational: string[];
   questions_to_ask: string[];
 }> {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-
-  const jobResult = await db
-    .select()
-    .from(jobs)
-    .where(eq(jobs.id, jobId))
-    .limit(1);
-
-  if (jobResult.length === 0) {
+  const job = await getJobById(jobId);
+  if (!job) {
     throw new Error("Job not found");
   }
-
-  const job = jobResult[0];
 
   const response = await invokeLLM({
     messages: [
@@ -3571,20 +3561,10 @@ export async function conductMockInterview(
   suggestions: string[];
   nextQuestion?: string;
 }> {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-
-  const jobResult = await db
-    .select()
-    .from(jobs)
-    .where(eq(jobs.id, jobId))
-    .limit(1);
-
-  if (jobResult.length === 0) {
+  const job = await getJobById(jobId);
+  if (!job) {
     throw new Error("Job not found");
   }
-
-  const job = jobResult[0];
 
   const response = await invokeLLM({
     messages: [
@@ -3717,4 +3697,28 @@ Format as JSON with keys: technical_setup, presentation, common_mistakes, platfo
     common_mistakes: [],
     platform_specific: { zoom: [], teams: [], google_meet: [] },
   };
+}
+
+export async function generateInterviewQuestionsForApplication(applicationId: number, userId: number) {
+  const { application } = await getOwnedUpcomingInterviewContext(applicationId, userId);
+  return await generateInterviewQuestions(application.jobId);
+}
+
+export async function conductMockInterviewForApplication(
+  applicationId: number,
+  userResponse: string,
+  questionIndex: number,
+  userId: number
+) {
+  const { application } = await getOwnedUpcomingInterviewContext(applicationId, userId);
+  return await conductMockInterview(application.jobId, userResponse, questionIndex);
+}
+
+export async function getVideoInterviewTipsForApplication(applicationId: number, userId: number) {
+  const { application } = await getOwnedUpcomingInterviewContext(applicationId, userId);
+  const job = await getJobById(application.jobId);
+  if (!job) {
+    throw new Error("Job not found.");
+  }
+  return await getVideoInterviewTips(job.title);
 }
