@@ -235,7 +235,9 @@ async function getInterviewSchedulingQueue(applications: UserApplicationRecord[]
 }
 
 async function getInterviewNotificationQueue(applications: UserApplicationRecord[], userId: number) {
-  const notifications = await listUnreadInterviewNotifications(userId, 5);
+  // Validate the complete bounded unread set before applying the command-center limit.
+  // Legacy or concurrently retired notifications must not hide a newer verified invite.
+  const notifications = await listUnreadInterviewNotifications(userId, 100);
   const applicationsById = new Map(applications.map((application) => [application.id, application]));
 
   const items = await Promise.all(notifications.map(async (notification) => {
@@ -264,7 +266,9 @@ async function getInterviewNotificationQueue(applications: UserApplicationRecord
     };
   }));
 
-  return items.filter((item): item is NonNullable<typeof item> => item !== null);
+  return items
+    .filter((item): item is NonNullable<typeof item> => item !== null)
+    .slice(0, 5);
 }
 
 async function getEmployerResponseQueue(

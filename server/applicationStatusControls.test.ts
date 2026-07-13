@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { TrpcContext } from "./_core/context";
 import { appRouter } from "./routers";
-import { createApplication, getApplicationLedgerArtifacts, getAuditEventsForUser, getUserApplications, listUserApplicationApprovals, resolveApplicationApproval, updateApplicationStatus } from "./db";
+import { createApplication, getApplicationLedgerArtifacts, getAuditEventsForUser, getUserApplications, listUnreadInterviewNotifications, listUserApplicationApprovals, resolveApplicationApproval, updateApplicationStatus } from "./db";
 import { createFollowUp, getInterviewSchedules, getUpcomingInterviews, markFollowUpSent, recordEmployerResponse, scheduleInterview } from "./applicationFeatures";
 
 function createContext(userId: number): TrpcContext {
@@ -186,6 +186,35 @@ describe("application status controls", () => {
       event.afterState?.includes(String(followUpApproval!.id)) &&
       event.afterState?.includes(String(interview.id)) &&
       event.afterState?.includes("externalFollowUpSent\":false")
+    )).toBe(true);
+  });
+
+  it("retires a legacy interview alert when the user confirms an offer acceptance", async () => {
+    const userId = 99305;
+    const application = await createApplication({ userId, jobId: 3, status: "interview" });
+    const applicationId = Number(application.insertId);
+    await recordEmployerResponse({
+      applicationId,
+      responseType: "interview_invite",
+      source: "email",
+      summary: "Recruiter invited the candidate to a final interview.",
+    }, userId);
+    await updateApplicationStatus(applicationId, "offer", userId);
+    expect(await listUnreadInterviewNotifications(userId)).toHaveLength(1);
+
+    const caller = appRouter.createCaller(createContext(userId));
+    await caller.applications.confirmOfferAcceptance({
+      applicationId,
+      confirmed: true,
+      acceptanceNote: "I accepted the employer's written offer today.",
+    });
+
+    expect(await listUnreadInterviewNotifications(userId)).toHaveLength(0);
+    const artifacts = await getApplicationLedgerArtifacts(applicationId, userId);
+    expect(artifacts.auditEvents.some((event) =>
+      event.action === "interview_notifications_retired_after_application_closure" &&
+      event.source === "applications.confirmOfferAcceptance" &&
+      event.afterState?.includes("accepted")
     )).toBe(true);
   });
 });

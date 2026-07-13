@@ -698,6 +698,28 @@ function shouldRetireInterviewNotifications(statusAfter: ApplicationStatus) {
   return ["offer", "rejected"].includes(statusAfter);
 }
 
+async function retireInterviewNotificationsAfterApplicationClosure(
+  applicationId: number,
+  userId: number,
+  status: "withdrawn" | "accepted",
+  source: "applications.withdraw" | "applications.confirmOfferAcceptance"
+) {
+  const { notificationIds } = await markUnreadInterviewNotificationsReadForApplication(applicationId, userId);
+  if (notificationIds.length > 0) {
+    await createAuditEvent({
+      userId,
+      entityType: "application",
+      entityId: applicationId,
+      action: "interview_notifications_retired_after_application_closure",
+      actor: "user",
+      source,
+      afterState: JSON.stringify({ status, notificationIds }),
+      riskLevel: "low",
+    });
+  }
+  return notificationIds;
+}
+
 export async function recordEmployerResponse(input: RecordEmployerResponseInput, userId: number) {
   const db = await getDb();
   if (!db) {
@@ -2497,6 +2519,12 @@ export async function withdrawApplication(
     }
 
     await updateApplicationStatus(applicationId, "withdrawn", userId);
+    const retiredInterviewNotificationIds = await retireInterviewNotificationsAfterApplicationClosure(
+      applicationId,
+      userId,
+      "withdrawn",
+      "applications.withdraw"
+    );
     for (const approval of cancellableApprovals) {
       if (approval.status === "pending") {
         await resolveApplicationApproval(
@@ -2585,6 +2613,7 @@ export async function withdrawApplication(
       cancelledOfferAttributionApprovalIds,
       dismissedOfferAttributionReviewIds,
       cancelledInterviewIds,
+      retiredInterviewNotificationIds,
     };
   }
 
@@ -2650,6 +2679,35 @@ export async function withdrawApplication(
       if (Number(statusUpdate[0].affectedRows) === 0) {
         throw new Error("Application status changed concurrently. Refresh and try again.");
       }
+    }
+
+    const unreadInterviewNotifications = await tx
+      .select({ id: applicationNotifications.id })
+      .from(applicationNotifications)
+      .where(and(
+        eq(applicationNotifications.applicationId, applicationId),
+        eq(applicationNotifications.userId, userId),
+        isNull(applicationNotifications.readAt)
+      ));
+    const retiredInterviewNotificationIds = unreadInterviewNotifications.map((notification) => notification.id);
+    if (retiredInterviewNotificationIds.length > 0) {
+      await tx
+        .update(applicationNotifications)
+        .set({ readAt: cancelledAt })
+        .where(and(
+          inArray(applicationNotifications.id, retiredInterviewNotificationIds),
+          isNull(applicationNotifications.readAt)
+        ));
+      await tx.insert(auditEvents).values({
+        userId,
+        entityType: "application",
+        entityId: applicationId,
+        action: "interview_notifications_retired_after_application_closure",
+        actor: "user",
+        source: "applications.withdraw",
+        afterState: JSON.stringify({ status: "withdrawn", notificationIds: retiredInterviewNotificationIds }),
+        riskLevel: "low",
+      });
     }
 
     if (cancellableApprovals.length > 0) {
@@ -2759,6 +2817,7 @@ export async function withdrawApplication(
       cancelledOfferAttributionApprovalIds,
       dismissedOfferAttributionReviewIds,
       cancelledInterviewIds,
+      retiredInterviewNotificationIds,
     };
   });
 }
@@ -2815,6 +2874,12 @@ export async function acceptOfferApplication(applicationId: number, userId: numb
     }
 
     await updateApplicationStatus(applicationId, "accepted", userId);
+    const retiredInterviewNotificationIds = await retireInterviewNotificationsAfterApplicationClosure(
+      applicationId,
+      userId,
+      "accepted",
+      "applications.confirmOfferAcceptance"
+    );
     if (cancelledFollowUpApprovals.length > 0 || cancelledInterviewIds.length > 0) {
       await createAuditEvent({
         userId,
@@ -2837,6 +2902,7 @@ export async function acceptOfferApplication(applicationId: number, userId: numb
     return {
       cancelledFollowUpApprovalIds: cancelledFollowUpApprovals.map((approval) => approval.id),
       cancelledInterviewIds,
+      retiredInterviewNotificationIds,
     };
   }
 
@@ -2915,6 +2981,35 @@ export async function acceptOfferApplication(applicationId: number, userId: numb
       throw new Error("Application status changed concurrently. Refresh and try again.");
     }
 
+    const unreadInterviewNotifications = await tx
+      .select({ id: applicationNotifications.id })
+      .from(applicationNotifications)
+      .where(and(
+        eq(applicationNotifications.applicationId, applicationId),
+        eq(applicationNotifications.userId, userId),
+        isNull(applicationNotifications.readAt)
+      ));
+    const retiredInterviewNotificationIds = unreadInterviewNotifications.map((notification) => notification.id);
+    if (retiredInterviewNotificationIds.length > 0) {
+      await tx
+        .update(applicationNotifications)
+        .set({ readAt: acceptedAt })
+        .where(and(
+          inArray(applicationNotifications.id, retiredInterviewNotificationIds),
+          isNull(applicationNotifications.readAt)
+        ));
+      await tx.insert(auditEvents).values({
+        userId,
+        entityType: "application",
+        entityId: applicationId,
+        action: "interview_notifications_retired_after_application_closure",
+        actor: "user",
+        source: "applications.confirmOfferAcceptance",
+        afterState: JSON.stringify({ status: "accepted", notificationIds: retiredInterviewNotificationIds }),
+        riskLevel: "low",
+      });
+    }
+
     if (cancelledFollowUpApprovalIds.length > 0 || cancelledInterviewIds.length > 0) {
       await tx.insert(auditEvents).values({
         userId,
@@ -2934,7 +3029,7 @@ export async function acceptOfferApplication(applicationId: number, userId: numb
       });
     }
 
-    return { cancelledFollowUpApprovalIds, cancelledInterviewIds };
+    return { cancelledFollowUpApprovalIds, cancelledInterviewIds, retiredInterviewNotificationIds };
   });
 }
 

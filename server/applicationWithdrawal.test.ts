@@ -1,7 +1,7 @@
 import type { TrpcContext } from "./_core/context";
 import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
-import { createAdminReviewItem, createApplication, createApplicationApproval, getApplicationLedgerArtifacts, getUserApplications, listAdminReviewItems, listUserApplicationApprovals, resolveApplicationApproval } from "./db";
+import { createAdminReviewItem, createApplication, createApplicationApproval, getApplicationLedgerArtifacts, getUserApplications, listAdminReviewItems, listUnreadInterviewNotifications, listUserApplicationApprovals, resolveApplicationApproval } from "./db";
 import { createFollowUp, getInterviewSchedules, getUpcomingInterviews, markFollowUpSent, recordEmployerResponse, scheduleInterview } from "./applicationFeatures";
 
 function createContext(userId: number): TrpcContext {
@@ -35,6 +35,13 @@ describe("application withdrawal", () => {
       notes: "Submitted application with pending actions.",
     });
     const applicationId = Number(application.insertId);
+    await recordEmployerResponse({
+      applicationId,
+      responseType: "interview_invite",
+      source: "email",
+      summary: "Recruiter invited the candidate to a first-round video interview.",
+    }, userId);
+    expect(await listUnreadInterviewNotifications(userId)).toHaveLength(1);
     const submissionApproval = await createApplicationApproval({
       userId,
       applicationId,
@@ -88,6 +95,12 @@ describe("application withdrawal", () => {
     )).toBe(true);
     expect(artifacts.auditEvents.some((event) =>
       event.action === "application_status_updated" &&
+      event.afterState?.includes("withdrawn")
+    )).toBe(true);
+    expect(await listUnreadInterviewNotifications(userId)).toHaveLength(0);
+    expect(artifacts.auditEvents.some((event) =>
+      event.action === "interview_notifications_retired_after_application_closure" &&
+      event.source === "applications.withdraw" &&
       event.afterState?.includes("withdrawn")
     )).toBe(true);
   });

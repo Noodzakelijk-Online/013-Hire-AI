@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { TrpcContext } from "./_core/context";
 import { recordEmployerResponse, scheduleInterview } from "./applicationFeatures";
-import { getAuditEventsForEntity, createApplication, listUnreadInterviewNotifications } from "./db";
+import { getAuditEventsForEntity, createApplication, listUnreadInterviewNotifications, updateApplicationStatus } from "./db";
 import { getUserOperatingLedger } from "./applicationCampaigns";
 import { appRouter } from "./routers";
 
@@ -172,5 +172,43 @@ describe("interview notification ledger", () => {
       event.afterState?.includes(String(notification.id)) &&
       event.afterState?.includes('"responseType":"rejection"')
     )).toBe(true);
+  });
+
+  it("keeps a verified invite visible when newer legacy alerts are stale", async () => {
+    const userId = 99176;
+    const activeApplication = await createApplication({ userId, jobId: 1, status: "applied" });
+    const activeApplicationId = Number(activeApplication.insertId);
+    const activeInvite = await recordEmployerResponse({
+      applicationId: activeApplicationId,
+      responseType: "interview_invite",
+      source: "email",
+      sourceReference: "gmail-interview-active-99176",
+      summary: "Recruiter invited the candidate to a current technical interview.",
+    }, userId);
+
+    // Simulate stale records created before closure-triggered alert retirement existed.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    for (let index = 0; index < 5; index += 1) {
+      const staleApplication = await createApplication({ userId, jobId: 20 + index, status: "applied" });
+      const staleApplicationId = Number(staleApplication.insertId);
+      await recordEmployerResponse({
+        applicationId: staleApplicationId,
+        responseType: "interview_invite",
+        source: "email",
+        sourceReference: `gmail-interview-stale-99176-${index}`,
+        summary: "An older interview invitation was later closed by the candidate.",
+      }, userId);
+      await updateApplicationStatus(staleApplicationId, "withdrawn", userId);
+    }
+
+    const ledger = await getUserOperatingLedger(userId);
+    expect(await listUnreadInterviewNotifications(userId)).toHaveLength(6);
+    expect(ledger.queues.interviewNotifications).toEqual([
+      expect.objectContaining({
+        applicationId: activeApplicationId,
+        employerResponseId: activeInvite.responseId,
+      }),
+    ]);
+    expect(ledger.metrics.unreadInterviewNotifications).toBe(1);
   });
 });
