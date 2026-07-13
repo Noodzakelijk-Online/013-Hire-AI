@@ -30,6 +30,16 @@ describe("saved jobs memory fallback", () => {
     });
     expect(updated).toEqual({ id: created.id, updated: true });
 
+    expect(await getSavedJobs(userId)).toMatchObject([
+      {
+        id: created.id,
+        notes: "Saved after user review.",
+        tags: "review-queue",
+        priority: "medium",
+        updatedAt: expect.any(Date),
+      },
+    ]);
+
     await updateSavedJobNotes(userId, jobId, "Ready for manual review.", "manual", "low");
 
     const saved = await getSavedJobs(userId);

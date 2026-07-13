@@ -592,7 +592,11 @@ export const savedJobs = mysqlTable("saved_jobs", {
   tags: text("tags"),
   priority: mysqlEnum("priority", ["low", "medium", "high"]).default("medium"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => [
+  uniqueIndex("saved_jobs_user_job_unique").on(table.userId, table.jobId),
+  index("saved_jobs_user_updated_idx").on(table.userId, table.updatedAt),
+]);
 
 /**
  * Application Notes

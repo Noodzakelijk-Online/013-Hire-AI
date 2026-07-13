@@ -119,36 +119,35 @@ export async function saveJob(input: SaveJobInput) {
     return { id: record.id, updated: false };
   }
 
-  // Check if already saved
-  const existing = await db
-    .select()
-    .from(savedJobs)
-    .where(and(eq(savedJobs.userId, input.userId), eq(savedJobs.jobId, input.jobId)))
-    .limit(1);
+  const result = await db
+    .insert(savedJobs)
+    .values({
+      userId: input.userId,
+      jobId: input.jobId,
+      notes: input.notes ?? null,
+      tags: input.tags ?? null,
+      priority: input.priority ?? "medium",
+    })
+    .onDuplicateKeyUpdate({
+      set: {
+        id: sql`LAST_INSERT_ID(${savedJobs.id})`,
+        notes: input.notes === undefined
+          ? sql`${savedJobs.notes}`
+          : sql`VALUES(${savedJobs.notes})`,
+        tags: input.tags === undefined
+          ? sql`${savedJobs.tags}`
+          : sql`VALUES(${savedJobs.tags})`,
+        priority: input.priority === undefined
+          ? sql`${savedJobs.priority}`
+          : sql`VALUES(${savedJobs.priority})`,
+        updatedAt: new Date(),
+      },
+    });
 
-  if (existing.length > 0) {
-    // Update existing
-    await db
-      .update(savedJobs)
-      .set({
-        notes: input.notes,
-        tags: input.tags,
-        priority: input.priority,
-      })
-      .where(eq(savedJobs.id, existing[0].id));
-    return { id: existing[0].id, updated: true };
-  }
-
-  // Insert new
-  const result = await db.insert(savedJobs).values({
-    userId: input.userId,
-    jobId: input.jobId,
-    notes: input.notes || null,
-    tags: input.tags || null,
-    priority: input.priority || "medium",
-  });
-
-  return { id: Number(result[0].insertId), updated: false };
+  return {
+    id: Number(result[0].insertId),
+    updated: Number(result[0].affectedRows) !== 1,
+  };
 }
 
 export async function unsaveJob(userId: number, jobId: number) {
@@ -189,6 +188,7 @@ export async function getSavedJobs(userId: number) {
             tags: item.tags,
             priority: item.priority,
             createdAt: item.createdAt,
+            updatedAt: item.updatedAt,
             job: job ? {
               id: job.id,
               title: job.title,
@@ -212,6 +212,7 @@ export async function getSavedJobs(userId: number) {
       tags: savedJobs.tags,
       priority: savedJobs.priority,
       createdAt: savedJobs.createdAt,
+      updatedAt: savedJobs.updatedAt,
       job: {
         id: jobs.id,
         title: jobs.title,
@@ -226,7 +227,7 @@ export async function getSavedJobs(userId: number) {
     .from(savedJobs)
     .leftJoin(jobs, eq(savedJobs.jobId, jobs.id))
     .where(eq(savedJobs.userId, userId))
-    .orderBy(desc(savedJobs.createdAt));
+    .orderBy(desc(savedJobs.updatedAt));
 
   return result;
 }
@@ -255,7 +256,7 @@ export async function updateSavedJobNotes(
     return { success: true };
   }
 
-  const updateData: Record<string, unknown> = { notes };
+  const updateData: Record<string, unknown> = { notes, updatedAt: new Date() };
   if (tags !== undefined) updateData.tags = tags;
   if (priority !== undefined) updateData.priority = priority;
 
