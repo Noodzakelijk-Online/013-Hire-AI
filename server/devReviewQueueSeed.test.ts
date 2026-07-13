@@ -3,11 +3,36 @@ import type { Request } from "express";
 import { COOKIE_NAME } from "../shared/const";
 import { getUserOperatingLedger } from "./applicationCampaigns";
 import { getAdminReviewEvidenceSnapshot, getApplicationLedgerArtifacts, getUserApplications, getUserSuccessFees } from "./db";
-import { DEV_REVIEW_QUEUE_EMAIL, seedDevReviewQueueUser } from "./devReviewQueueSeed";
+import {
+  DEV_ADMIN_EMAIL,
+  DEV_ADMIN_OPEN_ID,
+  DEV_REVIEW_QUEUE_EMAIL,
+  seedDevReviewQueueUser,
+} from "./devReviewQueueSeed";
 import { ENV } from "./_core/env";
 import { sdk } from "./_core/sdk";
 
 describe("development review queue seed", () => {
+  it("restores a seeded local admin session without attempting unavailable OAuth", async () => {
+    ENV.cookieSecret = "dev-review-queue-test-secret";
+    ENV.appId = "dev-review-queue-test-app";
+    ENV.oAuthServerUrl = "";
+
+    const sessionToken = await sdk.createSessionToken(DEV_ADMIN_OPEN_ID, {
+      name: "Admin QA",
+    });
+
+    const authenticatedUser = await sdk.authenticateRequest({
+      headers: {
+        cookie: `${COOKIE_NAME}=${sessionToken}`,
+      },
+    } as Request);
+
+    expect(authenticatedUser.openId).toBe(DEV_ADMIN_OPEN_ID);
+    expect(authenticatedUser.email).toBe(DEV_ADMIN_EMAIL);
+    expect(authenticatedUser.role).toBe("admin");
+  });
+
   it("creates an authenticatable user with visible operating queue data", async () => {
     ENV.cookieSecret = "dev-review-queue-test-secret";
     ENV.appId = "dev-review-queue-test-app";

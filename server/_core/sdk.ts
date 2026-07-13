@@ -6,6 +6,12 @@ import type { Request } from "express";
 import { SignJWT, jwtVerify } from "jose";
 import type { User } from "../../drizzle/schema";
 import * as db from "../db";
+import {
+  DEV_ADMIN_OPEN_ID,
+  DEV_REVIEW_QUEUE_OPEN_ID,
+  seedDevAdminUser,
+  seedDevReviewQueueUser,
+} from "../devReviewQueueSeed";
 import { ENV } from "./env";
 import type {
   ExchangeTokenRequest,
@@ -31,7 +37,7 @@ const GET_USER_INFO_WITH_JWT_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserI
 class OAuthService {
   constructor(private client: ReturnType<typeof axios.create>) {
     console.log("[OAuth] Initialized with baseURL:", ENV.oAuthServerUrl);
-    if (!ENV.oAuthServerUrl) {
+    if (!ENV.oAuthServerUrl && ENV.isProduction) {
       console.error(
         "[OAuth] ERROR: OAUTH_SERVER_URL is not configured! Set OAUTH_SERVER_URL environment variable."
       );
@@ -256,6 +262,22 @@ class SDKServer {
     } as GetUserInfoWithJwtResponse;
   }
 
+  private async restoreLocalDevelopmentUser(openId: string): Promise<User | null> {
+    if (ENV.isProduction || ENV.oAuthServerUrl) {
+      return null;
+    }
+
+    if (openId === DEV_REVIEW_QUEUE_OPEN_ID) {
+      return await seedDevReviewQueueUser();
+    }
+
+    if (openId === DEV_ADMIN_OPEN_ID) {
+      return await seedDevAdminUser();
+    }
+
+    return null;
+  }
+
   async authenticateRequest(req: Request): Promise<User> {
     // Regular authentication flow
     const cookies = this.parseCookies(req.headers.cookie);
@@ -271,6 +293,17 @@ class SDKServer {
     let user = await db.getUserByOpenId(sessionUserId);
 
     // If user not in DB, sync from OAuth server automatically
+    if (!user) {
+      const localDevelopmentUser = await this.restoreLocalDevelopmentUser(sessionUserId);
+      if (localDevelopmentUser) {
+        user = localDevelopmentUser;
+      }
+    }
+
+    if (!user && !ENV.oAuthServerUrl) {
+      throw ForbiddenError("No local development user exists for this session");
+    }
+
     if (!user) {
       try {
         const userInfo = await this.getUserInfoWithJwt(sessionCookie ?? "");
