@@ -39,6 +39,14 @@ export function mergeProfileSkillEvidence(
 }
 
 export function resolveProfileSkillEvidence<T extends ProfileWithSkills>(
+  profile: T,
+  structuredSkills?: ProfileSkillEvidence[]
+): T;
+export function resolveProfileSkillEvidence(
+  profile: null | undefined,
+  structuredSkills?: ProfileSkillEvidence[]
+): null | undefined;
+export function resolveProfileSkillEvidence<T extends ProfileWithSkills>(
   profile: T | null | undefined,
   structuredSkills: ProfileSkillEvidence[] = []
 ): T | null | undefined {

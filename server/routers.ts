@@ -85,6 +85,21 @@ const safeHttpUrl = z.string().trim().max(1000).url().refine((value) => {
   return protocol === "https:" || protocol === "http:";
 }, "URL must use HTTP or HTTPS");
 const socialProfileText = z.string().trim().min(1).max(30_000);
+const profileMatchEvidenceFields = [
+  "skills",
+  "experience",
+  "desiredJobTypes",
+  "desiredLocations",
+  "salaryExpectationMin",
+  "salaryExpectationMax",
+  "needsVisaSponsorship",
+] as const;
+
+function profileMatchEvidenceChanged(input: object) {
+  return profileMatchEvidenceFields.some((field) =>
+    Object.prototype.hasOwnProperty.call(input, field)
+  );
+}
 
 function defaultConnectorScopes(provider: z.infer<typeof connectorProvider>) {
   switch (provider) {
@@ -602,7 +617,13 @@ export const appRouter = router({
           userId: ctx.user.id,
           ...input,
         });
-        return { success: true };
+        const matchRefresh = profileMatchEvidenceChanged(input)
+          ? await (await import("./profileMatchLedger")).refreshProfileMatchLedger({
+              userId: ctx.user.id,
+              source: "profile.update",
+            })
+          : null;
+        return { success: true, matchRefresh };
       }),
 
     discoverLinkedInIdentity: protectedProcedure
@@ -688,6 +709,10 @@ export const appRouter = router({
             githubUrl: candidate.profileUrl,
             skills: mergedSkills || undefined,
           });
+          const matchRefresh = await (await import("./profileMatchLedger")).refreshProfileMatchLedger({
+            userId: ctx.user.id,
+            source: "profile.importGitHubProfile",
+          });
           await createAuditEvent({
             userId: ctx.user.id,
             entityType: "user",
@@ -700,6 +725,7 @@ export const appRouter = router({
               addedSkills: candidate.suggestedSkills,
               selectedRepositoryCount: selectedRepositories.length,
               selectedRepositoryNames: selectedRepositories.map((repository) => repository.name),
+              matchRefresh,
             }),
             riskLevel: "low",
           });
@@ -707,6 +733,7 @@ export const appRouter = router({
             profileUrl: candidate.profileUrl,
             addedSkills: candidate.suggestedSkills,
             selectedRepositories,
+            matchRefresh,
           };
         } catch (error) {
           throw new TRPCError({
@@ -784,6 +811,10 @@ export const appRouter = router({
             resumeFileKey: resume.fileKey,
             ...profileData,
           });
+          const matchRefresh = await (await import("./profileMatchLedger")).refreshProfileMatchLedger({
+            userId: ctx.user.id,
+            source: "profile.importCloudResume",
+          });
           await createAuditEvent({
             userId: ctx.user.id,
             entityType: "user",
@@ -795,10 +826,11 @@ export const appRouter = router({
               provider: input.provider,
               resumeId: resume.id,
               resumeVersion: resume.version,
+              matchRefresh,
             }),
             riskLevel: "medium",
           });
-          return { success: true, parsed, profileData, resume };
+          return { success: true, parsed, profileData, resume, matchRefresh };
         } catch (error) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
@@ -916,7 +948,12 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         const { createUserSkill } = await import("./db");
-        return await createUserSkill({ userId: ctx.user.id, ...input });
+        const result = await createUserSkill({ userId: ctx.user.id, ...input });
+        await (await import("./profileMatchLedger")).refreshProfileMatchLedger({
+          userId: ctx.user.id,
+          source: "profile.addSkill",
+        });
+        return result;
       }),
     updateSkill: protectedProcedure
       .input(z.object({
@@ -929,13 +966,23 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;
         const { updateUserSkill } = await import("./db");
-        return await updateUserSkill(id, ctx.user.id, data);
+        const result = await updateUserSkill(id, ctx.user.id, data);
+        await (await import("./profileMatchLedger")).refreshProfileMatchLedger({
+          userId: ctx.user.id,
+          source: "profile.updateSkill",
+        });
+        return result;
       }),
     deleteSkill: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
         const { deleteUserSkill } = await import("./db");
-        return await deleteUserSkill(input.id, ctx.user.id);
+        const result = await deleteUserSkill(input.id, ctx.user.id);
+        await (await import("./profileMatchLedger")).refreshProfileMatchLedger({
+          userId: ctx.user.id,
+          source: "profile.deleteSkill",
+        });
+        return result;
       }),
 
     // Projects
@@ -2494,8 +2541,12 @@ export const appRouter = router({
           userId: ctx.user.id,
           ...profileData,
         });
+        const matchRefresh = await (await import("./profileMatchLedger")).refreshProfileMatchLedger({
+          userId: ctx.user.id,
+          source: "resume.parse",
+        });
 
-        return { success: true, parsed, profileData };
+        return { success: true, parsed, profileData, matchRefresh };
       }),
 
     // Parse resume from file (base64 encoded PDF/DOCX)
@@ -2541,6 +2592,10 @@ export const appRouter = router({
           resumeFileKey: resume.fileKey,
           ...profileData,
         });
+        const matchRefresh = await (await import("./profileMatchLedger")).refreshProfileMatchLedger({
+          userId: ctx.user.id,
+          source: "resume.parseFile",
+        });
         
         return {
           success: true,
@@ -2549,6 +2604,7 @@ export const appRouter = router({
           resume,
           fileUrl: resume.fileUrl,
           fileKey: resume.fileKey,
+          matchRefresh,
         };
       }),
 

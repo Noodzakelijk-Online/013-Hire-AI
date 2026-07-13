@@ -84,12 +84,15 @@ function matchSalaryScore(profile: UserProfile, job: Job): number {
  */
 export function calculateDeterministicJobMatch(
   userProfile: UserProfile,
-  job: Job
+  job: Job,
+  context: "llm_fallback" | "profile_evidence_refresh" = "llm_fallback"
 ): JobMatchResult {
   const score = scoreJobForProfile(job, userProfile);
   const experienceMatch = userProfile.experience?.trim() ? 50 : 0;
   const reasons = [
-    "Deterministic profile-based analysis used because AI matching was unavailable or invalid.",
+    context === "profile_evidence_refresh"
+      ? "Current candidate evidence was reconciled into this deterministic match."
+      : "Deterministic profile-based analysis used because AI matching was unavailable or invalid.",
     ...score.reasons,
     userProfile.experience?.trim()
       ? "Experience is recorded, but requires human review because no structured years-to-requirement comparison is available."
