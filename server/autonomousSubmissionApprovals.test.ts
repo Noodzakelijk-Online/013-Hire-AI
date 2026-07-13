@@ -19,11 +19,13 @@ vi.mock("./db", async (importOriginal) => ({
 
 import {
   createApplication,
+  createApplicationDecision,
   createEmployerResponse,
   getApplicationLedgerArtifacts,
   getAuditEventsForEntity,
   getAuditEventsForUser,
   getUserJobMatches,
+  getUserApplicationDecisions,
   getUserApplications,
   listAdminReviewItems,
   listUserApplicationApprovals,
@@ -200,6 +202,103 @@ describe("autonomous submission approval gates", () => {
       event.afterState?.includes(`"jobId":${sampleJobs[0].id}`) &&
       event.afterState?.includes('"externalSubmissionPerformed":false')
     )).toBe(true);
+  });
+
+  it("keeps a blocked high-fit job visible as a review decision without creating an application", async () => {
+    const userId = 99111;
+    mocks.getActiveResume.mockResolvedValue(null);
+    await upsertUserProfile({
+      userId,
+      skills: "React, TypeScript, Node.js",
+      experience: "Five years building production web applications.",
+      desiredJobTypes: "full-time",
+      desiredLocations: "remote, worldwide",
+      preferences: JSON.stringify({
+        autonomousEnabled: true,
+        mode: "review_first",
+        minMatchScore: 0,
+        dailyApplicationLimit: 1,
+      }),
+    });
+
+    const result = await runAutonomousForUser(userId, { dailyApplicationLimit: 1, minMatchScore: 0 });
+    const decisions = await getUserApplicationDecisions(userId);
+
+    expect(result.summary.blocked).toBe(1);
+    expect(await getUserApplications(userId)).toHaveLength(0);
+    expect(decisions).toEqual([expect.objectContaining({
+      jobId: sampleJobs[0].id,
+      decision: "review",
+      riskLevel: "high",
+      reviewRequired: 1,
+      reviewReason: expect.stringContaining("Resume is required"),
+    })]);
+  });
+
+  it("does not replace an explicit user job decision with an autonomous terminal outcome", async () => {
+    const userId = 99112;
+    mocks.getActiveResume.mockResolvedValue(null);
+    await upsertUserProfile({
+      userId,
+      skills: "React, TypeScript, Node.js",
+      experience: "Five years building production web applications.",
+      desiredJobTypes: "full-time",
+      desiredLocations: "remote, worldwide",
+      preferences: JSON.stringify({
+        autonomousEnabled: true,
+        mode: "review_first",
+        minMatchScore: 0,
+        dailyApplicationLimit: 1,
+      }),
+    });
+    await createApplicationDecision({
+      userId,
+      jobId: sampleJobs[0].id,
+      decision: "ignore",
+      decisionReason: "I do not want to pursue this employer.",
+      matchScore: 80,
+      riskLevel: "low",
+      reviewRequired: 0,
+      decidedBy: "user",
+    });
+
+    await runAutonomousForUser(userId, { dailyApplicationLimit: 1, minMatchScore: 0 });
+    const decisions = await getUserApplicationDecisions(userId);
+
+    expect(decisions).toEqual([expect.objectContaining({
+      jobId: sampleJobs[0].id,
+      decision: "ignore",
+      decidedBy: "user",
+      decisionReason: "I do not want to pursue this employer.",
+    })]);
+  });
+
+  it("records daily-limit deferrals as saved decisions for a future run", async () => {
+    const userId = 99113;
+    mocks.getActiveJobs.mockResolvedValue([sampleJobs[0], sampleJobs[1]]);
+    await upsertUserProfile({
+      userId,
+      skills: "React, TypeScript, Node.js",
+      experience: "Five years building production web applications.",
+      desiredJobTypes: "full-time",
+      desiredLocations: "remote, worldwide",
+      preferences: JSON.stringify({
+        autonomousEnabled: true,
+        mode: "review_first",
+        minMatchScore: 0,
+        dailyApplicationLimit: 1,
+      }),
+    });
+
+    const result = await runAutonomousForUser(userId, { dailyApplicationLimit: 1, minMatchScore: 0 });
+    const decisions = await getUserApplicationDecisions(userId);
+    const deferredDecision = decisions.find((decision) => decision.decision === "save");
+
+    expect(result.summary.skipped).toBe(1);
+    expect(deferredDecision).toEqual(expect.objectContaining({
+      reviewRequired: 0,
+      decisionReason: expect.stringContaining("Daily preparation limit reached"),
+    }));
   });
 
   it("does not draft routine follow-ups while an employer response needs review", async () => {

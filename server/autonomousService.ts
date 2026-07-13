@@ -23,6 +23,7 @@ import {
   getApplicationCampaign,
   getEmployerResponses,
   getJobById,
+  getUserApplicationDecisions,
   getUserApplications,
   getUserProfile,
   renewAutonomousRunLease,
@@ -106,6 +107,42 @@ function autonomousMatchReasons(decision: AutonomousJobDecision) {
     decision.reasons.length > 0 ? `Evidence: ${decision.reasons.join(" ")}` : "",
     decision.blockers.length > 0 ? `Review blockers: ${decision.blockers.join(" ")}` : "",
   ].filter(Boolean).join(" ");
+}
+
+function autonomousTerminalDecisionReason(decision: AutonomousJobDecision) {
+  return [
+    `Autonomous plan ${decision.action === "blocked" ? "blocked" : "did not prepare"} ${decision.title} at ${decision.company}.`,
+    decision.reasons.length > 0 ? `Match evidence: ${decision.reasons.join(" ")}` : "",
+    decision.blockers.length > 0 ? `Blockers: ${decision.blockers.join(" ")}` : "",
+    decision.automationNotes.length > 0 ? `Operating notes: ${decision.automationNotes.join(" ")}` : "",
+  ].filter(Boolean).join(" ");
+}
+
+function isDeferredByDailyLimit(decision: AutonomousJobDecision) {
+  return decision.automationNotes.some((note) =>
+    note.includes("Daily preparation limit reached")
+  );
+}
+
+async function recordAutonomousTerminalDecision(userId: number, decision: AutonomousJobDecision) {
+  const blocked = decision.action === "blocked";
+  const deferred = isDeferredByDailyLimit(decision);
+  const reviewReason = [
+    ...decision.blockers,
+    ...decision.automationNotes,
+  ].filter(Boolean).join(" ");
+
+  await createApplicationDecision({
+    userId,
+    jobId: decision.jobId,
+    decision: blocked ? "review" : deferred ? "save" : "ignore",
+    decisionReason: autonomousTerminalDecisionReason(decision),
+    matchScore: decision.matchScore,
+    riskLevel: blocked ? "high" : "low",
+    reviewRequired: blocked ? 1 : 0,
+    reviewReason: blocked ? reviewReason || "Resolve the recorded blockers before application preparation." : null,
+    decidedBy: "system",
+  });
 }
 
 async function getCurrentJobForAutonomousDecision(jobId: number) {
@@ -298,11 +335,12 @@ async function executeAutonomousRun(
   overrides: AutonomousPreferences = {},
   assertLeaseActive: () => void = () => {}
 ): Promise<AutonomousRunResult> {
-  const [jobList, profile, applications, activeResume] = await Promise.all([
+  const [jobList, profile, applications, activeResume, existingDecisions] = await Promise.all([
     getActiveJobs(250, 0),
     getUserProfile(userId),
     getUserApplications(userId),
     getActiveResume(userId),
+    getUserApplicationDecisions(userId),
   ]);
   const resolvedPreferences = {
     ...parseAutonomousPreferences(profile?.preferences),
@@ -348,6 +386,12 @@ async function executeAutonomousRun(
     actionErrors.push(`${label} failed`);
   };
 
+  const userDecisionJobIds = new Set(
+    existingDecisions
+      .filter((decision) => decision.decidedBy === "user")
+      .map((decision) => decision.jobId)
+  );
+
   // Keep autonomous scoring visible through the same canonical match ledger used by jobs.getMatches.
   for (const decision of plan.decisions) {
     assertLeaseActive();
@@ -360,6 +404,19 @@ async function executeAutonomousRun(
       });
     } catch (error) {
       recordFailure(`Job ${decision.jobId} match persistence`, error);
+    }
+  }
+
+  // Keep non-preparation outcomes explainable without creating a pending application record.
+  for (const decision of plan.decisions) {
+    if ((decision.action !== "blocked" && decision.action !== "skip") || userDecisionJobIds.has(decision.jobId)) {
+      continue;
+    }
+    assertLeaseActive();
+    try {
+      await recordAutonomousTerminalDecision(userId, decision);
+    } catch (error) {
+      recordFailure(`Job ${decision.jobId} terminal decision persistence`, error);
     }
   }
 
