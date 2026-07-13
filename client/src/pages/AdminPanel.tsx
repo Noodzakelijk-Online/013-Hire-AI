@@ -101,6 +101,17 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+function ScraperRunOutcomeBadge({ outcome }: { outcome: "success" | "partial" | "failed" | null | undefined }) {
+  if (!outcome) return null;
+
+  const details = {
+    success: { label: "Last cycle clean", tone: "border-emerald-500/30 text-emerald-300" },
+    partial: { label: "Last cycle partial", tone: "border-amber-500/30 text-amber-300" },
+    failed: { label: "Last cycle failed", tone: "border-red-500/30 text-red-300" },
+  }[outcome];
+  return <Badge variant="outline" className={details.tone}>{details.label}</Badge>;
+}
+
 export default function AdminPanel() {
   const { user, loading } = useAuth();
   const [, setLocation] = useLocation();
@@ -496,6 +507,7 @@ export default function AdminPanel() {
                         Running
                       </Badge>
                     )}
+                    <ScraperRunOutcomeBadge outcome={scrapingStatus?.scheduler.lastRunOutcome} />
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -506,7 +518,10 @@ export default function AdminPanel() {
                       ["Failed sources", scraperSourceOutcomes.failed],
                       ["Partial sources", scraperSourceOutcomes.partial],
                       ["Registry sources", scrapingStatus?.coverage.registeredSources ?? 0],
-                      ["Successful runs", scrapingStatus?.scheduler.totalRunsCompleted ?? 0],
+                      ["Completed cycles", scrapingStatus?.scheduler.totalRunsCompleted ?? 0],
+                      ["Clean cycles", scrapingStatus?.scheduler.totalSuccessfulRuns ?? 0],
+                      ["Partial cycles", scrapingStatus?.scheduler.totalPartialRuns ?? 0],
+                      ["Failed cycles", scrapingStatus?.scheduler.totalFailedRuns ?? 0],
                       ["Jobs saved", scrapingStatus?.scheduler.totalJobsScraped ?? 0],
                       ["Attention signals", scraperSourceOutcomes.issues + (scrapingStatus?.scheduler.errors.length ?? 0) + (scrapingStatus?.coverage.unavailableConfiguredSources ?? 0)],
                     ].map(([label, value]) => (
@@ -518,11 +533,11 @@ export default function AdminPanel() {
                   </div>
                   <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
                     <div className="rounded-md border border-slate-800 bg-slate-950/50 p-3">
-                      <div className="text-xs uppercase tracking-wide text-slate-500">Last discovery</div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Last cycle</div>
                       <div className="mt-1 text-slate-200">
                         {scrapingStatus?.scheduler.lastRunAt
                           ? new Date(scrapingStatus.scheduler.lastRunAt).toLocaleString()
-                          : "No completed run"}
+                          : "No recorded cycle"}
                       </div>
                     </div>
                     <div className="rounded-md border border-slate-800 bg-slate-950/50 p-3">

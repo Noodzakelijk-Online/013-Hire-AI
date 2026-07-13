@@ -22,7 +22,21 @@ export interface SchedulerStatus {
   nextRunAt: Date | null;
   totalJobsScraped: number;
   totalRunsCompleted: number;
+  totalSuccessfulRuns: number;
+  totalPartialRuns: number;
+  totalFailedRuns: number;
+  lastRunOutcome: "success" | "partial" | "failed" | null;
   errors: string[];
+}
+
+function classifyRunOutcome(platformResults: Record<string, { errors: string[] }>) {
+  const results = Object.values(platformResults);
+  if (results.length === 0) return "failed" as const;
+
+  const failedSources = results.filter((result) => result.errors.length > 0).length;
+  if (failedSources === 0) return "success" as const;
+  if (failedSources === results.length) return "failed" as const;
+  return "partial" as const;
 }
 
 export class JobScrapingScheduler {
@@ -38,6 +52,10 @@ export class JobScrapingScheduler {
     nextRunAt: null,
     totalJobsScraped: 0,
     totalRunsCompleted: 0,
+    totalSuccessfulRuns: 0,
+    totalPartialRuns: 0,
+    totalFailedRuns: 0,
+    lastRunOutcome: null,
     errors: [],
   };
 
@@ -118,6 +136,12 @@ export class JobScrapingScheduler {
       this.status.totalRunsCompleted++;
       this.status.lastRunAt = new Date();
 
+      const outcome = classifyRunOutcome(result.platformResults);
+      this.status.lastRunOutcome = outcome;
+      if (outcome === "success") this.status.totalSuccessfulRuns++;
+      else if (outcome === "partial") this.status.totalPartialRuns++;
+      else this.status.totalFailedRuns++;
+
       // Collect errors from platform results
       for (const [platform, platformResult] of Object.entries(result.platformResults)) {
         if (platformResult.errors.length > 0) {
@@ -132,6 +156,9 @@ export class JobScrapingScheduler {
       const errorMsg = `Scraping run failed: ${error}`;
       console.error(`[Scheduler] ${errorMsg}`);
       this.status.errors.push(errorMsg);
+      this.status.totalFailedRuns++;
+      this.status.lastRunOutcome = "failed";
+      this.status.lastRunAt = new Date();
     } finally {
       this.status.isRunning = false;
       this.status.nextRunAt = this.intervalId 
