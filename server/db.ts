@@ -2481,11 +2481,18 @@ export async function getUserOfferAttributionReviews(userId: number) {
     const application = applicationId
       ? userApplications.find((item) => item.id === applicationId) ?? null
       : null;
+    const payload = parseApprovalPayload(approval.payload);
     let response: EmployerResponse | null = null;
     if (applicationId) {
       try {
         const responses = await getEmployerResponses(applicationId, userId);
-        response = responses.find((item) => item.responseType === "offer") ?? responses[0] ?? null;
+        const responseId = payload && typeof payload.responseId === "number" &&
+          Number.isInteger(payload.responseId) && payload.responseId > 0
+          ? payload.responseId
+          : null;
+        response = responseId
+          ? responses.find((item) => item.id === responseId && item.responseType === "offer") ?? null
+          : responses.find((item) => item.responseType === "offer") ?? null;
       } catch {
         response = null;
       }
@@ -2499,7 +2506,7 @@ export async function getUserOfferAttributionReviews(userId: number) {
       approval,
       application,
       latestEmployerResponse: response,
-      payload: parseApprovalPayload(approval.payload),
+      payload,
       recommendedAction: "report_hire" as const,
     };
   }));

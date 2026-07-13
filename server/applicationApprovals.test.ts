@@ -484,6 +484,60 @@ describe("application approval ledger", () => {
     expect(reviews[0].recommendedAction).toBe("report_hire");
   });
 
+  it("keeps an offer-attribution review linked to its recorded offer response after an amendment", async () => {
+    const userId = 98009;
+    const application = await createApplication({
+      userId,
+      jobId: 3,
+      status: "offer",
+      notes: "An offer was revised before the candidate reported a hire.",
+    });
+    const applicationId = Number(application.insertId);
+    const originalOffer = await createEmployerResponse({
+      applicationId,
+      userId,
+      responseType: "offer",
+      source: "email",
+      sourceReference: "gmail-offer-original-98009",
+      summary: "Employer offered the original compensation package.",
+      receivedAt: new Date("2026-06-29T10:00:00.000Z"),
+      statusBefore: "interview",
+      statusAfter: "offer",
+    });
+    await createEmployerResponse({
+      applicationId,
+      userId,
+      responseType: "offer",
+      source: "email",
+      sourceReference: "gmail-offer-revised-98009",
+      summary: "Employer revised the compensation package after negotiation.",
+      receivedAt: new Date("2026-06-30T10:00:00.000Z"),
+      statusBefore: "offer",
+      statusAfter: "offer",
+    });
+    await createApplicationApproval({
+      userId,
+      applicationId,
+      entityType: "application",
+      entityId: applicationId,
+      approvalType: "offer_attribution",
+      status: "pending",
+      riskLevel: "high",
+      requestedBy: "system",
+      title: "Confirm offer attribution",
+      description: "Review the original offer record.",
+      payload: JSON.stringify({
+        responseId: Number(originalOffer.insertId),
+        responseType: "offer",
+      }),
+    });
+
+    const [review] = await getUserOfferAttributionReviews(userId);
+
+    expect(review.latestEmployerResponse?.id).toBe(Number(originalOffer.insertId));
+    expect(review.latestEmployerResponse?.summary).toContain("original compensation");
+  });
+
   it("does not surface attribution reviews until the linked application has an offer", async () => {
     const userId = 98008;
     const application = await createApplication({
