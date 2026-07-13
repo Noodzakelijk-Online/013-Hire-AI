@@ -9,7 +9,12 @@ const mocks = {
   getConnectorAuthorization: vi.fn(),
   getUserApplications: vi.fn(),
   listUserConnectorAccounts: vi.fn(),
+  upsertConnectorAuthorization: vi.fn(),
+  upsertUserConnectorAccount: vi.fn(),
   decryptConnectorToken: vi.fn(),
+  encryptConnectorToken: vi.fn(),
+  getConnectorOAuthConfig: vi.fn(),
+  refreshConnectorAccessToken: vi.fn(),
 };
 const dependencies = mocks as unknown as InboxResponseDiscoveryDependencies;
 
@@ -39,9 +44,11 @@ describe("inbox response discovery", () => {
     mocks.listUserConnectorAccounts.mockResolvedValue([connectedInbox("gmail")]);
     mocks.getConnectorAuthorization.mockResolvedValue({
       encryptedAccessToken: "encrypted-access",
+      encryptedRefreshToken: "encrypted-refresh",
       accessTokenExpiresAt: new Date("2026-07-13T13:00:00.000Z"),
     });
     mocks.decryptConnectorToken.mockReturnValue("provider-access-token");
+    mocks.upsertUserConnectorAccount.mockResolvedValue(undefined);
     mocks.getUserApplications.mockResolvedValue([{
       id: 701,
       status: "applied",
@@ -71,6 +78,11 @@ describe("inbox response discovery", () => {
       confidence: "medium",
     })]);
     expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(mocks.upsertUserConnectorAccount).toHaveBeenCalledWith(expect.objectContaining({
+      provider: "gmail",
+      status: "connected",
+      lastVerifiedAt: now,
+    }));
   });
 
   it("rejects stale inbox consent before reading any external message", async () => {
@@ -105,5 +117,44 @@ describe("inbox response discovery", () => {
       applicationId: 701,
       suggestedResponseType: "rejection",
     })]);
+  });
+
+  it("renews an expired Gmail grant before scanning recruiting messages", async () => {
+    mocks.getConnectorAuthorization.mockResolvedValue({
+      encryptedAccessToken: "expired-access",
+      encryptedRefreshToken: "encrypted-refresh",
+      accessTokenExpiresAt: new Date("2026-07-13T11:59:00.000Z"),
+    });
+    mocks.decryptConnectorToken
+      .mockReturnValueOnce("expired-access-token")
+      .mockReturnValueOnce("refresh-token");
+    mocks.getConnectorOAuthConfig.mockReturnValue({ provider: "gmail" });
+    mocks.refreshConnectorAccessToken.mockResolvedValue({
+      accessToken: "renewed-access-token",
+      refreshToken: null,
+      expiresAt: new Date("2026-07-13T13:00:00.000Z"),
+      tokenType: "Bearer",
+      grantedScopes: ["https://www.googleapis.com/auth/gmail.metadata"],
+    });
+    mocks.encryptConnectorToken.mockReturnValue("renewed-encrypted-access");
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ messages: [] }), { status: 200 }));
+
+    await expect(discoverInboxResponseCandidates(700, "gmail", options(fetcher))).resolves.toEqual([]);
+
+    expect(mocks.refreshConnectorAccessToken).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "gmail" }),
+      "refresh-token",
+      fetcher
+    );
+    expect(mocks.upsertConnectorAuthorization).toHaveBeenCalledWith(expect.objectContaining({
+      provider: "gmail",
+      encryptedAccessToken: "renewed-encrypted-access",
+      encryptedRefreshToken: null,
+    }));
+    expect(fetcher).toHaveBeenCalledWith(
+      expect.stringContaining("gmail.googleapis.com"),
+      expect.objectContaining({ headers: { Authorization: "Bearer renewed-access-token" } })
+    );
   });
 });

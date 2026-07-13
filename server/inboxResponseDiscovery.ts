@@ -1,6 +1,18 @@
 import { isConnectorAuthorizationStale } from "@shared/profileEvidence";
-import { decryptConnectorToken } from "./connectorOAuth";
-import { getConnectorAuthorization, getUserApplications, listUserConnectorAccounts } from "./db";
+import {
+  decryptConnectorToken,
+  encryptConnectorToken,
+  getConnectorOAuthConfig,
+  refreshConnectorAccessToken,
+  type OAuthConnectorProvider,
+} from "./connectorOAuth";
+import {
+  getConnectorAuthorization,
+  getUserApplications,
+  listUserConnectorAccounts,
+  upsertConnectorAuthorization,
+  upsertUserConnectorAccount,
+} from "./db";
 
 export type InboxProvider = "gmail" | "outlook";
 export type InboxResponseType = "rejection" | "interview_invite" | "offer" | "employer_question" | "other";
@@ -26,14 +38,24 @@ export type InboxResponseDiscoveryDependencies = {
   getConnectorAuthorization: typeof getConnectorAuthorization;
   getUserApplications: typeof getUserApplications;
   listUserConnectorAccounts: typeof listUserConnectorAccounts;
+  upsertConnectorAuthorization: typeof upsertConnectorAuthorization;
+  upsertUserConnectorAccount: typeof upsertUserConnectorAccount;
   decryptConnectorToken: typeof decryptConnectorToken;
+  encryptConnectorToken: typeof encryptConnectorToken;
+  getConnectorOAuthConfig: typeof getConnectorOAuthConfig;
+  refreshConnectorAccessToken: typeof refreshConnectorAccessToken;
 };
 
 const defaults: InboxResponseDiscoveryDependencies = {
   getConnectorAuthorization,
   getUserApplications,
   listUserConnectorAccounts,
+  upsertConnectorAuthorization,
+  upsertUserConnectorAccount,
   decryptConnectorToken,
+  encryptConnectorToken,
+  getConnectorOAuthConfig,
+  refreshConnectorAccessToken,
 };
 
 function displayName(provider: InboxProvider) {
@@ -53,6 +75,7 @@ async function getInboxAccess(
   userId: number,
   provider: InboxProvider,
   now: Date,
+  fetcher: typeof fetch,
   dependencies: InboxResponseDiscoveryDependencies
 ) {
   const account = (await dependencies.listUserConnectorAccounts(userId))
@@ -67,10 +90,54 @@ async function getInboxAccess(
     throw new Error(`${displayName(provider)} must be freshly authorized with recruiting-message consent before inbox discovery.`);
   }
   const authorization = await dependencies.getConnectorAuthorization(userId, provider);
-  if (!authorization || !authorization.accessTokenExpiresAt || authorization.accessTokenExpiresAt.getTime() <= now.getTime() + TOKEN_EXPIRY_SKEW_MS) {
+  if (!authorization) {
+    throw new Error(`${displayName(provider)} authorization is unavailable. Reauthorize before inbox discovery.`);
+  }
+  const accessToken = dependencies.decryptConnectorToken(authorization.encryptedAccessToken);
+  const expiresAt = authorization.accessTokenExpiresAt?.getTime() ?? null;
+  if (expiresAt !== null && expiresAt > now.getTime() + TOKEN_EXPIRY_SKEW_MS) {
+    return { accessToken, account };
+  }
+  if (!authorization.encryptedRefreshToken) {
     throw new Error(`${displayName(provider)} authorization has expired. Reauthorize before inbox discovery.`);
   }
-  return dependencies.decryptConnectorToken(authorization.encryptedAccessToken);
+  const config = dependencies.getConnectorOAuthConfig(provider as OAuthConnectorProvider);
+  if (!config) {
+    throw new Error(`${displayName(provider)} token renewal is not configured in this deployment.`);
+  }
+  const refreshed = await dependencies.refreshConnectorAccessToken(
+    config,
+    dependencies.decryptConnectorToken(authorization.encryptedRefreshToken),
+    fetcher
+  );
+  await dependencies.upsertConnectorAuthorization({
+    userId,
+    provider,
+    encryptedAccessToken: dependencies.encryptConnectorToken(refreshed.accessToken),
+    encryptedRefreshToken: refreshed.refreshToken ? dependencies.encryptConnectorToken(refreshed.refreshToken) : null,
+    accessTokenExpiresAt: refreshed.expiresAt,
+    tokenType: refreshed.tokenType,
+    grantedScopes: JSON.stringify(refreshed.grantedScopes),
+  });
+  return { accessToken: refreshed.accessToken, account };
+}
+
+async function markInboxAccessVerified(
+  userId: number,
+  account: Awaited<ReturnType<typeof listUserConnectorAccounts>>[number],
+  now: Date,
+  dependencies: InboxResponseDiscoveryDependencies
+) {
+  await dependencies.upsertUserConnectorAccount({
+    userId,
+    provider: account.provider,
+    status: "connected",
+    consentScopes: account.consentScopes,
+    externalAccountLabel: account.externalAccountLabel,
+    connectionRequestedAt: account.connectionRequestedAt,
+    lastVerifiedAt: now,
+    disconnectedAt: null,
+  });
 }
 
 function classifyResponse(text: string): InboxResponseType {
@@ -138,7 +205,7 @@ export async function discoverInboxResponseCandidates(
   const fetcher = options.fetcher ?? fetch;
   const now = options.now ?? new Date();
   const dependencies = options.dependencies ?? defaults;
-  const accessToken = await getInboxAccess(userId, provider, now, dependencies);
+  const { accessToken, account } = await getInboxAccess(userId, provider, now, fetcher, dependencies);
   const applications = await dependencies.getUserApplications(userId);
   if (provider === "gmail") {
     const list = await fetcher("https://gmail.googleapis.com/gmail/v1/users/me/messages?" + new URLSearchParams({
@@ -147,6 +214,7 @@ export async function discoverInboxResponseCandidates(
     }), { headers: { Authorization: `Bearer ${accessToken}` } });
     if (!list.ok) throw new Error("Gmail inbox discovery is temporarily unavailable.");
     const payload = await list.json() as { messages?: Array<{ id?: unknown }> };
+    await markInboxAccessVerified(userId, account, now, dependencies);
     const messages = Array.isArray(payload.messages) ? payload.messages.slice(0, MAX_MESSAGES) : [];
     const candidates: InboxResponseCandidate[] = [];
     for (const message of messages) {
@@ -182,6 +250,7 @@ export async function discoverInboxResponseCandidates(
   }), { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!response.ok) throw new Error("Outlook inbox discovery is temporarily unavailable.");
   const payload = await response.json() as { value?: Array<Record<string, unknown>> };
+  await markInboxAccessVerified(userId, account, now, dependencies);
   return (Array.isArray(payload.value) ? payload.value : []).flatMap((message): InboxResponseCandidate[] => {
     const messageId = typeof message.id === "string" ? message.id : "";
     const subject = typeof message.subject === "string" ? message.subject : "";
