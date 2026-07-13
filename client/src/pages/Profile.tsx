@@ -39,6 +39,10 @@ import {
   type ProfileEvidenceProviderId,
   type ProfileEvidenceProviderStatus,
 } from "@/lib/profileEvidenceControl";
+import {
+  getConnectorRequestAction,
+  type ConnectorProviderId,
+} from "@/lib/connectorConnectionControl";
 import { toast } from "sonner";
 import AppHeader from "@/components/AppHeader";
 import {
@@ -132,6 +136,9 @@ export default function Profile() {
   const evidenceReadinessQuery = trpc.profile.getEvidenceReadiness.useQuery(undefined, {
     enabled: isAuthenticated,
   });
+  const connectorOAuthAvailabilityQuery = trpc.connectors.getOAuthAvailability.useQuery(undefined, {
+    enabled: isAuthenticated,
+  });
   const workExperiencesQuery = trpc.profile.getWorkExperiences.useQuery(undefined, {
     enabled: isAuthenticated,
   });
@@ -177,6 +184,13 @@ export default function Profile() {
       window.location.assign(result.authorizationUrl);
     },
     onError: (error) => toast.error(error.message || "Unable to start connector authorization"),
+  });
+  const requestConnectorConnection = trpc.connectors.requestConnection.useMutation({
+    onSuccess: async (result) => {
+      toast.success(result.message || "Connector request recorded");
+      await evidenceReadinessQuery.refetch();
+    },
+    onError: (error) => toast.error(error.message || "Unable to record connector request"),
   });
   const disconnectConnector = trpc.connectors.disconnect.useMutation({
     onSuccess: async () => {
@@ -343,6 +357,11 @@ export default function Profile() {
     }),
     [evidenceReadinessQuery.data, profileQuery.data]
   );
+  const connectorOAuthAvailability = useMemo(
+    () => new Map(connectorOAuthAvailabilityQuery.data?.map((item) => [item.provider, item.available]) ?? []),
+    [connectorOAuthAvailabilityQuery.data]
+  );
+  const connectorActionPending = startConnectorOAuth.isPending || requestConnectorConnection.isPending;
   const isConnectorConnected = (providerId: ConnectorProviderId) => evidenceControl.providers.some((provider) =>
     provider.id === providerId && provider.connectionStatus === "connected"
   );
@@ -432,6 +451,11 @@ export default function Profile() {
   };
 
   const handleRequestConnectorConnection = (provider: ConnectorProviderId) => {
+    const action = getConnectorRequestAction(provider, connectorOAuthAvailability.get(provider));
+    if (action === "record_request") {
+      requestConnectorConnection.mutate({ provider });
+      return;
+    }
     startConnectorOAuth.mutate({ provider });
   };
 
@@ -596,7 +620,7 @@ export default function Profile() {
                 <EvidenceProviderRow
                   key={provider.id}
                   provider={provider}
-                  isRequesting={startConnectorOAuth.isPending}
+                  isRequesting={connectorActionPending}
                   isDisconnecting={disconnectConnector.isPending}
                   onRequestConnection={
                     canRequestProviderConnector(provider)
@@ -638,7 +662,7 @@ export default function Profile() {
                 variant="outline"
                 className="h-24 flex-col gap-2 border-slate-700 hover:border-cyan-500 hover:bg-cyan-500/10"
                 onClick={handleLinkedInConnect}
-                disabled={startConnectorOAuth.isPending || discoverLinkedInIdentity.isPending}
+                disabled={connectorActionPending || discoverLinkedInIdentity.isPending}
               >
                 {discoverLinkedInIdentity.isPending ? <Loader2 className="w-6 h-6 animate-spin text-cyan-400" /> : <Linkedin className="w-6 h-6 text-blue-500" />}
                 <span className="text-white">{linkedInConnected ? "Review LinkedIn Identity" : "Connect LinkedIn"}</span>
@@ -648,7 +672,7 @@ export default function Profile() {
                 variant="outline"
                 className="h-24 flex-col gap-2 border-slate-700 hover:border-cyan-500 hover:bg-cyan-500/10"
                 onClick={handleGitHubProfileDiscovery}
-                disabled={startConnectorOAuth.isPending || discoverGitHubProfile.isPending}
+                disabled={connectorActionPending || discoverGitHubProfile.isPending}
               >
                 {discoverGitHubProfile.isPending ? <Loader2 className="w-6 h-6 animate-spin text-cyan-400" /> : <Github className="w-6 h-6 text-white" />}
                 <span className="text-white">{githubConnected ? "Review GitHub Profile" : "Connect GitHub"}</span>
@@ -658,7 +682,7 @@ export default function Profile() {
                 variant="outline"
                 className="h-24 flex-col gap-2 border-slate-700 hover:border-cyan-500 hover:bg-cyan-500/10"
                 onClick={() => handleCloudDiscovery("google_drive")}
-                disabled={startConnectorOAuth.isPending || discoverCloudDocuments.isPending}
+                disabled={connectorActionPending || discoverCloudDocuments.isPending}
               >
                 {discoverCloudDocuments.isPending ? (
                   <Loader2 className="w-6 h-6 animate-spin text-cyan-400" />
@@ -672,7 +696,7 @@ export default function Profile() {
                 variant="outline"
                 className="h-24 flex-col gap-2 border-slate-700 hover:border-cyan-500 hover:bg-cyan-500/10"
                 onClick={() => handleCloudDiscovery("dropbox")}
-                disabled={startConnectorOAuth.isPending || discoverCloudDocuments.isPending}
+                disabled={connectorActionPending || discoverCloudDocuments.isPending}
               >
                 {discoverCloudDocuments.isPending ? (
                   <Loader2 className="w-6 h-6 animate-spin text-cyan-400" />
@@ -686,7 +710,7 @@ export default function Profile() {
                 variant="outline"
                 className="h-24 flex-col gap-2 border-slate-700 hover:border-cyan-500 hover:bg-cyan-500/10"
                 onClick={() => handleInboxDiscovery("gmail")}
-                disabled={startConnectorOAuth.isPending || discoverInboxResponses.isPending}
+                disabled={connectorActionPending || discoverInboxResponses.isPending}
               >
                 {discoverInboxResponses.isPending ? <Loader2 className="w-6 h-6 animate-spin text-cyan-400" /> : <Mail className="w-6 h-6 text-cyan-400" />}
                 <span className="text-white">{gmailConnected ? "Find Gmail Replies" : "Connect Gmail"}</span>
@@ -696,7 +720,7 @@ export default function Profile() {
                 variant="outline"
                 className="h-24 flex-col gap-2 border-slate-700 hover:border-cyan-500 hover:bg-cyan-500/10"
                 onClick={() => handleInboxDiscovery("outlook")}
-                disabled={startConnectorOAuth.isPending || discoverInboxResponses.isPending}
+                disabled={connectorActionPending || discoverInboxResponses.isPending}
               >
                 {discoverInboxResponses.isPending ? <Loader2 className="w-6 h-6 animate-spin text-cyan-400" /> : <Mail className="w-6 h-6 text-cyan-400" />}
                 <span className="text-white">{outlookConnected ? "Find Outlook Replies" : "Connect Outlook"}</span>
@@ -1392,8 +1416,6 @@ function getProviderStatusLabel(status: ProfileEvidenceProviderStatus) {
       return "Consent required";
   }
 }
-
-type ConnectorProviderId = Exclude<ProfileEvidenceProviderId, "resume">;
 
 function canRequestProviderConnector(provider: ProfileEvidenceProvider): provider is ProfileEvidenceProvider & { id: ConnectorProviderId } {
   return provider.id !== "resume";

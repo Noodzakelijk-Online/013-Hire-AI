@@ -308,7 +308,9 @@ export const appRouter = router({
         consentScopes: z.array(z.string().trim().min(1).max(120)).max(20).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
+        const { isOAuthConnectorProvider } = await import("./connectorOAuth");
         const { requestUserConnectorConnection, createAuditEvent } = await import("./db");
+        const requiresOAuth = isOAuthConnectorProvider(input.provider);
         const consentScopes = resolveConnectorScopes(input.provider, input.consentScopes);
         const account = await requestUserConnectorConnection({
           userId: ctx.user.id,
@@ -333,9 +335,11 @@ export const appRouter = router({
 
         return {
           success: true,
-          requiresOAuth: true,
+          requiresOAuth,
           account,
-          message: "Connection request recorded. OAuth authorization is still required before Hire.AI can read external data.",
+          message: requiresOAuth
+            ? "Connection request recorded. OAuth authorization is still required before Hire.AI can read external data."
+            : "Connection request recorded. Add or verify the source URL before Hire.AI can use this evidence.",
         };
       }),
     disconnect: protectedProcedure
