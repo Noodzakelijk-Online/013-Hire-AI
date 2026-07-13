@@ -527,6 +527,7 @@ export default function AdminPanel() {
                       ["Partial cycles", scrapingStatus?.scheduler.totalPartialRuns ?? 0],
                       ["Failed cycles", scrapingStatus?.scheduler.totalFailedRuns ?? 0],
                       ["Jobs saved", scrapingStatus?.scheduler.totalJobsScraped ?? 0],
+                      ["Alert matches", scrapingStatus?.scheduler.lastJobAlertsProcessed ?? 0],
                       ["Current attention signals", (scrapingStatus?.coverage.freshSourceIssues ?? scraperSourceOutcomes.freshIssues) + (scrapingStatus?.scheduler.errors.length ?? 0) + (scrapingStatus?.coverage.unavailableConfiguredSources ?? 0)],
                     ].map(([label, value]) => (
                       <div key={String(label)} className="rounded-md border border-slate-800 bg-slate-950/50 p-3">
@@ -585,6 +586,14 @@ export default function AdminPanel() {
                       <div className="font-medium">Latest source outcomes need attention</div>
                       <p className="mt-1 text-xs text-red-200">
                         {scrapingStatus?.coverage.freshFailedLatestSources ?? scraperSourceOutcomes.freshFailed} failed and {scrapingStatus?.coverage.freshPartialLatestSources ?? scraperSourceOutcomes.freshPartial} partial source outcome{((scrapingStatus?.coverage.freshFailedLatestSources ?? scraperSourceOutcomes.freshFailed) + (scrapingStatus?.coverage.freshPartialLatestSources ?? scraperSourceOutcomes.freshPartial)) === 1 ? " was" : "s were"} recorded in the last 24 hours. Inspect the source health table before relying on full discovery coverage.
+                      </p>
+                    </div>
+                  )}
+                  {scrapingStatus?.scheduler.jobAlertRefreshFailed && (
+                    <div data-testid="admin-scraping-alert-refresh-failed" className="mt-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+                      <div className="font-medium">Job alerts need refresh attention</div>
+                      <p className="mt-1 text-xs text-amber-200">
+                        The scrape completed, but internal job-alert matching could not refresh. Existing discovery results remain available and no external job-match notification was sent.
                       </p>
                     </div>
                   )}

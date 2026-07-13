@@ -3,10 +3,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   getScraperManager: vi.fn(),
   runScrapingCycle: vi.fn(),
+  processJobAlerts: vi.fn(),
 }));
 
 vi.mock("./scraperManager", () => ({
   getScraperManager: mocks.getScraperManager,
+}));
+
+vi.mock("../applicationFeatures", () => ({
+  processJobAlerts: mocks.processJobAlerts,
 }));
 
 import { getScheduler, JobScrapingScheduler } from "./scheduler";
@@ -22,6 +27,7 @@ describe("job scraping scheduler", () => {
         "We Work Remotely": { errors: ["Rate limited"] },
       },
     });
+    mocks.processJobAlerts.mockResolvedValue({ processed: 0, externalNotifications: 0 });
   });
 
   it("records a partial cycle when one source reports an error", async () => {
@@ -41,8 +47,40 @@ describe("job scraping scheduler", () => {
       totalPartialRuns: 1,
       totalFailedRuns: 0,
       lastRunOutcome: "partial",
+      lastJobAlertsProcessed: 0,
+      jobAlertRefreshFailed: false,
       errors: ["We Work Remotely: Rate limited"],
     });
+    expect(mocks.processJobAlerts).toHaveBeenCalledTimes(1);
+  });
+
+  it("refreshes internal job-alert matches after a completed scrape without sending job-match notifications", async () => {
+    mocks.processJobAlerts.mockResolvedValueOnce({ processed: 2, externalNotifications: 0 });
+    const scheduler = new JobScrapingScheduler({ intervalMinutes: 60, maxJobsPerRun: 25 });
+
+    await scheduler.runScraping();
+
+    expect(mocks.processJobAlerts).toHaveBeenCalledTimes(1);
+    expect(scheduler.getStatus()).toMatchObject({
+      lastJobAlertsProcessed: 2,
+      jobAlertRefreshFailed: false,
+    });
+  });
+
+  it("keeps a completed scrape available when internal alert refresh fails", async () => {
+    mocks.processJobAlerts.mockRejectedValueOnce(new Error("Bearer provider-secret"));
+    const scheduler = new JobScrapingScheduler({ intervalMinutes: 60, maxJobsPerRun: 25 });
+
+    await scheduler.runScraping();
+
+    expect(scheduler.getStatus()).toMatchObject({
+      totalRunsCompleted: 1,
+      lastRunOutcome: "partial",
+      lastJobAlertsProcessed: 0,
+      jobAlertRefreshFailed: true,
+    });
+    expect(scheduler.getStatus().errors).toContain("Job alerts: refresh could not complete.");
+    expect(JSON.stringify(scheduler.getStatus().errors)).not.toContain("provider-secret");
   });
 
   it("records a clean cycle only when every source succeeds", async () => {

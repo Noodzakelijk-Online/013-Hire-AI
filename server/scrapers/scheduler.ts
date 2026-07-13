@@ -1,4 +1,5 @@
 import { getScraperManager } from "./scraperManager";
+import { processJobAlerts } from "../applicationFeatures";
 
 /**
  * Job Scraping Scheduler
@@ -26,6 +27,10 @@ export interface SchedulerStatus {
   totalPartialRuns: number;
   totalFailedRuns: number;
   lastRunOutcome: "success" | "partial" | "failed" | null;
+  /** Alerts refreshed from the most recently completed scrape cycle. */
+  lastJobAlertsProcessed: number;
+  /** Alert refresh failure is surfaced separately and never blocks discovery. */
+  jobAlertRefreshFailed: boolean;
   errors: string[];
 }
 
@@ -56,6 +61,8 @@ export class JobScrapingScheduler {
     totalPartialRuns: 0,
     totalFailedRuns: 0,
     lastRunOutcome: null,
+    lastJobAlertsProcessed: 0,
+    jobAlertRefreshFailed: false,
     errors: [],
   };
 
@@ -117,6 +124,8 @@ export class JobScrapingScheduler {
 
     this.status.isRunning = true;
     this.status.errors = [];
+    this.status.lastJobAlertsProcessed = 0;
+    this.status.jobAlertRefreshFailed = false;
     const startTime = Date.now();
 
     console.log("[Scheduler] Starting scraping run...");
@@ -141,6 +150,16 @@ export class JobScrapingScheduler {
       if (outcome === "success") this.status.totalSuccessfulRuns++;
       else if (outcome === "partial") this.status.totalPartialRuns++;
       else this.status.totalFailedRuns++;
+
+      // Alert matching updates the command center only. Employer notifications
+      // remain limited to confirmed interview-invite evidence.
+      try {
+        const alertResult = await processJobAlerts();
+        this.status.lastJobAlertsProcessed = alertResult.processed;
+      } catch {
+        this.status.jobAlertRefreshFailed = true;
+        this.status.errors.push("Job alerts: refresh could not complete.");
+      }
 
       // Collect errors from platform results
       for (const [platform, platformResult] of Object.entries(result.platformResults)) {
