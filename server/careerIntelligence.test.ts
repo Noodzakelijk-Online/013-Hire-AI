@@ -227,7 +227,7 @@ describe("Automation API", () => {
       });
 
       expect(result.atsType).toBe("greenhouse");
-      // Greenhouse is supported for automation
+      // Greenhouse is recognized for a guarded manual handoff.
     });
 
     it("should detect Lever ATS", async () => {
@@ -239,7 +239,7 @@ describe("Automation API", () => {
       });
 
       expect(result.atsType).toBe("lever");
-      // Lever is supported for automation
+      // Lever is recognized for a guarded manual handoff.
     });
 
     it("should detect Workday ATS", async () => {

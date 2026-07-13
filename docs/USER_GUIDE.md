@@ -19,7 +19,7 @@
 
 ### Welcome to Hire.AI V2
 
-Hire.AI V2 is a comprehensive job aggregation and automated application platform that helps you find and apply to remote jobs across 50+ platforms. The platform uses AI to match you with the best opportunities and can even apply to jobs on your behalf.
+Hire.AI V2 is a job-search operating platform that helps you discover remote roles from configured sources, evaluate fit, and prepare reviewable application materials. Hire.AI never opens an employer portal, fills a third-party form, uploads documents, or submits an application on your behalf. You review and complete the external handoff, then record confirmation evidence in the application ledger.
 
 ### First Steps
 
@@ -173,32 +173,34 @@ Use this information to:
 
 ---
 
-## Automated Applications
+## Application Preparation And Handoffs
 
 ### How It Works
 
-1. **Enable Auto-Apply**: Go to **Settings** → **Automation**
-2. **Set Criteria**: Define which jobs to auto-apply to
-3. **Review Queue**: Check pending auto-applications
-4. **Approve or Skip**: Confirm or reject suggested applications
+1. **Enable Autonomous Preparation**: Go to **Settings** → **Automation**
+2. **Set Criteria**: Define your target roles, locations, match score, and daily preparation limit
+3. **Review Queue**: Inspect the prepared materials, evidence gates, and decision rationale
+4. **Approve Or Skip**: Approve a manual employer handoff only after reviewing the record
+5. **Confirm Delivery**: Complete the external application yourself, then record deterministic confirmation evidence in Hire.AI
 
 ### Supported ATS Systems
 
-| ATS | Automation Level | Notes |
+| ATS | Handoff Level | Notes |
 |-----|------------------|-------|
-| **Greenhouse** | Full | Automatic form filling |
-| **Lever** | Full | Automatic form filling |
-| **Workday** | Partial | Multi-step process |
-| **Taleo** | Partial | Multi-step process |
-| **iCIMS** | Manual | Requires user input |
-| **SmartRecruiters** | Manual | Requires user input |
+| **Greenhouse** | Manual handoff | Hire.AI can prepare ledger materials; the employer form remains under your control |
+| **Lever** | Manual handoff | Hire.AI can prepare ledger materials; the employer form remains under your control |
+| **Workday** | Manual handoff | Complete the employer portal, login, and any required questions directly |
+| **Taleo** | Manual handoff | Complete the employer portal, login, and any required questions directly |
+| **iCIMS** | Manual handoff | Complete the employer portal directly |
+| **SmartRecruiters** | Manual handoff | Complete the employer portal directly |
 
 ### Safety Features
 
-- **Rate Limiting**: Maximum 10 applications per hour
-- **Review Mode**: Preview applications before submission
+- **Daily Preparation Limit**: Configurable from 1 to 25 prepared application records per day
+- **Review Mode**: Inspect materials and evidence before any external handoff
 - **Blacklist**: Exclude specific companies or job types
-- **Pause/Resume**: Control automation at any time
+- **Approval And Evidence**: External delivery is never assumed; confirmation evidence is required before an application becomes applied
+- **Pause/Resume**: Control autonomous preparation at any time
 
 ---
 
