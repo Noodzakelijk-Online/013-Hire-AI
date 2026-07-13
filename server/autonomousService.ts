@@ -58,6 +58,7 @@ export interface AutonomousRunResult extends AutonomousPlan {
   skippedProfileReadinessActions: number;
   skippedEvidenceGatedActions: number;
   skippedStaleJobActions: number;
+  userDecisionLockedJobs: number;
   inboxProvidersScanned: number;
   inboxCandidatesDiscovered: number;
   inboxMonitoringFailures: number;
@@ -80,6 +81,7 @@ function persistableRunSummary(result: AutonomousRunResult) {
     skippedProfileReadinessActions: result.skippedProfileReadinessActions,
     skippedEvidenceGatedActions: result.skippedEvidenceGatedActions,
     skippedStaleJobActions: result.skippedStaleJobActions,
+    userDecisionLockedJobs: result.userDecisionLockedJobs,
     inboxProvidersScanned: result.inboxProvidersScanned,
     inboxCandidatesDiscovered: result.inboxCandidatesDiscovered,
     inboxMonitoringFailures: result.inboxMonitoringFailures,
@@ -353,12 +355,18 @@ async function executeAutonomousRun(
     ...parseAutonomousPreferences(profile?.preferences),
     ...overrides,
   };
+  const userDecisionJobIds = new Set(
+    existingDecisions
+      .filter((decision) => decision.decidedBy === "user")
+      .map((decision) => decision.jobId)
+  );
   const plan = buildAutonomousPlan(
     jobList,
     profile,
     applications as any,
     resolvedPreferences,
-    Boolean(activeResume)
+    Boolean(activeResume),
+    userDecisionJobIds
   );
   const executable = getExecutableDecisions(plan);
   const evidenceContext = await getAutonomousEvidenceContext(userId, {
@@ -396,11 +404,7 @@ async function executeAutonomousRun(
     actionErrors.push(`${label} failed`);
   };
 
-  const userDecisionJobIds = new Set(
-    existingDecisions
-      .filter((decision) => decision.decidedBy === "user")
-      .map((decision) => decision.jobId)
-  );
+  const userDecisionLockedJobs = plan.decisions.filter((decision) => decision.userDecisionLocked).length;
 
   // Keep autonomous scoring visible through the same canonical match ledger used by jobs.getMatches.
   for (const decision of plan.decisions) {
@@ -780,6 +784,7 @@ async function executeAutonomousRun(
     skippedProfileReadinessActions,
     skippedEvidenceGatedActions: evidenceGatedActions.total,
     skippedStaleJobActions,
+    userDecisionLockedJobs,
     inboxProvidersScanned,
     inboxCandidatesDiscovered,
     inboxMonitoringFailures,

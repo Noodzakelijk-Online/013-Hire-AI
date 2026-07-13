@@ -89,6 +89,15 @@ describe("autonomous run summary", () => {
     );
   });
 
+  it("reports jobs retained under explicit user decisions", () => {
+    expect(getAutonomousRunCounts({ userDecisionLockedJobs: 2 })).toMatchObject({
+      userDecisionLockedJobs: 2,
+    });
+    expect(formatAutonomousRunSummary({ userDecisionLockedJobs: 2 })).toBe(
+      "Autonomous run completed with no new tasks; 2 jobs retained under an explicit user decision"
+    );
+  });
+
   it("reports inbox monitoring failures as attention-required work", () => {
     expect(formatAutonomousRunSummary({
       inboxMonitoringFailures: 1,

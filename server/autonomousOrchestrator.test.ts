@@ -168,6 +168,23 @@ describe("autonomous orchestrator", () => {
     expect(plan.decisions[0].blockers).not.toContain("Already applied to this job");
   });
 
+  it("keeps an explicit user decision out of autonomous preparation", () => {
+    const plan = buildAutonomousPlan([baseJob], profile, [], {
+      minMatchScore: 0,
+      dailyApplicationLimit: 2,
+    }, undefined, [baseJob.id]);
+
+    expect(plan.summary.queuedForReview).toBe(0);
+    expect(plan.decisions[0]).toMatchObject({
+      action: "skip",
+      userDecisionLocked: true,
+    });
+    expect(plan.decisions[0].automationNotes).toContain(
+      "A user-owned ledger decision prevents autonomous preparation for this job."
+    );
+    expect(getExecutableDecisions(plan).review).toHaveLength(0);
+  });
+
   it("keeps progressed application history out of later autonomous preparation", () => {
     const submittedApplication: Application = {
       id: 23,

@@ -32,6 +32,7 @@ export interface AutonomousJobDecision {
   blockers: string[];
   reviewRequired: boolean;
   automationNotes: string[];
+  userDecisionLocked: boolean;
 }
 
 export interface AutonomousFollowUpDecision {
@@ -239,7 +240,8 @@ export function buildAutonomousPlan(
   profile?: Partial<UserProfile> | null,
   applications: Application[] = [],
   preferences: AutonomousPreferences = {},
-  hasActiveResumeArtifact?: boolean
+  hasActiveResumeArtifact?: boolean,
+  userDecisionJobIds: Iterable<number> = []
 ): AutonomousPlan {
   const mode = preferences.mode || "review_first";
   const minMatchScore = Math.min(100, Math.max(0, Math.round(preferences.minMatchScore ?? 70)));
@@ -263,6 +265,7 @@ export function buildAutonomousPlan(
   const dailyRemaining = Math.max(0, dailyLimit - alreadyQueuedToday);
   const policyWarnings: string[] = [];
   const hasResumeEvidence = hasActiveResumeArtifact ?? Boolean(profile?.resumeUrl || profile?.resumeFileKey);
+  const userDecisionJobs = new Set(userDecisionJobIds);
 
   if (mode === "auto_apply" && requireHumanReview) {
     policyWarnings.push("Human review is enabled, so high-fit jobs will be queued for review before submission.");
@@ -371,6 +374,12 @@ export function buildAutonomousPlan(
         }
       }
 
+      const userDecisionLocked = userDecisionJobs.has(job.id);
+      if (userDecisionLocked) {
+        action = "skip";
+        automationNotes.push("A user-owned ledger decision prevents autonomous preparation for this job.");
+      }
+
       return {
         jobId: job.id,
         title: job.title,
@@ -385,6 +394,7 @@ export function buildAutonomousPlan(
         blockers,
         reviewRequired: requireHumanReview || !support.supported || blockers.length > 0,
         automationNotes,
+        userDecisionLocked,
       } satisfies AutonomousJobDecision;
     })
     .sort((a, b) => b.matchScore - a.matchScore);

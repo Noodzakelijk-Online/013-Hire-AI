@@ -297,6 +297,48 @@ describe("autonomous submission approval gates", () => {
     })]);
   });
 
+  it("does not prepare or overwrite a high-fit job after an explicit user decision", async () => {
+    const userId = await createEligibleTestUser("99114");
+    await upsertUserProfile({
+      userId,
+      skills: "React, TypeScript, Node.js",
+      experience: "Five years building production web applications.",
+      desiredJobTypes: "full-time",
+      desiredLocations: "remote, worldwide",
+      resumeUrl: "https://example.com/resume.pdf",
+      preferences: JSON.stringify({
+        autonomousEnabled: true,
+        mode: "review_first",
+        minMatchScore: 0,
+        dailyApplicationLimit: 1,
+      }),
+    });
+    await createApplicationDecision({
+      userId,
+      jobId: sampleJobs[0].id,
+      decision: "ignore",
+      decisionReason: "User decided not to pursue this employer.",
+      matchScore: 95,
+      riskLevel: "low",
+      reviewRequired: 0,
+      decidedBy: "user",
+    });
+
+    const result = await runAutonomousForUser(userId, { dailyApplicationLimit: 1, minMatchScore: 0 });
+    const decisions = await getUserApplicationDecisions(userId);
+
+    expect(result.userDecisionLockedJobs).toBe(1);
+    expect(result.queuedReviewRecords + result.queuedApplicationRecords + result.queuedManualRecords).toBe(0);
+    expect(await getUserApplications(userId)).toHaveLength(0);
+    expect(await listUserApplicationApprovals(userId, "all")).toHaveLength(0);
+    expect(decisions).toEqual([expect.objectContaining({
+      jobId: sampleJobs[0].id,
+      decision: "ignore",
+      decidedBy: "user",
+      decisionReason: "User decided not to pursue this employer.",
+    })]);
+  });
+
   it("records daily-limit deferrals as saved decisions for a future run", async () => {
     const userId = await createEligibleTestUser("99113");
     mocks.getActiveJobs.mockResolvedValue([sampleJobs[0], sampleJobs[1]]);

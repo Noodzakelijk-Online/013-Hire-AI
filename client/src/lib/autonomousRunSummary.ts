@@ -9,6 +9,7 @@ export interface AutonomousRunSummaryInput {
   skippedProfileReadinessActions?: number;
   skippedEvidenceGatedActions?: number;
   skippedStaleJobActions?: number;
+  userDecisionLockedJobs?: number;
   inboxProvidersScanned?: number;
   inboxCandidatesDiscovered?: number;
   inboxMonitoringFailures?: number;
@@ -39,6 +40,7 @@ export function getAutonomousRunCounts(result: AutonomousRunSummaryInput) {
     profileReadinessBlockedActions: result.skippedProfileReadinessActions || 0,
     evidenceGatedActions: result.skippedEvidenceGatedActions || 0,
     staleJobActionsSkipped: result.skippedStaleJobActions || 0,
+    userDecisionLockedJobs: result.userDecisionLockedJobs || 0,
     inboxProvidersScanned: result.inboxProvidersScanned || 0,
     inboxCandidatesDiscovered: result.inboxCandidatesDiscovered || 0,
     inboxMonitoringFailures: result.inboxMonitoringFailures || 0,
@@ -103,6 +105,9 @@ export function formatAutonomousRunSummary(result: AutonomousRunSummaryInput) {
   }
   if (counts.staleJobActionsSkipped > 0) {
     notes.push(`${plural(counts.staleJobActionsSkipped, "job preparation")} blocked after a final listing freshness check`);
+  }
+  if (counts.userDecisionLockedJobs > 0) {
+    notes.push(`${plural(counts.userDecisionLockedJobs, "job")} retained under an explicit user decision`);
   }
   if (counts.inboxCandidatesDiscovered > 0) {
     notes.push(`${plural(counts.inboxCandidatesDiscovered, "inbox response candidate")} queued for confirmation`);

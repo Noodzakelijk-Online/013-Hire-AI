@@ -43,6 +43,7 @@ describe("autonomous scheduler status", () => {
       skippedProfileReadinessActions: 2,
       skippedEvidenceGatedActions: 3,
       skippedStaleJobActions: 2,
+      userDecisionLockedJobs: 2,
       failedActions: 0,
     });
 
@@ -59,6 +60,7 @@ describe("autonomous scheduler status", () => {
       profileReadinessBlockedActions: 2,
       evidenceGatedActions: 3,
       staleJobActionsSkipped: 2,
+      userDecisionLockedJobs: 2,
     });
     expect(status.lastCycleAt).toBeInstanceOf(Date);
   });

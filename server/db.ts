@@ -144,6 +144,7 @@ export interface AutonomousRunSummaryRecord {
   skippedProfileReadinessActions: number;
   skippedEvidenceGatedActions: number;
   skippedStaleJobActions: number;
+  userDecisionLockedJobs?: number;
   inboxProvidersScanned?: number;
   inboxCandidatesDiscovered?: number;
   inboxMonitoringFailures?: number;
@@ -187,6 +188,10 @@ function parseAutonomousRunSummary(value: string | null | undefined): Autonomous
     summary.skippedStaleJobActions = typeof parsed.skippedStaleJobActions === "number"
       && Number.isFinite(parsed.skippedStaleJobActions)
       ? Math.max(0, Math.round(parsed.skippedStaleJobActions))
+      : 0;
+    summary.userDecisionLockedJobs = typeof parsed.userDecisionLockedJobs === "number"
+      && Number.isFinite(parsed.userDecisionLockedJobs)
+      ? Math.max(0, Math.round(parsed.userDecisionLockedJobs))
       : 0;
     summary.inboxProvidersScanned = typeof parsed.inboxProvidersScanned === "number"
       && Number.isFinite(parsed.inboxProvidersScanned)

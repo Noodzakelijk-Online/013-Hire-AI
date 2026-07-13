@@ -3017,13 +3017,14 @@ export const appRouter = router({
         createFollowUps: z.boolean().optional(),
       }).optional())
       .query(async ({ ctx, input }) => {
-        const { getActiveJobs, getUserProfile, getUserApplications } = await import("./db");
+        const { getActiveJobs, getUserProfile, getUserApplications, getUserApplicationDecisions } = await import("./db");
         const { buildAutonomousPlan, parseAutonomousPreferences } = await import("./autonomousOrchestrator");
         const { getAutonomousEvidenceContext } = await import("./autonomousEvidence");
-        const [jobList, profile, applications] = await Promise.all([
+        const [jobList, profile, applications, decisions] = await Promise.all([
           getActiveJobs(250, 0),
           getUserProfile(ctx.user.id),
           getUserApplications(ctx.user.id),
+          getUserApplicationDecisions(ctx.user.id),
         ]);
         const resolvedPreferences = {
           ...parseAutonomousPreferences(profile?.preferences),
@@ -3039,7 +3040,10 @@ export const appRouter = router({
           profile,
           applications as any,
           resolvedPreferences,
-          evidenceContext.readiness.signals.hasResume
+          evidenceContext.readiness.signals.hasResume,
+          decisions
+            .filter((decision) => decision.decidedBy === "user")
+            .map((decision) => decision.jobId)
         );
 
         return {
@@ -3097,6 +3101,7 @@ export const appRouter = router({
         profileReadinessBlockedActions: persistedSummary?.skippedProfileReadinessActions ?? userStatus?.profileReadinessBlockedActions ?? 0,
         evidenceGatedActions: persistedSummary?.skippedEvidenceGatedActions ?? userStatus?.evidenceGatedActions ?? 0,
         staleJobActionsSkipped: persistedSummary?.skippedStaleJobActions ?? 0,
+        userDecisionLockedJobs: persistedSummary?.userDecisionLockedJobs ?? userStatus?.userDecisionLockedJobs ?? 0,
         inboxProvidersScanned: persistedSummary?.inboxProvidersScanned ?? userStatus?.inboxProvidersScanned ?? 0,
         inboxCandidatesDiscovered: persistedSummary?.inboxCandidatesDiscovered ?? userStatus?.inboxCandidatesDiscovered ?? 0,
         inboxMonitoringFailures: persistedSummary?.inboxMonitoringFailures ?? userStatus?.inboxMonitoringFailures ?? 0,

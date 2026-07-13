@@ -622,6 +622,7 @@ export default function AIPreferences() {
                       <span>{schedulerStatus.resumeEvidenceBlockedActions || 0} application preparation{schedulerStatus.resumeEvidenceBlockedActions === 1 ? "" : "s"} blocked by resume evidence</span>
                       <span>{schedulerStatus.profileReadinessBlockedActions || 0} application preparation{schedulerStatus.profileReadinessBlockedActions === 1 ? "" : "s"} blocked by profile readiness</span>
                       <span>{schedulerStatus.evidenceGatedActions || 0} external action{schedulerStatus.evidenceGatedActions === 1 ? "" : "s"} gated</span>
+                      <span>{schedulerStatus.userDecisionLockedJobs || 0} job{schedulerStatus.userDecisionLockedJobs === 1 ? "" : "s"} retained under user control</span>
                       <span>{schedulerStatus.inboxProvidersScanned || 0} inbox provider{schedulerStatus.inboxProvidersScanned === 1 ? "" : "s"} scanned</span>
                       <span>{schedulerStatus.inboxCandidatesDiscovered || 0} inbox response candidate{schedulerStatus.inboxCandidatesDiscovered === 1 ? "" : "s"} pending review</span>
                       {schedulerStatus.inboxMonitoringFailures ? (

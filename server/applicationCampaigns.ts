@@ -527,7 +527,10 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
     profile,
     applications as Application[],
     preferences,
-    Boolean(activeResume)
+    Boolean(activeResume),
+    decisions
+      .filter((decision) => decision.decidedBy === "user")
+      .map((decision) => decision.jobId)
   );
   const userAdminReviews = options.includeAdminReviews
     ? adminReviews.filter((item) =>
