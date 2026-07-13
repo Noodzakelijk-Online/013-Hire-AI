@@ -3,11 +3,7 @@
  * Detects ATS (Applicant Tracking System) and automates job applications
  */
 
-import {
-  normalizeSubmissionEvidence,
-  type NormalizedSubmissionEvidence,
-  type SubmissionEvidenceInput,
-} from "./applicationSubmissionEvidence";
+import type { SubmissionEvidenceInput } from "./applicationSubmissionEvidence";
 
 export type ATSType = "greenhouse" | "lever" | "workday" | "taleo" | "smartrecruiters" | "unknown";
 
@@ -93,29 +89,24 @@ export async function applyToJob(
 }
 
 /**
- * Converts an automation result into recordable submission proof. A successful
- * preparation result is deliberately insufficient: the ledger only moves to
- * "applied" when an external submission, explicit evidence, and no review
- * requirement are all present.
+ * Employer portals are a strict preparation boundary. Keep the persistence
+ * contract independent of result-shaped flags so a future adapter cannot turn
+ * a preparation call into an unreviewed external-submission claim.
  */
-export function getVerifiedApplicationSubmissionEvidence(
-  result: ApplicationResult
-): NormalizedSubmissionEvidence | null {
-  if (
-    !result.success ||
-    !result.submissionAttempted ||
-    !result.externalSubmissionPerformed ||
-    result.reviewRequired ||
-    !result.submissionEvidence
-  ) {
-    return null;
-  }
-
-  try {
-    return normalizeSubmissionEvidence(result.submissionEvidence);
-  } catch {
-    return null;
-  }
+export function getPortalPreparationLedgerState(
+  result: Pick<ApplicationResult, "prepared" | "reviewRequired">
+) {
+  return {
+    status: "pending" as const,
+    isAutoApplied: 0 as const,
+    attemptStatus: result.reviewRequired
+      ? "review_required" as const
+      : result.prepared
+        ? "prepared" as const
+        : "failed" as const,
+    externalSubmissionPerformed: false,
+    auditAction: "application_prepared_by_automation" as const,
+  };
 }
 
 /**

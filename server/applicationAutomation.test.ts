@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   applyToJob,
   detectATSType,
-  getVerifiedApplicationSubmissionEvidence,
+  getPortalPreparationLedgerState,
   isAutomationSupported,
   validateApplicationData,
 } from "./applicationAutomation";
@@ -63,17 +63,26 @@ describe("guarded application preparation", () => {
     expect(support.message).toContain("does not access employer portal forms");
   });
 
-  it("does not treat a generic success flag as submission evidence", () => {
-    expect(getVerifiedApplicationSubmissionEvidence({
+  it("keeps portal persistence evidence-gated even for a success-shaped result", () => {
+    expect(getPortalPreparationLedgerState({
       success: true,
       prepared: true,
-      submissionAttempted: false,
-      externalSubmissionPerformed: false,
+      submissionAttempted: true,
+      externalSubmissionPerformed: true,
       reviewRequired: false,
       atsType: "greenhouse",
-      message: "Prepared application.",
-      confirmationId: "unverified-123",
-    })).toBeNull();
+      message: "Employer portal claimed success.",
+      submissionEvidence: {
+        source: "employer_portal",
+        evidence: "The portal displayed confirmation reference ABC-123.",
+      },
+    })).toEqual({
+      status: "pending",
+      isAutoApplied: 0,
+      attemptStatus: "prepared",
+      externalSubmissionPerformed: false,
+      auditAction: "application_prepared_by_automation",
+    });
   });
 
   it("requires a versioned resume key before preparation can be trusted", () => {

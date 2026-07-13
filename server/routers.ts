@@ -3363,7 +3363,7 @@ export const appRouter = router({
         } = await import("./db");
         const {
           applyToJob,
-          getVerifiedApplicationSubmissionEvidence,
+          getPortalPreparationLedgerState,
           prepareApplicationData,
           validateApplicationData,
         } = await import(
@@ -3433,22 +3433,20 @@ export const appRouter = router({
           throw new Error(`Invalid application data: ${validation.errors.join(", ")}`);
         }
 
-        // Attempt automated application
+        // Prepare material for a controlled employer-portal handoff.
         const result = await applyToJob(job.applicationUrl, applicationData);
+        const ledgerState = getPortalPreparationLedgerState(result);
 
-        // A preparation result never becomes an applied record without explicit proof.
-        const submissionEvidence = getVerifiedApplicationSubmissionEvidence(result);
-        const submissionRecorded = submissionEvidence !== null;
-
-        // Create application record
+        // Portal preparation cannot claim an external submission. Only
+        // applications.confirmSubmission writes the applied state with evidence.
         const applicationRecord = await createApplication({
           userId: ctx.user.id,
           jobId: input.jobId,
-          status: submissionRecorded ? "applied" : "pending",
-          appliedDate: submissionRecorded ? new Date() : undefined,
+          status: ledgerState.status,
+          appliedDate: undefined,
           coverLetter: material?.coverLetter,
           notes: result.message,
-          isAutoApplied: submissionRecorded ? 1 : 0,
+          isAutoApplied: ledgerState.isAutoApplied,
         });
         const applicationRecordId = Number(applicationRecord.insertId);
         const artifacts = existingArtifacts ?? (applicationRecord.existing === true
@@ -3470,27 +3468,18 @@ export const appRouter = router({
           jobId: input.jobId,
           platformId: job.platformId,
           attemptType: "prepare",
-          status: submissionRecorded
-            ? "submitted"
-            : result.reviewRequired
-              ? "review_required"
-              : result.prepared
-                ? "prepared"
-                : "failed",
+          status: ledgerState.attemptStatus,
           startedAt: new Date(),
           finishedAt: new Date(),
           errorMessage: result.error,
-          confirmationText: submissionEvidence?.noteContent ?? (result.confirmationId
-            ? `${result.message} Confirmation: ${result.confirmationId}`
-            : result.message),
-          confirmationUrl: submissionEvidence?.confirmationUrl ?? undefined,
+          confirmationText: result.message,
           retryCount: 0,
         });
         await createAuditEvent({
           userId: ctx.user.id,
           entityType: "application",
           entityId: applicationRecordId,
-          action: submissionRecorded ? "application_submitted_by_automation" : "application_prepared_by_automation",
+          action: ledgerState.auditAction,
           actor: "system",
           source: "automation.applyToJob",
           afterState: JSON.stringify({
@@ -3499,8 +3488,8 @@ export const appRouter = router({
             prepared: result.prepared,
             submissionAttempted: result.submissionAttempted,
             reviewRequired: result.reviewRequired,
-            externalSubmissionPerformed: submissionRecorded,
-            status: submissionRecorded ? "applied" : "pending",
+            externalSubmissionPerformed: ledgerState.externalSubmissionPerformed,
+            status: ledgerState.status,
             resume: {
               id: activeResume.id,
               version: activeResume.version,
@@ -3510,42 +3499,40 @@ export const appRouter = router({
             materialSource: material?.materialSource ?? "existing_application_material",
             userProvidedCoverLetter: material?.userProvidedCoverLetter ?? null,
           }),
-          riskLevel: submissionRecorded ? "high" : result.reviewRequired ? "medium" : "low",
+          riskLevel: result.reviewRequired ? "medium" : "low",
         });
-        if (!submissionRecorded) {
-          await createAdminReviewItem({
-            userId: ctx.user.id,
-            entityType: "application",
-            entityId: applicationRecordId,
-            category: "application_review",
-            priority: result.reviewRequired ? "high" : "medium",
-            title: "Automation prepared application for review",
-            description: result.message,
-          });
-          await createApplicationApproval({
-            userId: ctx.user.id,
-            applicationId: applicationRecordId,
-            entityType: "application",
-            entityId: applicationRecordId,
-            approvalType: "application_submission",
-            status: "pending",
-            riskLevel: result.reviewRequired ? "high" : "medium",
-            requestedBy: "system",
-            title: "Approve automation-prepared submission",
-            description: result.message,
-            payload: JSON.stringify({
-              jobId: input.jobId,
-              atsType: result.atsType,
-              prepared: result.prepared,
-              submissionAttempted: result.submissionAttempted,
-              resumeId: activeResume.id,
-              resumeVersion: activeResume.version,
-              materialSource: material?.materialSource ?? "existing_application_material",
-              userProvidedCoverLetter: material?.userProvidedCoverLetter ?? null,
-              source: "automation.applyToJob",
-            }),
-          });
-        }
+        await createAdminReviewItem({
+          userId: ctx.user.id,
+          entityType: "application",
+          entityId: applicationRecordId,
+          category: "application_review",
+          priority: result.reviewRequired ? "high" : "medium",
+          title: "Automation prepared application for review",
+          description: result.message,
+        });
+        await createApplicationApproval({
+          userId: ctx.user.id,
+          applicationId: applicationRecordId,
+          entityType: "application",
+          entityId: applicationRecordId,
+          approvalType: "application_submission",
+          status: "pending",
+          riskLevel: result.reviewRequired ? "high" : "medium",
+          requestedBy: "system",
+          title: "Approve automation-prepared submission",
+          description: result.message,
+          payload: JSON.stringify({
+            jobId: input.jobId,
+            atsType: result.atsType,
+            prepared: result.prepared,
+            submissionAttempted: result.submissionAttempted,
+            resumeId: activeResume.id,
+            resumeVersion: activeResume.version,
+            materialSource: material?.materialSource ?? "existing_application_material",
+            userProvidedCoverLetter: material?.userProvidedCoverLetter ?? null,
+            source: "automation.applyToJob",
+          }),
+        });
 
         return {
           ...result,
