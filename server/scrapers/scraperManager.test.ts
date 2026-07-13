@@ -61,6 +61,26 @@ describe("scraper manager platform restrictions", () => {
     expect(manager.getInitializationError("Unavailable Board")).toBeNull();
   });
 
+  it("times out one source without preventing a healthy source from completing", async () => {
+    const manager = new ScraperManager({ scrapeTimeoutMs: 5, maxConcurrentScrapes: 2 });
+    const slow = {
+      getPlatformId: () => 1,
+      scrape: vi.fn().mockImplementation(() => new Promise(() => {})),
+    } as unknown as BaseScraper;
+    const healthy = createScraper(2);
+    const scrapers = (manager as unknown as { scrapers: Map<string, BaseScraper> }).scrapers;
+    scrapers.set("Slow source", slow);
+    scrapers.set("Healthy source", healthy);
+
+    const result = await manager.scrapeAll();
+
+    expect(result.platformResults["Slow source"].errors).toEqual(["Scrape timed out after 5ms"]);
+    expect(result.platformResults["Healthy source"].errors).toEqual([]);
+    expect(healthy.scrape).toHaveBeenCalledOnce();
+    expect(mocks.updatePlatformLastScraped).toHaveBeenCalledWith(2);
+    expect(mocks.updatePlatformLastScraped).not.toHaveBeenCalledWith(1);
+  });
+
   it("refreshes a re-observed source listing instead of leaving an expired record unavailable", async () => {
     const existingJob = {
       id: 712,

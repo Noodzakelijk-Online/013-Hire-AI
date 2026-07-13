@@ -14,6 +14,14 @@ export interface ScrapeOptions {
   platformNames?: string[];
 }
 
+export interface ScraperManagerOptions {
+  scrapeTimeoutMs?: number;
+  maxConcurrentScrapes?: number;
+}
+
+const DEFAULT_SCRAPE_TIMEOUT_MS = 90_000;
+const DEFAULT_MAX_CONCURRENT_SCRAPES = 3;
+
 function isCurrentListing(job: { isActive?: number | null; expiryDate?: Date | null; updatedAt?: Date | null; createdAt?: Date | null }, now: Date) {
   return isJobListingCurrent(job, now);
 }
@@ -55,6 +63,13 @@ function refreshedListingValues(job: any, current: any, now: Date) {
 export class ScraperManager {
   private scrapers: Map<string, BaseScraper> = new Map();
   private initializationErrors: Map<string, string> = new Map();
+  private readonly scrapeTimeoutMs: number;
+  private readonly maxConcurrentScrapes: number;
+
+  constructor(options: ScraperManagerOptions = {}) {
+    this.scrapeTimeoutMs = Math.max(1, Math.floor(options.scrapeTimeoutMs ?? DEFAULT_SCRAPE_TIMEOUT_MS));
+    this.maxConcurrentScrapes = Math.max(1, Math.floor(options.maxConcurrentScrapes ?? DEFAULT_MAX_CONCURRENT_SCRAPES));
+  }
 
   /**
    * Initialize all scrapers
@@ -119,6 +134,35 @@ export class ScraperManager {
     return hasScraper(platformName);
   }
 
+  private async scrapeWithDeadline(
+    platformName: string,
+    scraper: BaseScraper,
+    options?: { keywords?: string; location?: string; limit?: number }
+  ): Promise<ScrapeResult> {
+    let timeout: NodeJS.Timeout | undefined;
+    try {
+      const result = await Promise.race([
+        scraper.scrape(options),
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(
+            () => reject(new Error(`Scrape timed out after ${this.scrapeTimeoutMs}ms`)),
+            this.scrapeTimeoutMs
+          );
+        }),
+      ]);
+      if (result.errors.length === 0) {
+        await updatePlatformLastScraped(scraper.getPlatformId());
+      }
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[ScraperManager] Failed to scrape ${platformName}:`, error);
+      return { jobs: [], errors: [message], scrapedAt: new Date() };
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
+  }
+
   /**
    * Scrape jobs from a specific platform
    */
@@ -131,7 +175,6 @@ export class ScraperManager {
     }
   ): Promise<ScrapeResult> {
     const scraper = this.scrapers.get(platformName);
-
     if (!scraper) {
       return {
         jobs: [],
@@ -141,10 +184,7 @@ export class ScraperManager {
     }
 
     console.log(`[ScraperManager] Scraping ${platformName}...`);
-    const result = await scraper.scrape(options);
-    if (result.errors.length === 0) {
-      await updatePlatformLastScraped(scraper.getPlatformId());
-    }
+    const result = await this.scrapeWithDeadline(platformName, scraper, options);
     console.log(
       `[ScraperManager] Scraped ${result.jobs.length} jobs from ${platformName} (${result.errors.length} errors)`
     );
@@ -181,23 +221,22 @@ export class ScraperManager {
       }
     }
 
-    for (const [platformName, scraper] of selectedScrapers) {
-      try {
-        const result = await scraper.scrape(options);
-        if (result.errors.length === 0) {
-          await updatePlatformLastScraped(scraper.getPlatformId());
+    const pendingScrapers = [...selectedScrapers];
+    const workers = Array.from(
+      { length: Math.min(this.maxConcurrentScrapes, pendingScrapers.length) },
+      async () => {
+        while (pendingScrapers.length > 0) {
+          const entry = pendingScrapers.shift();
+          if (!entry) return;
+          const [platformName, scraper] = entry;
+          console.log(`[ScraperManager] Scraping ${platformName}...`);
+          const result = await this.scrapeWithDeadline(platformName, scraper, options);
+          platformResults[platformName] = result;
+          totalJobs += result.jobs.length;
         }
-        platformResults[platformName] = result;
-        totalJobs += result.jobs.length;
-      } catch (error) {
-        console.error(`[ScraperManager] Failed to scrape ${platformName}:`, error);
-        platformResults[platformName] = {
-          jobs: [],
-          errors: [String(error)],
-          scrapedAt: new Date(),
-        };
       }
-    }
+    );
+    await Promise.all(workers);
 
     console.log(`[ScraperManager] Scraping complete. Total jobs: ${totalJobs}`);
 
