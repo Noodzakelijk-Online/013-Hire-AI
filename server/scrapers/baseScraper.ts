@@ -91,7 +91,7 @@ export abstract class BaseScraper {
       salaryMin: this.parseSalary(rawJob.salaryMin),
       salaryMax: this.parseSalary(rawJob.salaryMax),
       salaryCurrency: rawJob.salaryCurrency || "USD",
-      applicationUrl: rawJob.applicationUrl,
+      applicationUrl: this.normalizeApplicationUrl(rawJob.applicationUrl),
       externalId: rawJob.externalId || rawJob.id,
       postedDate: this.parseDate(rawJob.postedDate),
       expiryDate: this.parseDate(rawJob.expiryDate),
@@ -137,6 +137,18 @@ export abstract class BaseScraper {
     const num = parseFloat(str);
 
     return isNaN(num) ? undefined : num;
+  }
+
+  /** Resolve provider-relative job links and exclude non-web destinations. */
+  protected normalizeApplicationUrl(value: unknown): string | undefined {
+    if (typeof value !== "string" || !value.trim()) return undefined;
+
+    try {
+      const url = new URL(value.trim(), this.config.baseUrl);
+      return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   /**
