@@ -11,8 +11,8 @@ describe("application material evidence summary", () => {
         atsType: "greenhouse",
         automationSupported: false,
         automationNotes: [
-          "Greenhouse form can be prepared for review.",
-          "Unsupported ATS requires manual application or human review.",
+          "Hire.AI can prepare application material in its ledger, but it does not access employer portal forms.",
+          "No unattended employer-portal integration is available. Review the prepared material and complete the employer handoff manually.",
         ],
       }),
       claimsMade: JSON.stringify({
@@ -41,7 +41,9 @@ describe("application material evidence summary", () => {
     expect(summary.coverLetterLabel).toBe("Cover letter stored");
     expect(summary.customAnswerCount).toBe(3);
     expect(summary.supportSignals).toContain("3 required skills match the profile");
-    expect(summary.supportSignals).toContain("Greenhouse form can be prepared for review.");
+    expect(summary.supportSignals).toContain(
+      "Hire.AI can prepare application material in its ledger, but it does not access employer portal forms."
+    );
     expect(summary.blockers).toContain("Resume is required before autonomous submission");
     expect(summary.honestyNote).toBe("No qualifications were fabricated.");
     expect(summary.profileEvidence.skills).toContain("React");

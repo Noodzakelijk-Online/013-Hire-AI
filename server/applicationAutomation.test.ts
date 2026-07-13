@@ -3,6 +3,7 @@ import {
   applyToJob,
   detectATSType,
   getVerifiedApplicationSubmissionEvidence,
+  isAutomationSupported,
   validateApplicationData,
 } from "./applicationAutomation";
 
@@ -34,6 +35,17 @@ describe("guarded application preparation", () => {
       reviewRequired: true,
       atsType: "greenhouse",
     });
+  });
+
+  it("does not claim it can prepare or access an employer portal form", () => {
+    const support = isAutomationSupported("https://boards.greenhouse.io/example/jobs/1");
+
+    expect(support).toMatchObject({
+      atsType: "greenhouse",
+      supported: false,
+      preparationSupported: false,
+    });
+    expect(support.message).toContain("does not access employer portal forms");
   });
 
   it("does not treat a generic success flag as submission evidence", () => {

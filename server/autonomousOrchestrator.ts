@@ -352,7 +352,7 @@ export function buildAutonomousPlan(
       }
 
       if (!support.supported && !allowUnsupportedATS) {
-        automationNotes.push("Unsupported ATS requires manual application or human review.");
+        automationNotes.push("No unattended employer-portal integration is available. Review the prepared material and complete the employer handoff manually.");
       }
 
       let action: AutonomousJobDecision["action"] = "skip";
@@ -365,9 +365,6 @@ export function buildAutonomousPlan(
         if (resumeMissing) {
           action = "blocked";
           automationNotes.push("An active versioned resume is required before Hire.AI can prepare application materials for this role.");
-        } else if (support.preparationSupported) {
-          action = "queue_for_review";
-          automationNotes.push("The form may be prepared automatically, but final submission requires user review.");
         } else if (!support.supported && allowUnsupportedATS) {
           action = "manual_apply";
         } else if (mode === "auto_apply" && support.supported && !requireHumanReview) {

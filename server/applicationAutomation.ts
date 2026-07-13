@@ -193,7 +193,9 @@ export function prepareApplicationData(
 }
 
 /**
- * Check if automated application is supported for a URL
+ * Describes Hire.AI's employer-portal boundary for a URL. Material can be
+ * prepared in the internal ledger, but this service never opens, fills,
+ * uploads to, or submits an employer portal.
  */
 export function isAutomationSupported(url: string): {
   supported: boolean;
@@ -202,14 +204,11 @@ export function isAutomationSupported(url: string): {
   message: string;
 } {
   const atsType = detectATSType(url);
-  const preparationSupported = ["greenhouse", "lever"].includes(atsType);
 
   return {
     supported: false,
-    preparationSupported,
+    preparationSupported: false,
     atsType,
-    message: preparationSupported
-      ? `${atsType} forms can be prepared, but a person must review and submit them.`
-      : `Automated application requires review for ${atsType}. Manual application may be required.`,
+    message: `Hire.AI can prepare application material in its ledger for ${atsType}, but it does not access employer portal forms. Review and submit manually through the employer portal.`,
   };
 }

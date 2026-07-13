@@ -59,6 +59,27 @@ describe("automation application preparation route", () => {
     });
   });
 
+  it("reports material preparation without advertising employer-portal form access", async () => {
+    const caller = appRouter.createCaller(createContext(98400));
+
+    const [support, greenhouse] = await Promise.all([
+      caller.automation.getATSSupport(),
+      caller.automation.detectATS({ url: "https://boards.greenhouse.io/example/jobs/1" }),
+    ]);
+
+    expect(support).toMatchObject({
+      submissionSupported: [],
+      preparationSupported: [],
+      materialPreparationSupported: true,
+    });
+    expect(support.notes).toContain("does not open, fill, upload to, or submit");
+    expect(greenhouse).toMatchObject({
+      atsType: "greenhouse",
+      supported: false,
+      preparationSupported: false,
+    });
+  });
+
   it("records a reviewable preparation rather than an applied submission", async () => {
     const userId = 98401;
     await upsertUserProfile({

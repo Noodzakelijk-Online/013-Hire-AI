@@ -2582,10 +2582,11 @@ export const appRouter = router({
     getATSSupport: publicProcedure.query(async () => {
       return {
         submissionSupported: [],
-        preparationSupported: ["greenhouse", "lever"],
-        guarded: ["workday", "taleo", "smartrecruiters"],
+        preparationSupported: [],
+        materialPreparationSupported: true,
+        guarded: ["greenhouse", "lever", "workday", "taleo", "smartrecruiters"],
         manualReviewRequired: ["unknown"],
-        notes: "No ATS is currently enabled for unattended final submission. Greenhouse and Lever forms can be prepared for review.",
+        notes: "Hire.AI can prepare resume-linked application material in its ledger, but it does not open, fill, upload to, or submit any employer portal form. Employer handoff and confirmation remain manual.",
       };
     }),
     plan: protectedProcedure

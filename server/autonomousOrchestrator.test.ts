@@ -68,7 +68,7 @@ describe("autonomous orchestrator", () => {
     expect(plan.decisions[0].reviewRequired).toBe(true);
   });
 
-  it("requires review for ATS forms that can be prepared but not submitted", () => {
+  it("requires review when employer-portal handoff remains manual", () => {
     const plan = buildAutonomousPlan([baseJob], profile, [], {
       mode: "auto_apply",
       requireHumanReview: false,
@@ -78,6 +78,8 @@ describe("autonomous orchestrator", () => {
     expect(plan.summary.queuedForApply).toBe(0);
     expect(plan.summary.queuedForReview).toBe(1);
     expect(plan.decisions[0].automationSupported).toBe(false);
+    expect(plan.decisions[0].automationNotes.join(" ")).toContain("does not access employer portal forms");
+    expect(plan.decisions[0].automationNotes.join(" ")).not.toContain("form may be prepared automatically");
   });
 
   it("keeps jobs outside explicit target roles out of autonomous queues", () => {
