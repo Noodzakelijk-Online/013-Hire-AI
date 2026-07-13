@@ -95,7 +95,7 @@ export const jobDuplicates = mysqlTable("job_duplicates", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("job_duplicates_primary_duplicate_unique").on(table.primaryJobId, table.duplicateJobId),
-  index("job_duplicates_duplicate_job_idx").on(table.duplicateJobId),
+  uniqueIndex("job_duplicates_duplicate_job_unique").on(table.duplicateJobId),
 ]);
 
 /**

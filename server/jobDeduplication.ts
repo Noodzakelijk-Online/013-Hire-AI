@@ -21,6 +21,11 @@ export interface JobDuplicateCandidate {
   match: JobDuplicateMatch;
 }
 
+export interface JobDuplicateLink {
+  primaryJobId: number;
+  duplicateJobId: number;
+}
+
 const TITLE_NOISE = new Set(["remote", "hybrid", "onsite", "job", "role", "position"]);
 const TRACKING_QUERY_PARAMETERS = new Set([
   "source",
@@ -133,4 +138,44 @@ export function findBestJobDuplicateCandidate(
     );
 
   return matches[0] || null;
+}
+
+/**
+ * Follow duplicate links until the durable canonical listing is reached.
+ * Ambiguous or cyclic links are unsafe because they split a user's ledger, so
+ * callers must correct the source data instead of silently choosing a record.
+ */
+export function resolveCanonicalJobId(jobId: number, links: JobDuplicateLink[]): number {
+  let currentJobId = jobId;
+  const visitedJobIds = new Set<number>();
+
+  while (true) {
+    if (visitedJobIds.has(currentJobId)) {
+      throw new Error("Job duplicate links contain a cycle.");
+    }
+    visitedJobIds.add(currentJobId);
+
+    const directLinks = links.filter((link) => link.duplicateJobId === currentJobId);
+    const primaryJobIds = Array.from(new Set(directLinks.map((link) => link.primaryJobId)));
+    if (primaryJobIds.length === 0) return currentJobId;
+    if (primaryJobIds.length > 1) {
+      throw new Error("Job duplicate links assign more than one canonical listing.");
+    }
+
+    currentJobId = primaryJobIds[0];
+  }
+}
+
+/** Return every known source listing that belongs to one canonical opportunity. */
+export function getCanonicalJobGroupIds(jobId: number, links: JobDuplicateLink[]): number[] {
+  const canonicalJobId = resolveCanonicalJobId(jobId, links);
+  const sourceIds = new Set<number>([canonicalJobId]);
+
+  for (const link of links) {
+    if (resolveCanonicalJobId(link.duplicateJobId, links) === canonicalJobId) {
+      sourceIds.add(link.duplicateJobId);
+    }
+  }
+
+  return Array.from(sourceIds);
 }

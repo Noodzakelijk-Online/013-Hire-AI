@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { compareJobsForDeduplication, findBestJobDuplicateCandidate } from "./jobDeduplication";
+import {
+  compareJobsForDeduplication,
+  findBestJobDuplicateCandidate,
+  getCanonicalJobGroupIds,
+  resolveCanonicalJobId,
+} from "./jobDeduplication";
 
 describe("job deduplication", () => {
   it("matches canonical application URLs across tracking parameters", () => {
@@ -102,5 +107,29 @@ describe("job deduplication", () => {
     );
 
     expect(match).toBeNull();
+  });
+
+  it("resolves chained duplicate links to one canonical listing", () => {
+    const links = [
+      { primaryJobId: 10, duplicateJobId: 20 },
+      { primaryJobId: 20, duplicateJobId: 30 },
+    ];
+
+    expect(resolveCanonicalJobId(30, links)).toBe(10);
+    expect(getCanonicalJobGroupIds(20, links).sort((left, right) => left - right)).toEqual([10, 20, 30]);
+  });
+
+  it("rejects duplicate links that assign more than one canonical listing", () => {
+    expect(() => resolveCanonicalJobId(30, [
+      { primaryJobId: 10, duplicateJobId: 30 },
+      { primaryJobId: 20, duplicateJobId: 30 },
+    ])).toThrow("more than one canonical listing");
+  });
+
+  it("rejects cyclic duplicate links", () => {
+    expect(() => resolveCanonicalJobId(10, [
+      { primaryJobId: 20, duplicateJobId: 10 },
+      { primaryJobId: 10, duplicateJobId: 20 },
+    ])).toThrow("contain a cycle");
   });
 });

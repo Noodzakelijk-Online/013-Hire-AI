@@ -4,7 +4,7 @@ import { createJobMatch, getUserJobMatches } from "./db";
 describe("job match persistence", () => {
   it("updates one current match record for each user and job", async () => {
     const userId = 991001;
-    const jobId = 881001;
+    const jobId = 1;
 
     const firstWrite = await createJobMatch({
       userId,
@@ -46,12 +46,22 @@ describe("job match persistence", () => {
 
   it("filters the current records by the requested threshold", async () => {
     const userId = 991002;
-    await createJobMatch({ userId, jobId: 881002, matchScore: 44 });
-    await createJobMatch({ userId, jobId: 881003, matchScore: 78 });
+    await createJobMatch({ userId, jobId: 2, matchScore: 44 });
+    await createJobMatch({ userId, jobId: 3, matchScore: 78 });
 
     const matches = await getUserJobMatches(userId, 70);
 
     expect(matches).toHaveLength(1);
-    expect(matches[0]).toMatchObject({ jobId: 881003, matchScore: 78 });
+    expect(matches[0]).toMatchObject({ jobId: 3, matchScore: 78 });
+  });
+
+  it("persists a match for a duplicate listing under its canonical job", async () => {
+    const userId = 991003;
+    await createJobMatch({ userId, jobId: 5, matchScore: 81 });
+
+    const matches = await getUserJobMatches(userId, 0);
+
+    expect(matches).toHaveLength(1);
+    expect(matches[0]).toMatchObject({ jobId: 1, matchScore: 81 });
   });
 });

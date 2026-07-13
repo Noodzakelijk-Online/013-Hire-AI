@@ -67,6 +67,7 @@ import {
 import { isOfferEligibleApplicationStatus } from "@shared/offerEligibility";
 import { getListingObservationCutoff, isJobListingCurrent } from "@shared/jobListingFreshness";
 import { getMissingScraperPlatformCatalog, scraperPlatformCatalog } from "./scrapers/platformCatalog";
+import { getCanonicalJobGroupIds, resolveCanonicalJobId } from "./jobDeduplication";
 
 type InsertJob = InferInsertModel<typeof jobs>;
 type InsertUserProfile = InferInsertModel<typeof userProfiles>;
@@ -687,13 +688,8 @@ export async function getJobAggregationSources(jobId: number) {
   if (!db) {
     const job = sampleJobs.find((item) => item.id === jobId);
     if (!job) return null;
-    const primaryJobId = sampleJobDuplicateLinks.find((link) => link.duplicateJobId === jobId)?.primaryJobId ?? jobId;
-    const sourceIds = [
-      primaryJobId,
-      ...sampleJobDuplicateLinks
-        .filter((link) => link.primaryJobId === primaryJobId)
-        .map((link) => link.duplicateJobId),
-    ];
+    const primaryJobId = resolveCanonicalJobId(jobId, sampleJobDuplicateLinks);
+    const sourceIds = getCanonicalJobGroupIds(jobId, sampleJobDuplicateLinks);
     return {
       primaryJobId,
       sources: sourceIds
@@ -709,17 +705,14 @@ export async function getJobAggregationSources(jobId: number) {
     .limit(1);
   if (!job[0]) return null;
 
-  const relation = await db
-    .select({ primaryJobId: jobDuplicates.primaryJobId })
-    .from(jobDuplicates)
-    .where(eq(jobDuplicates.duplicateJobId, jobId))
-    .limit(1);
-  const primaryJobId = relation[0]?.primaryJobId ?? jobId;
-  const duplicates = await db
-    .select({ duplicateJobId: jobDuplicates.duplicateJobId })
-    .from(jobDuplicates)
-    .where(eq(jobDuplicates.primaryJobId, primaryJobId));
-  const sourceIds = [primaryJobId, ...duplicates.map((item) => item.duplicateJobId)];
+  const links = await db
+    .select({
+      primaryJobId: jobDuplicates.primaryJobId,
+      duplicateJobId: jobDuplicates.duplicateJobId,
+    })
+    .from(jobDuplicates);
+  const primaryJobId = resolveCanonicalJobId(jobId, links);
+  const sourceIds = getCanonicalJobGroupIds(jobId, links);
   const sources = await db
     .select()
     .from(jobs)
@@ -912,22 +905,37 @@ export async function getCanonicalJobId(jobId: number): Promise<number | null> {
   const db = await getDb();
   if (!db) {
     if (!sampleJobs.some((job) => job.id === jobId)) return null;
-    return sampleJobDuplicateLinks.find((link) => link.duplicateJobId === jobId)?.primaryJobId ?? jobId;
+    return resolveCanonicalJobId(jobId, sampleJobDuplicateLinks);
   }
 
-  const job = await db
-    .select({ id: jobs.id })
-    .from(jobs)
-    .where(eq(jobs.id, jobId))
-    .limit(1);
-  if (!job[0]) return null;
+  let currentJobId = jobId;
+  const visitedJobIds = new Set<number>();
+  while (true) {
+    if (visitedJobIds.has(currentJobId)) {
+      throw new Error("Job duplicate links contain a cycle.");
+    }
+    visitedJobIds.add(currentJobId);
 
-  const relation = await db
-    .select({ primaryJobId: jobDuplicates.primaryJobId })
-    .from(jobDuplicates)
-    .where(eq(jobDuplicates.duplicateJobId, jobId))
-    .limit(1);
-  return relation[0]?.primaryJobId ?? jobId;
+    const job = await db
+      .select({ id: jobs.id })
+      .from(jobs)
+      .where(eq(jobs.id, currentJobId))
+      .limit(1);
+    if (!job[0]) return null;
+
+    const relations = await db
+      .select({ primaryJobId: jobDuplicates.primaryJobId })
+      .from(jobDuplicates)
+      .where(eq(jobDuplicates.duplicateJobId, currentJobId))
+      .limit(2);
+    const primaryJobIds = Array.from(new Set(relations.map((relation) => relation.primaryJobId)));
+    if (primaryJobIds.length === 0) return currentJobId;
+    if (primaryJobIds.length > 1) {
+      throw new Error("Job duplicate links assign more than one canonical listing.");
+    }
+
+    currentJobId = primaryJobIds[0];
+  }
 }
 
 export async function getAutonomousRunState(userId: number): Promise<AutonomousRunStateSnapshot | null> {
@@ -2793,6 +2801,9 @@ export async function listInterviewPreparationsForUser(userId: number) {
 
 // Job Matches
 export async function createJobMatch(match: InsertJobMatch) {
+  const canonicalJobId = await getCanonicalJobId(match.jobId);
+  if (canonicalJobId === null) throw new Error("Job not found.");
+  match = { ...match, jobId: canonicalJobId };
   const db = await getDb();
   if (!db) {
     const existing = memoryJobMatches.find((item) =>
