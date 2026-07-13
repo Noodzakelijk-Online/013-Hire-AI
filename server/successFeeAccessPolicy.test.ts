@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { TrpcContext } from "./_core/context";
 import { successFeesRouter } from "./routers/successFees";
 
-function createContext(): TrpcContext {
+function createContext(tosAcceptedAt: Date | null = null): TrpcContext {
   return {
     user: {
       id: 99401,
@@ -13,7 +13,7 @@ function createContext(): TrpcContext {
       role: "user",
       stripeCustomerId: null,
       accountStatus: "active",
-      tosAcceptedAt: null,
+      tosAcceptedAt,
       createdAt: new Date(),
       updatedAt: new Date(),
       lastSignedIn: new Date(),
@@ -36,5 +36,21 @@ describe("success-fee access policy", () => {
     for (const action of actions) {
       await expect(action()).rejects.toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("Accept the Terms of Service") });
     }
+  });
+
+  it("rejects an invalid hire start date before any proof or billing work", async () => {
+    const caller = successFeesRouter.createCaller(createContext(new Date()));
+
+    await expect(caller.reportHire({
+      employerName: "Example",
+      jobTitle: "Engineer",
+      monthlySalary: 5000,
+      currency: "USD",
+      startDate: "2026-02-30",
+      offerLetterBase64: "proof",
+      offerLetterMimeType: "application/pdf",
+      offerLetterFileName: "offer.pdf",
+      termsAccepted: true,
+    })).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 });

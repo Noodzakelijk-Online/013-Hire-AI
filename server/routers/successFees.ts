@@ -27,6 +27,13 @@ const UNRESOLVED_SUCCESS_FEE_STATUSES = [
   "disputed",
 ] as const;
 const EMPLOYMENT_END_REPORTABLE_STATUSES = new Set(["pending_verification", "active"]);
+const calendarDate = z.string().trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Use a calendar date in YYYY-MM-DD format.")
+  .refine((value) => {
+    const [year, month, day] = value.split("-").map(Number);
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    return parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day;
+  }, "Use a real calendar date.");
 
 function assertSuccessFeeTermsAccepted(user: {
   tosAcceptedAt?: Date | null;
@@ -149,7 +156,7 @@ export const successFeesRouter = router({
       jobTitle: z.string().min(1).max(255),
       monthlySalary: z.number().min(MIN_MONTHLY_SALARY, `Minimum salary is $${MIN_MONTHLY_SALARY}/month`),
       currency: z.string().default("USD"),
-      startDate: z.string(), // ISO date string
+      startDate: calendarDate,
       applicationId: z.number().optional(),
       offerLetterBase64: z.string().min(1, "Offer letter is required"),
       offerLetterMimeType: z.string().default("application/pdf"),
@@ -240,7 +247,7 @@ export const successFeesRouter = router({
 
       // Calculate fee
       const monthlyFeeAmount = calculateMonthlyFee(input.monthlySalary);
-      const startDate = new Date(input.startDate);
+      const startDate = new Date(`${input.startDate}T00:00:00.000Z`);
 
       // Set next verification due date (90 UTC days from start)
       const nextVerificationDue = calculateNextVerificationDue(startDate);
