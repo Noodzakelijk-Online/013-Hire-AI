@@ -319,19 +319,20 @@ function tokenEndpointBody(config: ConnectorOAuthConfig, code: string) {
   return body.toString();
 }
 
-export async function exchangeConnectorAuthorizationCode(
-  config: ConnectorOAuthConfig,
-  code: string,
-  fetcher: typeof fetch = fetch
-): Promise<OAuthTokenResponse> {
-  const response = await fetcher(config.tokenEndpoint, {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: tokenEndpointBody(config, code),
+function refreshTokenEndpointBody(config: ConnectorOAuthConfig, refreshToken: string) {
+  const body = new URLSearchParams({
+    client_id: config.clientId,
+    client_secret: config.clientSecret,
+    refresh_token: refreshToken,
+    grant_type: "refresh_token",
   });
+  return body.toString();
+}
+
+async function parseOAuthTokenResponse(
+  response: Response,
+  fallbackScopes: string[]
+): Promise<OAuthTokenResponse> {
   let payload: Record<string, unknown> = {};
   try {
     payload = await response.json() as Record<string, unknown>;
@@ -346,7 +347,7 @@ export async function exchangeConnectorAuthorizationCode(
     : typeof payload.expires_in === "string" ? Number(payload.expires_in) : NaN;
   const grantedScope = typeof payload.scope === "string"
     ? payload.scope.split(/[\s,]+/).map((scope) => scope.trim()).filter(Boolean)
-    : config.scopes;
+    : fallbackScopes;
   return {
     accessToken: payload.access_token,
     refreshToken: typeof payload.refresh_token === "string" && payload.refresh_token ? payload.refresh_token : null,
@@ -356,4 +357,36 @@ export async function exchangeConnectorAuthorizationCode(
     tokenType: typeof payload.token_type === "string" ? payload.token_type : null,
     grantedScopes: grantedScope,
   };
+}
+
+export async function exchangeConnectorAuthorizationCode(
+  config: ConnectorOAuthConfig,
+  code: string,
+  fetcher: typeof fetch = fetch
+): Promise<OAuthTokenResponse> {
+  const response = await fetcher(config.tokenEndpoint, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: tokenEndpointBody(config, code),
+  });
+  return parseOAuthTokenResponse(response, config.scopes);
+}
+
+export async function refreshConnectorAccessToken(
+  config: ConnectorOAuthConfig,
+  refreshToken: string,
+  fetcher: typeof fetch = fetch
+): Promise<OAuthTokenResponse> {
+  const response = await fetcher(config.tokenEndpoint, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: refreshTokenEndpointBody(config, refreshToken),
+  });
+  return parseOAuthTokenResponse(response, config.scopes);
 }

@@ -573,6 +573,91 @@ export const appRouter = router({
         return { success: true };
       }),
 
+    discoverCloudDocuments: protectedProcedure
+      .input(z.object({ provider: z.enum(["google_drive", "dropbox"]) }))
+      .mutation(async ({ ctx, input }) => {
+        const { discoverCloudResumeDocuments } = await import("./cloudDocumentDiscovery");
+        const { createAuditEvent } = await import("./db");
+        try {
+          const documents = await discoverCloudResumeDocuments(ctx.user.id, input.provider);
+          await createAuditEvent({
+            userId: ctx.user.id,
+            entityType: "user",
+            entityId: ctx.user.id,
+            action: "cloud_resume_documents_discovered",
+            actor: "user",
+            source: "profile.discoverCloudDocuments",
+            afterState: JSON.stringify({ provider: input.provider, documentCount: documents.length }),
+            riskLevel: "low",
+          });
+          return { provider: input.provider, documents };
+        } catch (error) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: error instanceof Error ? error.message : "Cloud document discovery could not be completed.",
+          });
+        }
+      }),
+
+    importCloudResume: protectedProcedure
+      .input(z.object({
+        provider: z.enum(["google_drive", "dropbox"]),
+        sourceId: z.string().trim().min(1).max(1000),
+        name: z.string().trim().min(1).max(500),
+        mimeType: z.string().trim().min(1).max(255),
+        size: z.number().int().min(0).max(10 * 1024 * 1024).nullable(),
+        modifiedAt: z.string().datetime().nullable(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { downloadCloudResumeDocument } = await import("./cloudDocumentDiscovery");
+        const { parseResumeFromFile, resumeToProfileData } = await import("./resumeParser");
+        const { createAuditEvent, upsertUserProfile } = await import("./db");
+        const { RESUME_MIME_TYPES, validateUploadedFile } = await import("./uploadValidation");
+        try {
+          const document = await downloadCloudResumeDocument(ctx.user.id, input);
+          const validation = validateUploadedFile({
+            data: document.data,
+            fileName: document.fileName,
+            mimeType: document.mimeType,
+            allowedMimeTypes: RESUME_MIME_TYPES,
+          });
+          const parsed = await parseResumeFromFile(document.data, document.mimeType);
+          const profileData = resumeToProfileData(parsed);
+          const resume = await uploadResume(
+            ctx.user.id,
+            document.data,
+            validation.fileName,
+            document.mimeType
+          );
+          await upsertUserProfile({
+            userId: ctx.user.id,
+            resumeUrl: resume.fileUrl,
+            resumeFileKey: resume.fileKey,
+            ...profileData,
+          });
+          await createAuditEvent({
+            userId: ctx.user.id,
+            entityType: "user",
+            entityId: ctx.user.id,
+            action: "cloud_resume_imported",
+            actor: "user",
+            source: "profile.importCloudResume",
+            afterState: JSON.stringify({
+              provider: input.provider,
+              resumeId: resume.id,
+              resumeVersion: resume.version,
+            }),
+            riskLevel: "medium",
+          });
+          return { success: true, parsed, profileData, resume };
+        } catch (error) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: error instanceof Error ? error.message : "Cloud resume import could not be completed.",
+          });
+        }
+      }),
+
     // Work Experience
     getWorkExperiences: protectedProcedure.query(async ({ ctx }) => {
       const { getWorkExperiences } = await import("./db");

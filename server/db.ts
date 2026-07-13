@@ -1035,6 +1035,29 @@ export async function disconnectUserConnectorAccount(userId: number, provider: I
   });
 }
 
+/** Server-only access to encrypted grants. Never return this from a tRPC procedure. */
+export async function getConnectorAuthorization(
+  userId: number,
+  provider: InsertConnectorAuthorization["provider"]
+): Promise<ConnectorAuthorization | null> {
+  const db = await getDb();
+  if (!db) {
+    const authorization = memoryConnectorAuthorizations.find((item) =>
+      item.userId === userId && item.provider === provider
+    );
+    return authorization ? authorization as ConnectorAuthorization : null;
+  }
+  const records = await db
+    .select()
+    .from(connectorAuthorizations)
+    .where(and(
+      eq(connectorAuthorizations.userId, userId),
+      eq(connectorAuthorizations.provider, provider)
+    ))
+    .limit(1);
+  return records[0] ?? null;
+}
+
 export async function upsertConnectorAuthorization(authorization: InsertConnectorAuthorization) {
   const db = await getDb();
   const now = new Date();

@@ -110,6 +110,7 @@ Express 4 Server (Node.js 22 ESM)
 - **AI Job Matching** — Scores listings against the candidate profile and saved policy, with review reasons and evidence gates.
 - **Review-Gated Application Preparation** — Creates tailored materials and internal approval work; Hire.AI never claims an employer submission without deterministic evidence or explicit manual confirmation.
 - **Resume Parsing** — Upload PDF or DOCX; AI extracts and populates the profile automatically
+- **Cloud Resume Discovery** — After explicit Google Drive or Dropbox authorization, lists only supported resume candidates and imports a user-selected file through the same validated, versioned resume ledger.
 - **Unified Operating Ledger** — Connects source platform, decisions, materials, submission evidence, responses, follow-ups, interviews, offer attribution, and compliance work.
 - **Saved Jobs** — Bookmark interesting listings for manual review
 - **AI Preferences** — Configure controlled preparation, daily review limits, discovery policy, and job preferences

@@ -19,6 +19,7 @@ import {
   Code,
   FolderGit2,
   Globe,
+  Cloud,
   Target,
   ShieldCheck,
   LockKeyhole,
@@ -47,6 +48,15 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 
+type CloudResumeDocument = {
+  provider: "google_drive" | "dropbox";
+  sourceId: string;
+  name: string;
+  mimeType: string;
+  size: number | null;
+  modifiedAt: string | null;
+};
+
 export default function Profile() {
   const { loading, isAuthenticated } = useAuth();
   const [isUploading, setIsUploading] = useState(false);
@@ -70,6 +80,7 @@ export default function Profile() {
   const [salaryMinimum, setSalaryMinimum] = useState("");
   const [salaryMaximum, setSalaryMaximum] = useState("");
   const [needsVisaSponsorship, setNeedsVisaSponsorship] = useState(false);
+  const [cloudResumeDocuments, setCloudResumeDocuments] = useState<CloudResumeDocument[]>([]);
 
   // Queries
   const profileQuery = trpc.profile.get.useQuery(undefined, {
@@ -119,6 +130,30 @@ export default function Profile() {
       await evidenceReadinessQuery.refetch();
     },
     onError: (error) => toast.error(error.message || "Unable to disable connector access"),
+  });
+  const discoverCloudDocuments = trpc.profile.discoverCloudDocuments.useMutation({
+    onSuccess: (result) => {
+      setCloudResumeDocuments(result.documents);
+      toast.success(
+        result.documents.length === 1
+          ? "Found 1 supported cloud resume"
+          : `Found ${result.documents.length} supported cloud resumes`
+      );
+    },
+    onError: (error) => toast.error(error.message || "Unable to discover cloud documents"),
+  });
+  const importCloudResume = trpc.profile.importCloudResume.useMutation({
+    onSuccess: async ({ resume }) => {
+      toast.success(`Cloud resume imported as version ${resume.version}`);
+      setCloudResumeDocuments([]);
+      await Promise.all([
+        profileQuery.refetch(),
+        evidenceReadinessQuery.refetch(),
+        activeResumeQuery.refetch(),
+        resumeVersionsQuery.refetch(),
+      ]);
+    },
+    onError: (error) => toast.error(error.message || "Unable to import this cloud resume"),
   });
   const parseResumeFile = trpc.resume.parseFile.useMutation({
     onSuccess: async ({ resume }) => {
@@ -289,6 +324,14 @@ export default function Profile() {
 
   const handleGitHubConnect = () => handleRequestConnectorConnection("github");
 
+  const handleCloudDiscovery = (provider: CloudResumeDocument["provider"]) => {
+    discoverCloudDocuments.mutate({ provider });
+  };
+
+  const handleCloudResumeImport = (document: CloudResumeDocument) => {
+    importCloudResume.mutate(document);
+  };
+
   const handleSaveSocialLinks = () => {
     updateProfile.mutate({
       linkedinUrl: linkedinUrl.trim() || undefined,
@@ -427,7 +470,7 @@ export default function Profile() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
               <Button
                 variant="outline"
                 className="h-24 flex-col gap-2 border-slate-700 hover:border-cyan-500 hover:bg-cyan-500/10"
@@ -446,6 +489,34 @@ export default function Profile() {
               >
                 <Github className="w-6 h-6 text-white" />
                 <span className="text-white">Connect GitHub</span>
+              </Button>
+
+              <Button
+                variant="outline"
+                className="h-24 flex-col gap-2 border-slate-700 hover:border-cyan-500 hover:bg-cyan-500/10"
+                onClick={() => handleCloudDiscovery("google_drive")}
+                disabled={discoverCloudDocuments.isPending}
+              >
+                {discoverCloudDocuments.isPending ? (
+                  <Loader2 className="w-6 h-6 animate-spin text-cyan-400" />
+                ) : (
+                  <Cloud className="w-6 h-6 text-cyan-400" />
+                )}
+                <span className="text-white">Find Drive Resumes</span>
+              </Button>
+
+              <Button
+                variant="outline"
+                className="h-24 flex-col gap-2 border-slate-700 hover:border-cyan-500 hover:bg-cyan-500/10"
+                onClick={() => handleCloudDiscovery("dropbox")}
+                disabled={discoverCloudDocuments.isPending}
+              >
+                {discoverCloudDocuments.isPending ? (
+                  <Loader2 className="w-6 h-6 animate-spin text-cyan-400" />
+                ) : (
+                  <Cloud className="w-6 h-6 text-cyan-400" />
+                )}
+                <span className="text-white">Find Dropbox Resumes</span>
               </Button>
               
               <label>
@@ -473,6 +544,31 @@ export default function Profile() {
                 />
               </label>
             </div>
+            {cloudResumeDocuments.length > 0 ? (
+              <div className="mt-4 space-y-2 rounded-md border border-slate-700/60 bg-slate-950/40 p-3">
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Cloud resume candidates</p>
+                {cloudResumeDocuments.map((document) => (
+                  <div key={`${document.provider}:${document.sourceId}`} className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-2 first:border-t-0 first:pt-0">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-white">{document.name}</p>
+                      <p className="mt-1 text-xs text-slate-400">
+                        {document.provider === "google_drive" ? "Google Drive" : "Dropbox"}
+                        {document.size !== null ? ` - ${formatBytes(document.size)}` : ""}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleCloudResumeImport(document)}
+                      disabled={importCloudResume.isPending}
+                    >
+                      {importCloudResume.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+                      Import
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             <div className="mt-4 rounded-md border border-slate-700/60 bg-slate-950/40 p-3">
               {activeResumeQuery.data ? (
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -950,6 +1046,12 @@ function parseOptionalSalary(value: string): number | null | undefined {
   const parsed = Number(normalized);
   if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 10_000_000) return undefined;
   return parsed;
+}
+
+function formatBytes(size: number) {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function getEvidenceStatusClass(status: ProfileEvidenceControlStatus) {

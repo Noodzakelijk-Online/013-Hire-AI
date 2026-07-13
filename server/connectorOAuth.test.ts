@@ -7,6 +7,7 @@ import {
   exchangeConnectorAuthorizationCode,
   getConnectorOAuthAvailability,
   getConnectorOAuthConfig,
+  refreshConnectorAccessToken,
   verifyConnectorOAuthState,
   type ConnectorOAuthEnvironment,
 } from "./connectorOAuth";
@@ -105,6 +106,24 @@ describe("external connector OAuth boundary", () => {
     expect(fetcher).toHaveBeenCalledWith(config.tokenEndpoint, expect.objectContaining({
       method: "POST",
       body: expect.stringContaining("grant_type=authorization_code"),
+    }));
+  });
+
+  it("uses the same protected token endpoint to refresh an expiring connector grant", async () => {
+    const config = getConnectorOAuthConfig("google_drive", environment)!;
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      access_token: "refreshed-access-token",
+      expires_in: 3600,
+      token_type: "Bearer",
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+
+    const result = await refreshConnectorAccessToken(config, "stored-refresh-token", fetcher);
+
+    expect(result.accessToken).toBe("refreshed-access-token");
+    expect(result.refreshToken).toBeNull();
+    expect(fetcher).toHaveBeenCalledWith(config.tokenEndpoint, expect.objectContaining({
+      method: "POST",
+      body: expect.stringContaining("grant_type=refresh_token"),
     }));
   });
 });

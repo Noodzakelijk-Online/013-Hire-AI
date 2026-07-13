@@ -103,4 +103,13 @@ describe("profile evidence readiness router", () => {
     expect(summary.status).toBe("blocked");
     expect(summary.providers.find((provider) => provider.id === "resume")?.status).toBe("missing");
   });
+
+  it("does not read cloud storage before a fresh connector grant exists", async () => {
+    const caller = appRouter.createCaller(createContext(99603));
+
+    await expect(caller.profile.discoverCloudDocuments({ provider: "google_drive" })).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: "Google Drive must be freshly authorized before Hire.AI can discover cloud documents.",
+    });
+  });
 });
