@@ -322,6 +322,48 @@ describe("command center summary", () => {
     expect(summary.primaryRoute).toBe("/review-queue");
   });
 
+  it("counts visible evidence and inbox review work in the command-center total", () => {
+    const summary = getCommandCenterSummary({
+      readiness: {
+        autoApplyEligible: true,
+        blockers: [],
+        warnings: [],
+      },
+      queues: {
+        evidenceGates: [{ id: "resume" }, { id: "mailbox" }],
+        inboxResponseCandidates: [{ id: 1 }],
+      },
+      metrics: {
+        preparedApplications: 1,
+      },
+    }, clearCompliance);
+
+    expect(summary.evidenceGates).toBe(2);
+    expect(summary.inboxResponseCandidates).toBe(1);
+    expect(summary.openActions).toBe(4);
+  });
+
+  it("falls back to queue state when an operating metric is unavailable", () => {
+    const summary = getCommandCenterSummary({
+      canReviewAdminItems: true,
+      readiness: {
+        autoApplyEligible: true,
+        blockers: [],
+        warnings: [],
+      },
+      queues: {
+        reviewDecisions: [{ id: 1 }],
+        adminReviews: [{ id: 2 }],
+        successFeeCompliance: [{ id: 3 }],
+      },
+      metrics: {},
+    }, clearCompliance);
+
+    expect(summary.reviewItems).toBe(2);
+    expect(summary.complianceItems).toBe(1);
+    expect(summary.openActions).toBe(3);
+  });
+
   it("surfaces employer replies before routine follow-up drafting", () => {
     const summary = getCommandCenterSummary({
       readiness: {

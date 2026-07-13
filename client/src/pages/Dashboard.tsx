@@ -475,7 +475,7 @@ export default function Dashboard() {
                       {commandCenterSummary.label}
                     </Badge>
                     <Badge variant="outline" className="border-slate-700 text-slate-300">
-                      {commandCenterSummary.openActions} open action{commandCenterSummary.openActions === 1 ? "" : "s"}
+                      {commandCenterSummary.openActions} operating action{commandCenterSummary.openActions === 1 ? "" : "s"}
                     </Badge>
                   </div>
                   <div>
@@ -519,6 +519,8 @@ export default function Dashboard() {
                   ["Interviews", commandCenterSummary.interviewSchedulingNeeded, "/review-queue"],
                   ["Prep", commandCenterSummary.interviewPreparationNeeded, "/review-queue"],
                   ["Outcomes", commandCenterSummary.interviewOutcomesNeeded, "/review-queue"],
+                  ["Evidence", commandCenterSummary.evidenceGates, "/profile"],
+                  ["Inbox", commandCenterSummary.inboxResponseCandidates, "/review-queue#review-queue-section-inbox-response-candidates"],
                   ["Replies", commandCenterSummary.employerResponsesNeedingReply, "/review-queue"],
                   ["Delivery checks", commandCenterSummary.followUpDeliveryReconciliation, "/review-queue"],
                   ["Send handoffs", commandCenterSummary.approvedFollowUpsReadyToSend, "/review-queue"],

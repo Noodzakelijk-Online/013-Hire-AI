@@ -32,6 +32,8 @@ export interface CommandCenterSummary {
   unreadInterviewNotifications: number;
   interviewPreparationNeeded: number;
   interviewOutcomesNeeded: number;
+  evidenceGates: number;
+  inboxResponseCandidates: number;
   employerResponsesNeedingReply: number;
   followUpsDue: number;
   approvedFollowUpsReadyToSend: number;
@@ -88,11 +90,13 @@ export function getCommandCenterSummary(
   const profileBlockers = queueCounts.profileBlockers;
   const approvalItems = positiveNumber(ledger?.metrics?.pendingApprovals) || queueCounts.pendingApprovals;
   const adminReviewItems = ledger?.canReviewAdminItems === true
-    ? positiveNumber(ledger?.metrics?.openAdminReviews)
+    ? positiveNumber(ledger?.metrics?.openAdminReviews) || queueCounts.adminReviews
     : 0;
+  const reviewDecisionItems =
+    positiveNumber(ledger?.metrics?.reviewRequiredDecisions) || queueCounts.reviewDecisions;
   const reviewItems =
     adminReviewItems +
-    positiveNumber(ledger?.metrics?.reviewRequiredDecisions) +
+    reviewDecisionItems +
     queueCounts.profileWarnings;
   const interviewSchedulingNeeded =
     positiveNumber(ledger?.metrics?.interviewSchedulingNeeded) || queueCounts.interviewScheduling;
@@ -101,6 +105,8 @@ export function getCommandCenterSummary(
     positiveNumber(ledger?.metrics?.interviewPreparationNeeded) || queueCounts.interviewPreparationNeeded;
   const interviewOutcomesNeeded =
     positiveNumber(ledger?.metrics?.interviewOutcomesNeeded) || queueCounts.interviewOutcomesNeeded;
+  const evidenceGates = queueCounts.evidenceGates;
+  const inboxResponseCandidates = queueCounts.inboxResponseCandidates;
   const employerResponsesNeedingReply =
     positiveNumber(ledger?.metrics?.employerResponsesNeedingReply) || queueCounts.employerResponsesNeedingReply;
   const followUpsDue = positiveNumber(ledger?.metrics?.followUpsDue) || queueCounts.followUpsDue;
@@ -111,7 +117,10 @@ export function getCommandCenterSummary(
   const connectorReadiness =
     positiveNumber(ledger?.metrics?.connectorReadiness) || queueCounts.connectorReadiness;
   const preparedApplications = positiveNumber(ledger?.metrics?.preparedApplications);
-  const complianceItems = complianceActionCount(compliance);
+  const complianceItems = Math.max(
+    complianceActionCount(compliance),
+    queueCounts.successFeeCompliance
+  );
   const dailyRemaining = typeof ledger?.metrics?.dailyRemaining === "number"
     ? ledger.metrics.dailyRemaining
     : null;
@@ -125,6 +134,8 @@ export function getCommandCenterSummary(
     unreadInterviewNotifications +
     interviewPreparationNeeded +
     interviewOutcomesNeeded +
+    evidenceGates +
+    inboxResponseCandidates +
     employerResponsesNeedingReply +
     followUpsDue +
     approvedFollowUpsReadyToSend +
@@ -142,6 +153,8 @@ export function getCommandCenterSummary(
     unreadInterviewNotifications,
     interviewPreparationNeeded,
     interviewOutcomesNeeded,
+    evidenceGates,
+    inboxResponseCandidates,
     employerResponsesNeedingReply,
     followUpsDue,
     approvedFollowUpsReadyToSend,
