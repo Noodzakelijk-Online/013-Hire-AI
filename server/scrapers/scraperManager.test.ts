@@ -92,7 +92,8 @@ describe("scraper manager platform restrictions", () => {
     const where = vi.fn().mockResolvedValue([{ affectedRows: 1 }]);
     const set = vi.fn(() => ({ where }));
     const update = vi.fn(() => ({ set }));
-    const limit = vi.fn().mockResolvedValue([existingJob]);
+    const selectResponses = [[existingJob], []];
+    const limit = vi.fn().mockImplementation(() => Promise.resolve(selectResponses.shift() || []));
     const selectWhere = vi.fn(() => ({ limit }));
     const from = vi.fn(() => ({ where: selectWhere }));
     const select = vi.fn(() => ({ from }));
@@ -114,6 +115,58 @@ describe("scraper manager platform restrictions", () => {
       title: "Senior Platform Engineer",
       description: "Updated source description",
       applicationUrl: "https://jobs.example.com/712?source=refresh",
+      expiryDate: null,
+      isActive: 1,
+    }));
+  });
+
+  it("reactivates an expired canonical listing when a linked source is re-observed", async () => {
+    const duplicate = {
+      id: 714,
+      externalId: "source-job-714",
+      platformId: 7,
+      title: "Staff Data Engineer",
+      company: "Source Co",
+      expiryDate: new Date("2026-07-10T00:00:00.000Z"),
+      isActive: 0,
+    };
+    const primary = {
+      ...duplicate,
+      id: 713,
+      externalId: "canonical-job-713",
+      platformId: 6,
+      applicationUrl: "https://old-source.example.com/713",
+    };
+    const where = vi.fn().mockResolvedValue([{ affectedRows: 1 }]);
+    const set = vi.fn(() => ({ where }));
+    const update = vi.fn(() => ({ set }));
+    const selectResponses = [
+      [duplicate],
+      [{ primaryJobId: primary.id }],
+      [primary],
+    ];
+    const select = vi.fn(() => ({
+      from: () => ({
+        where: () => ({
+          limit: vi.fn().mockImplementation(() => Promise.resolve(selectResponses.shift() || [])),
+        }),
+      }),
+    }));
+    mocks.getDb.mockResolvedValue({ select, update });
+
+    const result = await new ScraperManager().saveJobs([{
+      externalId: "source-job-714",
+      platformId: 7,
+      title: "Staff Data Engineer",
+      company: "Source Co",
+      applicationUrl: "https://fresh-source.example.com/714",
+      isActive: 1,
+    }]);
+
+    expect(result).toEqual({ saved: 0, refreshed: 1, duplicates: 0, errors: 0 });
+    expect(update).toHaveBeenCalledTimes(2);
+    expect(set).toHaveBeenLastCalledWith(expect.objectContaining({
+      applicationUrl: "https://fresh-source.example.com/714",
       expiryDate: null,
       isActive: 1,
     }));

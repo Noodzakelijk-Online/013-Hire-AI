@@ -13,6 +13,39 @@ export interface ScrapeOptions {
   platformNames?: string[];
 }
 
+function isCurrentListing(job: { isActive?: number | null; expiryDate?: Date | null }, now: Date) {
+  return job.isActive === 1 && (!job.expiryDate || job.expiryDate.getTime() > now.getTime());
+}
+
+function refreshedListingValues(job: any, current: any, now: Date) {
+  return {
+    title: job.title ?? current.title,
+    company: job.company ?? current.company,
+    description: job.description ?? current.description,
+    requirements: job.requirements ?? current.requirements,
+    responsibilities: job.responsibilities ?? current.responsibilities,
+    benefits: job.benefits ?? current.benefits,
+    location: job.location ?? current.location,
+    jobType: job.jobType ?? current.jobType,
+    salaryMin: job.salaryMin ?? current.salaryMin,
+    salaryMax: job.salaryMax ?? current.salaryMax,
+    salaryCurrency: job.salaryCurrency ?? current.salaryCurrency,
+    skills: job.skills ?? current.skills,
+    applicationUrl: job.applicationUrl ?? current.applicationUrl,
+    applicationEmail: job.applicationEmail ?? current.applicationEmail,
+    applicationProcess: job.applicationProcess ?? current.applicationProcess,
+    sourceUrl: job.sourceUrl ?? current.sourceUrl,
+    postedDate: job.postedDate ?? current.postedDate,
+    // Re-observing a source identity supersedes a prior expiry for that source.
+    expiryDate: job.expiryDate ?? null,
+    isActive: 1,
+    visaSponsorshipAvailable: job.visaSponsorshipAvailable ?? current.visaSponsorshipAvailable,
+    openHiringSupport: job.openHiringSupport ?? current.openHiringSupport,
+    diversityFriendly: job.diversityFriendly ?? current.diversityFriendly,
+    updatedAt: now,
+  };
+}
+
 /**
  * Scraper Manager
  * Coordinates scraping across all platforms and manages job deduplication
@@ -207,34 +240,29 @@ export class ScraperManager {
             const current = existing[0];
             await db
               .update(jobs)
-              .set({
-                title: job.title ?? current.title,
-                company: job.company ?? current.company,
-                description: job.description ?? current.description,
-                requirements: job.requirements ?? current.requirements,
-                responsibilities: job.responsibilities ?? current.responsibilities,
-                benefits: job.benefits ?? current.benefits,
-                location: job.location ?? current.location,
-                jobType: job.jobType ?? current.jobType,
-                salaryMin: job.salaryMin ?? current.salaryMin,
-                salaryMax: job.salaryMax ?? current.salaryMax,
-                salaryCurrency: job.salaryCurrency ?? current.salaryCurrency,
-                skills: job.skills ?? current.skills,
-                applicationUrl: job.applicationUrl ?? current.applicationUrl,
-                applicationEmail: job.applicationEmail ?? current.applicationEmail,
-                applicationProcess: job.applicationProcess ?? current.applicationProcess,
-                sourceUrl: job.sourceUrl ?? current.sourceUrl,
-                postedDate: job.postedDate ?? current.postedDate,
-                // Seeing the same source identity again is positive evidence that
-                // the listing remains available, even if a previous cycle retired it.
-                expiryDate: job.expiryDate ?? null,
-                isActive: 1,
-                visaSponsorshipAvailable: job.visaSponsorshipAvailable ?? current.visaSponsorshipAvailable,
-                openHiringSupport: job.openHiringSupport ?? current.openHiringSupport,
-                diversityFriendly: job.diversityFriendly ?? current.diversityFriendly,
-                updatedAt: now,
-              })
+              .set(refreshedListingValues(job, current, now))
               .where(eq(jobs.id, current.id));
+
+            const sourceLink = await db
+              .select({ primaryJobId: jobDuplicates.primaryJobId })
+              .from(jobDuplicates)
+              .where(eq(jobDuplicates.duplicateJobId, current.id))
+              .limit(1);
+            if (sourceLink[0]) {
+              const primary = await db
+                .select()
+                .from(jobs)
+                .where(eq(jobs.id, sourceLink[0].primaryJobId))
+                .limit(1);
+              if (primary[0] && !isCurrentListing(primary[0], now)) {
+                // The canonical row represents the aggregate opportunity. A live
+                // linked source must keep it discoverable and actionable.
+                await db
+                  .update(jobs)
+                  .set(refreshedListingValues(job, primary[0], now))
+                  .where(eq(jobs.id, primary[0].id));
+              }
+            }
             refreshed++;
             continue;
           }
