@@ -39,6 +39,7 @@ export interface AutonomousPolicyControlPlanLike {
     queuedForReview?: number | null;
     manualApply?: number | null;
     followUpsDue?: number | null;
+    followUpsActionReady?: number | null;
     dailyRemaining?: number | null;
     policyWarnings?: number | null;
   } | null;
@@ -99,7 +100,7 @@ export function getAutonomousPolicyControlAction({
   const evidenceGate = firstEvidenceGate(plan?.evidenceGates || []);
   const queuedForReview = count(summary?.queuedForReview);
   const manualApply = count(summary?.manualApply);
-  const followUpsDue = count(summary?.followUpsDue);
+  const followUpsDue = count(summary?.followUpsActionReady ?? summary?.followUpsDue);
   const eligible = count(summary?.eligible);
   const dailyRemaining =
     typeof summary?.dailyRemaining === "number" && Number.isFinite(summary.dailyRemaining)

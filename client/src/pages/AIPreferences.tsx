@@ -498,7 +498,7 @@ export default function AIPreferences() {
                     ["Review", autonomousPlan?.summary.queuedForReview || 0],
                     ["Manual", autonomousPlan?.summary.manualApply || 0],
                     ["Blocked", autonomousPlan?.summary.blocked || 0],
-                    ["Follow-ups", autonomousPlan?.summary.followUpsDue || 0],
+                    ["Follow-ups ready", autonomousPlan?.summary.followUpsActionReady ?? autonomousPlan?.summary.followUpsDue ?? 0],
                     ["Gates", evidenceGateSummary.total],
                     ["Stale", autonomousPlan?.summary.expiredJobsSkipped || 0],
                   ].map(([label, value]) => (
@@ -558,10 +558,12 @@ export default function AIPreferences() {
                   trend="Unsupported ATS or platform tasks"
                 />
                 <MetricCard
-                  label="Follow-ups Due"
-                  value={String(autonomousPlan?.summary.followUpsDue || 0)}
+                  label="Follow-ups Ready"
+                  value={String(autonomousPlan?.summary.followUpsActionReady ?? autonomousPlan?.summary.followUpsDue ?? 0)}
                   icon={<CheckCircle2 className="w-5 h-5 text-emerald-400" />}
-                  trend="Based on application activity"
+                  trend={(autonomousPlan?.summary.followUpsBlocked || 0) > 0
+                    ? `${autonomousPlan?.summary.followUpsBlocked} candidate${autonomousPlan?.summary.followUpsBlocked === 1 ? "" : "s"} held by existing workflow`
+                    : "Based on application activity"}
                 />
                 <MetricCard
                   label="Evidence Gates"

@@ -3028,14 +3028,22 @@ export const appRouter = router({
         createFollowUps: z.boolean().optional(),
       }).optional())
       .query(async ({ ctx, input }) => {
-        const { getActiveJobs, getUserProfile, getUserApplications, getUserApplicationDecisions } = await import("./db");
+        const {
+          getActiveJobs,
+          getUserProfile,
+          getUserApplications,
+          getUserApplicationDecisions,
+          listUserApplicationApprovals,
+        } = await import("./db");
         const { buildAutonomousPlan, parseAutonomousPreferences } = await import("./autonomousOrchestrator");
         const { getAutonomousEvidenceContext } = await import("./autonomousEvidence");
-        const [jobList, profile, applications, decisions] = await Promise.all([
+        const { getAutonomousFollowUpReadiness } = await import("./applicationCampaigns");
+        const [jobList, profile, applications, decisions, approvals] = await Promise.all([
           getActiveJobs(250, 0),
           getUserProfile(ctx.user.id),
           getUserApplications(ctx.user.id),
           getUserApplicationDecisions(ctx.user.id),
+          listUserApplicationApprovals(ctx.user.id, "all"),
         ]);
         const resolvedPreferences = {
           ...parseAutonomousPreferences(profile?.preferences),
@@ -3056,9 +3064,29 @@ export const appRouter = router({
             .filter((decision) => decision.decidedBy === "user")
             .map((decision) => decision.jobId)
         );
+        const followUpReadiness = await getAutonomousFollowUpReadiness({
+          applications,
+          approvals,
+          plan,
+          userId: ctx.user.id,
+        });
+        const nextActions = plan.summary.followUpsDue > 0
+          ? [
+            ...plan.nextActions.filter((action) => !action.startsWith("Draft ")),
+            followUpReadiness.actionReadyCount > 0
+              ? `Draft ${followUpReadiness.actionReadyCount} timely follow-up message${followUpReadiness.actionReadyCount === 1 ? "" : "s"}.`
+              : `${followUpReadiness.blockedCount} follow-up candidate${followUpReadiness.blockedCount === 1 ? " is" : "s are"} held by an existing draft, response, or interview workflow.`,
+          ]
+          : plan.nextActions;
 
         return {
           ...plan,
+          summary: {
+            ...plan.summary,
+            followUpsActionReady: followUpReadiness.actionReadyCount,
+            followUpsBlocked: followUpReadiness.blockedCount,
+          },
+          nextActions,
           profileEvidence: evidenceContext.profileEvidence,
           connectorReadiness: evidenceContext.connectorReadiness,
           evidenceGates: evidenceContext.evidenceGates,

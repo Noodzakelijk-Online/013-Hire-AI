@@ -185,6 +185,11 @@ describe("application campaign operating ledger", () => {
       },
     });
     expect(ledger.metrics.followUpsDue).toBe(1);
+    expect(ledger.followUpReadiness).toEqual({
+      candidateCount: 2,
+      actionReadyCount: 1,
+      blockedCount: 1,
+    });
     expect(ledger.queues.followUpsDue).toHaveLength(1);
     expect(ledger.queues.followUpsDue[0]).toMatchObject({
       applicationId: Number(staleApplication.insertId),

@@ -801,8 +801,8 @@ export default function JobSearch() {
                     <p className="text-xs text-slate-400">Blocked</p>
                   </div>
                   <div className="rounded-md bg-slate-800 px-3 py-2">
-                    <p className="text-lg font-bold text-purple-400">{autonomousPlan.summary.followUpsDue}</p>
-                    <p className="text-xs text-slate-400">Follow-ups</p>
+                    <p className="text-lg font-bold text-purple-400">{autonomousPlan.summary.followUpsActionReady ?? autonomousPlan.summary.followUpsDue}</p>
+                    <p className="text-xs text-slate-400">Follow-ups ready</p>
                   </div>
                   <div className="rounded-md bg-slate-800 px-3 py-2">
                     <p className="text-lg font-bold text-amber-400">{autonomousPlan.evidenceGates?.length || 0}</p>

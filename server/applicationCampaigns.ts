@@ -316,6 +316,54 @@ function getFollowUpDueQueue(
     });
 }
 
+/**
+ * Follow-up timing alone is not enough to make a draft actionable. Keep the
+ * same response, interview, and active-draft suppression used by the ledger
+ * available to every autonomous planning surface.
+ */
+export async function getAutonomousFollowUpReadiness({
+  applications,
+  approvals,
+  plan,
+  userId,
+}: {
+  applications: UserApplicationRecord[];
+  approvals: ApplicationApproval[];
+  plan: ReturnType<typeof buildAutonomousPlan>;
+  userId: number;
+}) {
+  const candidateCount = plan.summary.followUpsDue;
+  const suppressionState = await getFollowUpSuppressionState(applications, approvals, userId);
+  const [interviewSchedulingQueue, interviewOutcomeQueue] = await Promise.all([
+    getInterviewSchedulingQueue(applications, userId),
+    getInterviewOutcomeQueue(applications, userId),
+  ]);
+  const employerResponseQueue = await getEmployerResponseQueue(
+    applications,
+    userId,
+    suppressionState
+  );
+  const excludedApplicationIds = new Set([
+    ...interviewSchedulingQueue.map((item) => item.applicationId),
+    ...interviewOutcomeQueue.map((item) => item.applicationId),
+    ...employerResponseQueue.map((item) => item.applicationId),
+  ]);
+  const actionReadyQueue = candidateCount > 0
+    ? getFollowUpDueQueue(applications, plan, excludedApplicationIds, suppressionState)
+    : [];
+
+  return {
+    candidateCount,
+    actionReadyCount: actionReadyQueue.length,
+    blockedCount: Math.max(0, candidateCount - actionReadyQueue.length),
+    actionReadyQueue,
+    suppressionState,
+    interviewSchedulingQueue,
+    interviewOutcomeQueue,
+    employerResponseQueue,
+  };
+}
+
 async function getInterviewPreparationQueue(userId: number) {
   const upcomingInterviews = await getUpcomingInterviews(userId);
   const items = await Promise.all(upcomingInterviews.map(async (item) => {
@@ -560,22 +608,21 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
   });
   const submittedApplications = applications.filter((application) => application.status !== "pending");
   const responseCount = applicationStatusCount(applications, ["viewed", "interview", "offer", "accepted", "rejected"]);
-  const followUpSuppressionState = await getFollowUpSuppressionState(applications, allApprovals, userId);
-  const interviewSchedulingQueue = await getInterviewSchedulingQueue(applications, userId);
+  const followUpReadiness = await getAutonomousFollowUpReadiness({
+    applications,
+    approvals: allApprovals,
+    plan,
+    userId,
+  });
+  const followUpSuppressionState = followUpReadiness.suppressionState;
+  const interviewSchedulingQueue = followUpReadiness.interviewSchedulingQueue;
   const interviewNotificationQueue = await getInterviewNotificationQueue(applications, userId);
   const interviewPreparationQueue = await getInterviewPreparationQueue(userId);
-  const interviewOutcomeQueue = await getInterviewOutcomeQueue(applications, userId);
-  const employerResponseQueue = await getEmployerResponseQueue(applications, userId, followUpSuppressionState);
+  const interviewOutcomeQueue = followUpReadiness.interviewOutcomeQueue;
+  const employerResponseQueue = followUpReadiness.employerResponseQueue;
   const successFeeCompliance = getSuccessFeeComplianceSummary(successFees, offerAttributionReviews);
   const successFeeComplianceQueue = getSuccessFeeComplianceQueue(successFees, offerAttributionReviews);
-  const followUpExcludedApplicationIds = new Set([
-    ...interviewSchedulingQueue.map((item) => item.applicationId),
-    ...interviewOutcomeQueue.map((item) => item.applicationId),
-    ...employerResponseQueue.map((item) => item.applicationId),
-  ]);
-  const followUpDueQueue = preferences.createFollowUps
-    ? getFollowUpDueQueue(applications, plan, followUpExcludedApplicationIds, followUpSuppressionState)
-    : [];
+  const followUpDueQueue = followUpReadiness.actionReadyQueue;
   const approvedFollowUpsReadyToSend = followUpSuppressionState.approvedFollowUpsReadyToSend;
   const connectorReadinessQueue = getConnectorReadinessQueue({
     profile,
@@ -702,6 +749,11 @@ export async function getUserOperatingLedger(userId: number, options: OperatingL
     },
     readiness,
     planSummary: plan.summary,
+    followUpReadiness: {
+      candidateCount: followUpReadiness.candidateCount,
+      actionReadyCount: followUpReadiness.actionReadyCount,
+      blockedCount: followUpReadiness.blockedCount,
+    },
     metrics: {
       trackedApplications: applications.length,
       preparedApplications: applicationStatusCount(applications, ["pending"]),

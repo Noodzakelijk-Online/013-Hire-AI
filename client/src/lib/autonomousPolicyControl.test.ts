@@ -135,6 +135,34 @@ describe("autonomous policy control", () => {
     expect(action.detail).toContain("require review");
   });
 
+  it("does not present paused follow-up candidates as ready drafting work", () => {
+    const action = getAutonomousPolicyControlAction({
+      plan: {
+        summary: { eligible: 0, followUpsDue: 2, followUpsActionReady: 0, dailyRemaining: 0 },
+        policyWarnings: [],
+      },
+      settings: { autonomousEnabled: false, requireHumanReview: true },
+    });
+
+    expect(action.status).toBe("idle");
+    expect(action.status).not.toBe("follow_up_ready");
+  });
+
+  it("uses the action-ready follow-up count when candidate timing is partially blocked", () => {
+    const action = getAutonomousPolicyControlAction({
+      plan: {
+        summary: { eligible: 0, followUpsDue: 3, followUpsActionReady: 1 },
+        policyWarnings: [],
+      },
+      settings: { autonomousEnabled: true, requireHumanReview: true },
+    });
+
+    expect(action).toMatchObject({
+      status: "follow_up_ready",
+      headline: "1 follow-up can be drafted from application activity.",
+    });
+  });
+
   it("offers a manual run when eligible work exists but scheduling is disabled", () => {
     const action = getAutonomousPolicyControlAction({
       plan: {

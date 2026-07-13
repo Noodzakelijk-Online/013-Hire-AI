@@ -1245,7 +1245,7 @@ export default function Dashboard() {
                   ["Review", autonomousPlan.summary.queuedForReview],
                   ["Manual", autonomousPlan.summary.manualApply],
                   ["Blocked", autonomousPlan.summary.blocked || 0],
-                  ["Follow-ups", autonomousPlan.summary.followUpsDue],
+                  ["Follow-ups ready", autonomousPlan.summary.followUpsActionReady ?? autonomousPlan.summary.followUpsDue],
                   ["Gates", autonomousPlan.evidenceGates?.length || 0],
                   ["Stale", autonomousPlan.summary.expiredJobsSkipped || 0],
                 ].map(([label, value]) => (
@@ -1264,11 +1264,16 @@ export default function Dashboard() {
                     {autonomousPlan.summary.policyWarnings} policy warning{autonomousPlan.summary.policyWarnings === 1 ? "" : "s"}
                   </Badge>
                 )}
-                {autonomousPlan.summary.expiredJobsSkipped > 0 && (
-                  <Badge variant="outline" className="w-fit border-slate-700 text-slate-300">
-                    {autonomousPlan.summary.expiredJobsSkipped} expired or stale posting{autonomousPlan.summary.expiredJobsSkipped === 1 ? "" : "s"} excluded
-                  </Badge>
-                )}
+              {autonomousPlan.summary.expiredJobsSkipped > 0 && (
+                <Badge variant="outline" className="w-fit border-slate-700 text-slate-300">
+                  {autonomousPlan.summary.expiredJobsSkipped} expired or stale posting{autonomousPlan.summary.expiredJobsSkipped === 1 ? "" : "s"} excluded
+                </Badge>
+              )}
+              {(autonomousPlan.summary.followUpsBlocked || 0) > 0 && (
+                <Badge variant="outline" className="w-fit border-slate-700 text-slate-300">
+                  {autonomousPlan.summary.followUpsBlocked} follow-up candidate{autonomousPlan.summary.followUpsBlocked === 1 ? "" : "s"} held by existing draft, response, or interview work
+                </Badge>
+              )}
               </div>
               {autonomousPlan.evidenceGates?.length > 0 && (
                 <div data-testid="dashboard-autonomous-evidence-gates" className="mt-4 grid gap-2 md:grid-cols-2">
