@@ -2,7 +2,10 @@ import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
-import { formatAutonomousRunSummary, getAutonomousRunCounts } from "@/lib/autonomousRunSummary";
+import {
+  formatAutonomousRunSummary,
+  hasAutonomousRunAttention,
+} from "@/lib/autonomousRunSummary";
 import { getAutonomousPolicyControlAction } from "@/lib/autonomousPolicyControl";
 import {
   buildJobDecisionMutationInput,
@@ -165,6 +168,12 @@ export default function JobSearch() {
   } = trpc.applications.getOperatingLedger.useQuery(undefined, {
     enabled: Boolean(user),
   });
+  const {
+    data: schedulerStatus,
+    refetch: refetchSchedulerStatus,
+  } = trpc.automation.schedulerStatus.useQuery(undefined, {
+    enabled: Boolean(user),
+  });
   const preparationEvidenceGate = useMemo(() => {
     const summary = getApplicationEvidenceGateSummary(
       { status: "pending" },
@@ -242,9 +251,8 @@ export default function JobSearch() {
 
   const autonomousRunMutation = trpc.automation.run.useMutation({
     onSuccess: async (result: any) => {
-      const counts = getAutonomousRunCounts(result);
       const message = formatAutonomousRunSummary(result);
-      if (counts.failures > 0 || counts.resumeEvidenceBlockedActions > 0 || counts.profileReadinessBlockedActions > 0) {
+      if (hasAutonomousRunAttention(result)) {
         toast.warning(message);
       } else {
         toast.success(message);
@@ -254,6 +262,7 @@ export default function JobSearch() {
         refetchAutonomousPlan(),
         refetchJobs(),
         refetchOperatingLedger(),
+        refetchSchedulerStatus(),
       ]);
     },
     onError: () => toast.error("Autonomous run failed"),
@@ -357,12 +366,19 @@ export default function JobSearch() {
   );
   const autonomousControl = useMemo(() => getAutonomousPolicyControlAction({
     plan: autonomousPlan,
+    scheduler: schedulerStatus,
     campaign: operatingLedger?.campaign,
     settings: {
       autonomousEnabled,
       requireHumanReview,
     },
-  }), [autonomousEnabled, autonomousPlan, operatingLedger?.campaign, requireHumanReview]);
+  }), [
+    autonomousEnabled,
+    autonomousPlan,
+    operatingLedger?.campaign,
+    requireHumanReview,
+    schedulerStatus,
+  ]);
   const autonomousControlTone = {
     low: "border-slate-700 text-slate-300",
     medium: "border-amber-500/40 text-amber-300",

@@ -49,6 +49,22 @@ export function getAutonomousRunCounts(result: AutonomousRunSummaryInput) {
   };
 }
 
+/**
+ * A completed run can still leave work blocked or monitoring degraded. Keep
+ * every operator surface consistent about when that outcome needs attention.
+ */
+export function hasAutonomousRunAttention(result: AutonomousRunSummaryInput) {
+  const counts = getAutonomousRunCounts(result);
+  return (
+    counts.failures > 0 ||
+    counts.inboxMonitoringFailures > 0 ||
+    counts.resumeEvidenceBlockedActions > 0 ||
+    counts.profileReadinessBlockedActions > 0 ||
+    counts.evidenceGatedActions > 0 ||
+    counts.safetyBlockedFollowUps > 0
+  );
+}
+
 export function formatAutonomousRunSummary(result: AutonomousRunSummaryInput) {
   const counts = getAutonomousRunCounts(result);
   const parts: string[] = [];

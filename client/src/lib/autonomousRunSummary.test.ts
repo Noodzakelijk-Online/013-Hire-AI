@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { formatAutonomousRunSummary, getAutonomousRunCounts } from "./autonomousRunSummary";
+import {
+  formatAutonomousRunSummary,
+  getAutonomousRunCounts,
+  hasAutonomousRunAttention,
+} from "./autonomousRunSummary";
 
 describe("autonomous run summary", () => {
   it("combines job tasks and follow-up drafts", () => {
@@ -89,5 +93,12 @@ describe("autonomous run summary", () => {
     expect(formatAutonomousRunSummary({
       inboxMonitoringFailures: 1,
     })).toBe("Autonomous run completed with no new tasks; 1 inbox monitor needs attention");
+  });
+
+  it("marks blocked, gated, and failed work as requiring operator attention", () => {
+    expect(hasAutonomousRunAttention({ queuedReviewRecords: 1 })).toBe(false);
+    expect(hasAutonomousRunAttention({ inboxMonitoringFailures: 1 })).toBe(true);
+    expect(hasAutonomousRunAttention({ skippedEvidenceGatedActions: 1 })).toBe(true);
+    expect(hasAutonomousRunAttention({ skippedSafetyBlockedFollowUps: 1 })).toBe(true);
   });
 });

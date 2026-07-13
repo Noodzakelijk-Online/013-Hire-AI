@@ -35,7 +35,10 @@ import {
   getAutonomousEvidenceGateSummary,
   getAutonomousEvidenceGateSummaryText,
 } from "@/lib/autonomousEvidenceGateSummary";
-import { formatAutonomousRunSummary, getAutonomousRunCounts } from "@/lib/autonomousRunSummary";
+import {
+  formatAutonomousRunSummary,
+  hasAutonomousRunAttention,
+} from "@/lib/autonomousRunSummary";
 import { toast } from "sonner";
 import AppHeader from "@/components/AppHeader";
 import { Badge } from "@/components/ui/badge";
@@ -73,14 +76,8 @@ export default function AIPreferences() {
   });
   const runAgent = trpc.automation.run.useMutation({
     onSuccess: (result: any) => {
-      const counts = getAutonomousRunCounts(result);
       const message = formatAutonomousRunSummary(result);
-      if (
-        counts.failures > 0 ||
-        counts.inboxMonitoringFailures > 0 ||
-        counts.resumeEvidenceBlockedActions > 0 ||
-        counts.profileReadinessBlockedActions > 0
-      ) {
+      if (hasAutonomousRunAttention(result)) {
         toast.warning(message);
       } else {
         toast.success(message);
