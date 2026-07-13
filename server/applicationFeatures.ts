@@ -27,8 +27,9 @@ import {
   updateApplicationStatus,
   upsertInterviewPreparation,
 } from "./db";
-import { savedJobs, applicationNotes, interviewSchedules, followUps, applications, applicationAttempts, employerResponses, applicationNotifications, auditEvents, adminReviewItems, applicationApprovals, jobs, jobAlerts, jobPlatforms, type FollowUp, type InterviewSchedule } from "../drizzle/schema";
+import { savedJobs, applicationNotes, interviewSchedules, followUps, applications, applicationAttempts, employerResponses, applicationNotifications, auditEvents, adminReviewItems, applicationApprovals, jobs, jobAlerts, jobDuplicates, jobPlatforms, type FollowUp, type InterviewSchedule, type JobAlertConfig } from "../drizzle/schema";
 import { matchesJobAlert } from "../shared/jobAlertMatching";
+import { isJobListingCurrent } from "../shared/jobListingFreshness";
 import { generateInterviewPreparation as generateAiInterviewPreparation } from "./aiMatching";
 import { invokeLLM } from "./_core/llm";
 import {
@@ -3337,9 +3338,48 @@ export interface CreateAlertInput {
   frequency: "instant" | "daily" | "weekly";
 }
 
+const memoryJobAlerts: JobAlertConfig[] = [];
+
+function nextMemoryJobAlertId() {
+  return (memoryJobAlerts.reduce((max, alert) => Math.max(max, alert.id), 0) || 0) + 1;
+}
+
+function isJobAlertDue(alert: Pick<JobAlertConfig, "frequency" | "lastTriggered">, now = new Date()) {
+  if (!alert.lastTriggered) return true;
+
+  const hoursSince = (now.getTime() - new Date(alert.lastTriggered).getTime()) / (1000 * 60 * 60);
+  switch (alert.frequency) {
+    case "instant":
+      return hoursSince >= 1;
+    case "daily":
+      return hoursSince >= 24;
+    case "weekly":
+      return hoursSince >= 168;
+  }
+}
+
 export async function createJobAlert(input: CreateAlertInput) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) {
+    const now = new Date();
+    const alert: JobAlertConfig = {
+      id: nextMemoryJobAlertId(),
+      userId: input.userId,
+      name: input.name,
+      keywords: input.keywords || null,
+      locations: input.locations || null,
+      platforms: input.platforms || null,
+      minSalary: input.minSalary || null,
+      jobTypes: input.jobTypes || null,
+      frequency: input.frequency,
+      isActive: 1,
+      lastTriggered: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    memoryJobAlerts.push(alert);
+    return { id: alert.id };
+  }
 
   const result = await db.insert(jobAlerts).values({
     userId: input.userId,
@@ -3358,7 +3398,12 @@ export async function createJobAlert(input: CreateAlertInput) {
 
 export async function getJobAlerts(userId: number) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) {
+    return memoryJobAlerts
+      .filter((alert) => alert.userId === userId)
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+      .map((alert) => ({ ...alert }));
+  }
 
   return await db
     .select()
@@ -3373,7 +3418,13 @@ export async function updateJobAlert(
   updates: Partial<Omit<CreateAlertInput, "userId">>
 ) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) {
+    const alert = memoryJobAlerts.find((item) => item.id === alertId && item.userId === userId);
+    if (!alert) return { success: true };
+    Object.assign(alert, Object.fromEntries(Object.entries(updates).filter(([, value]) => value !== undefined)));
+    alert.updatedAt = new Date();
+    return { success: true };
+  }
 
   await db
     .update(jobAlerts)
@@ -3385,7 +3436,14 @@ export async function updateJobAlert(
 
 export async function toggleJobAlert(userId: number, alertId: number, isActive: boolean) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) {
+    const alert = memoryJobAlerts.find((item) => item.id === alertId && item.userId === userId);
+    if (alert) {
+      alert.isActive = isActive ? 1 : 0;
+      alert.updatedAt = new Date();
+    }
+    return { success: true };
+  }
 
   await db
     .update(jobAlerts)
@@ -3397,7 +3455,11 @@ export async function toggleJobAlert(userId: number, alertId: number, isActive: 
 
 export async function deleteJobAlert(userId: number, alertId: number) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) {
+    const index = memoryJobAlerts.findIndex((item) => item.id === alertId && item.userId === userId);
+    if (index >= 0) memoryJobAlerts.splice(index, 1);
+    return { success: true };
+  }
 
   await db.delete(jobAlerts).where(and(eq(jobAlerts.id, alertId), eq(jobAlerts.userId, userId)));
   return { success: true };
@@ -3406,7 +3468,30 @@ export async function deleteJobAlert(userId: number, alertId: number) {
 // Refresh job alerts without interrupting job seekers for ordinary job matches.
 export async function processJobAlerts() {
   const db = await getDb();
-  if (!db) return { processed: 0, externalNotifications: 0 as const };
+  if (!db) {
+    const { sampleJobDuplicateLinks, sampleJobs, samplePlatforms } = await import("./sampleData");
+    const now = new Date();
+    const duplicateJobIds = new Set(sampleJobDuplicateLinks.map((link) => link.duplicateJobId));
+    const platformNamesById = new Map(samplePlatforms.map((platform) => [platform.id, platform.name]));
+    const currentCanonicalJobs = sampleJobs.filter((job) =>
+      !duplicateJobIds.has(job.id) && isJobListingCurrent(job, now)
+    );
+    let processed = 0;
+
+    for (const alert of memoryJobAlerts.filter((item) => item.isActive === 1 && isJobAlertDue(item, now))) {
+      const hasMatch = currentCanonicalJobs.some((job) => matchesJobAlert({
+        ...job,
+        platformName: platformNamesById.get(job.platformId),
+      }, alert));
+      if (!hasMatch) continue;
+
+      alert.lastTriggered = now;
+      alert.updatedAt = now;
+      processed++;
+    }
+
+    return { processed, externalNotifications: 0 as const };
+  }
 
   // Get all active alerts
   const alerts = await db
@@ -3415,37 +3500,22 @@ export async function processJobAlerts() {
     .where(eq(jobAlerts.isActive, 1));
 
   const [activeJobs, platforms] = await Promise.all([
-    db.select().from(jobs).where(eq(jobs.isActive, 1)),
+    db.select().from(jobs).where(and(
+      eq(jobs.isActive, 1),
+      sql`NOT EXISTS (
+        SELECT 1 FROM ${jobDuplicates}
+        WHERE ${jobDuplicates.duplicateJobId} = ${jobs.id}
+      )`,
+    )),
     db.select({ id: jobPlatforms.id, name: jobPlatforms.name }).from(jobPlatforms),
   ]);
   const platformNamesById = new Map(platforms.map((platform) => [platform.id, platform.name]));
   let processed = 0;
 
+  const now = new Date();
   for (const alert of alerts) {
-    // Check if it's time to process this alert
-    const lastTriggered = alert.lastTriggered ? new Date(alert.lastTriggered) : null;
-    const now = new Date();
-
-    let shouldProcess = false;
-    if (!lastTriggered) {
-      shouldProcess = true;
-    } else {
-      const hoursSince = (now.getTime() - lastTriggered.getTime()) / (1000 * 60 * 60);
-      switch (alert.frequency) {
-        case "instant":
-          shouldProcess = hoursSince >= 1;
-          break;
-        case "daily":
-          shouldProcess = hoursSince >= 24;
-          break;
-        case "weekly":
-          shouldProcess = hoursSince >= 168;
-          break;
-      }
-    }
-
-    if (shouldProcess) {
-      const matchingJobs = activeJobs.filter((job) => matchesJobAlert({
+    if (isJobAlertDue(alert, now)) {
+      const matchingJobs = activeJobs.filter((job) => isJobListingCurrent(job, now) && matchesJobAlert({
         ...job,
         platformName: platformNamesById.get(job.platformId),
       }, {

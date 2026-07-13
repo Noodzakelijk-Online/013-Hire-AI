@@ -14,7 +14,14 @@ vi.mock("./db", async (importOriginal) => ({
   getDb: mocks.getDb,
 }));
 
-import { processJobAlerts } from "./applicationFeatures";
+import {
+  createJobAlert,
+  deleteJobAlert,
+  getJobAlerts,
+  processJobAlerts,
+  toggleJobAlert,
+  updateJobAlert,
+} from "./applicationFeatures";
 
 describe("job alert processing", () => {
   beforeEach(() => {
@@ -45,6 +52,9 @@ describe("job alert processing", () => {
           platformId: 7,
           salaryMax: 150000,
           jobType: "full-time",
+          isActive: 1,
+          createdAt: new Date(),
+          updatedAt: new Date(),
         }]) }),
       })
       .mockReturnValueOnce({ from: () => Promise.resolve([{ id: 7, name: "Remote OK" }]) });
@@ -79,6 +89,9 @@ describe("job alert processing", () => {
           platformId: 3,
           salaryMax: 160000,
           jobType: "full-time",
+          isActive: 1,
+          createdAt: new Date(),
+          updatedAt: new Date(),
         }]) }),
       })
       .mockReturnValueOnce({ from: () => Promise.resolve([{ id: 3, name: "We Work Remotely" }]) });
@@ -86,5 +99,49 @@ describe("job alert processing", () => {
 
     await expect(processJobAlerts()).resolves.toEqual({ processed: 0, externalNotifications: 0 });
     expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it("keeps a user-scoped alert ledger available without a configured database", async () => {
+    const userId = 91234;
+    mocks.getDb.mockResolvedValue(null);
+
+    const { id } = await createJobAlert({
+      userId,
+      name: "Current remote TypeScript roles",
+      keywords: "TypeScript",
+      locations: "Remote",
+      frequency: "daily",
+    });
+
+    await updateJobAlert(userId, id, { name: "Current remote TypeScript and React roles", keywords: "TypeScript, React" });
+    await toggleJobAlert(userId, id, false);
+    expect(await getJobAlerts(userId)).toEqual([
+      expect.objectContaining({
+        id,
+        name: "Current remote TypeScript and React roles",
+        keywords: "TypeScript, React",
+        isActive: 0,
+      }),
+    ]);
+
+    await deleteJobAlert(userId, id);
+    expect(await getJobAlerts(userId)).toEqual([]);
+  });
+
+  it("refreshes a local alert from current canonical sample jobs without external notification", async () => {
+    const userId = 91235;
+    mocks.getDb.mockResolvedValue(null);
+    const { id } = await createJobAlert({
+      userId,
+      name: "Remote TypeScript",
+      keywords: "TypeScript",
+      locations: "Remote",
+      frequency: "daily",
+    });
+
+    await expect(processJobAlerts()).resolves.toEqual({ processed: 1, externalNotifications: 0 });
+    expect(await getJobAlerts(userId)).toEqual([
+      expect.objectContaining({ id, lastTriggered: expect.any(Date) }),
+    ]);
   });
 });
