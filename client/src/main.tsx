@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
 import { getLoginUrl } from "./const";
+import { reportApiMutationFailure, reportApiQueryFailure } from "./lib/apiErrorReporting";
 import "./index.css";
 
 const queryClient = new QueryClient();
@@ -48,7 +49,7 @@ queryClient.getQueryCache().subscribe(event => {
   if (event.type === "updated" && event.action.type === "error") {
     const error = event.query.state.error;
     if (!redirectToLoginIfUnauthorized(error)) {
-      console.error(`[API Query Error] ${JSON.stringify(event.query.queryKey)}`, error);
+      reportApiQueryFailure(error);
     }
   }
 });
@@ -57,7 +58,7 @@ queryClient.getMutationCache().subscribe(event => {
   if (event.type === "updated" && event.action.type === "error") {
     const error = event.mutation.state.error;
     if (!redirectToLoginIfUnauthorized(error)) {
-      console.error("[API Mutation Error]", error);
+      reportApiMutationFailure(error);
     }
   }
 });
