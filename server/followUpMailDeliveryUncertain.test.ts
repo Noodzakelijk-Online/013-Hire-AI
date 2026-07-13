@@ -78,7 +78,7 @@ describe("uncertain follow-up mailbox delivery", () => {
       provider: "gmail",
       recipient: "recruiter@example.com",
     }, {
-      fetcher: vi.fn<typeof fetch>().mockRejectedValue(new TypeError("network timeout")),
+      fetcher: vi.fn<typeof fetch>().mockRejectedValue(new TypeError("network timeout: Bearer provider-secret")),
       dependencies: {
         decryptConnectorToken: mocks.decryptConnectorToken,
         encryptConnectorToken: mocks.encryptConnectorToken,
@@ -102,7 +102,7 @@ describe("uncertain follow-up mailbox delivery", () => {
 
     expect(set).toHaveBeenLastCalledWith(expect.objectContaining({
       deliveryState: "unknown",
-      deliveryFailureMessage: "network timeout",
+      deliveryFailureMessage: "Mailbox delivery could not be completed.",
     }));
     expect(values).toHaveBeenCalledWith(expect.objectContaining({
       action: "follow_up_mail_delivery_uncertain",
@@ -111,8 +111,10 @@ describe("uncertain follow-up mailbox delivery", () => {
     }));
     expect(JSON.parse(values.mock.calls[0][0].afterState)).toMatchObject({
       followUpId: 41,
+      reason: "Mailbox delivery could not be completed.",
       externalMessageSent: "unknown",
       retryBlocked: true,
     });
+    expect(JSON.stringify(values.mock.calls[0][0])).not.toContain("provider-secret");
   });
 });

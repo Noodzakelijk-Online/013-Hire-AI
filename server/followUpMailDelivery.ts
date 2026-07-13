@@ -86,9 +86,22 @@ function headerValue(value: string) {
   return value.replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
+const GENERIC_DELIVERY_FAILURE = "Mailbox delivery could not be completed.";
+
 function failureMessage(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
-  return message.replace(/[\r\n]+/g, " ").trim().slice(0, 500) || "Mail provider delivery failed.";
+  const normalized = message.replace(/[\r\n]+/g, " ").trim();
+
+  // Only retain provider outcomes produced by this module. Transport, OAuth,
+  // and persistence exceptions can include sensitive request details and must
+  // never become ledger evidence or client-visible error text.
+  if (/^(Gmail|Outlook) rejected the follow-up delivery \(\d{3}\)\.$/.test(normalized)) {
+    return normalized;
+  }
+  if (/^(Gmail|Outlook) accepted the request without a deterministic message identifier\.$/.test(normalized)) {
+    return normalized;
+  }
+  return GENERIC_DELIVERY_FAILURE;
 }
 
 async function getMailAccess(
