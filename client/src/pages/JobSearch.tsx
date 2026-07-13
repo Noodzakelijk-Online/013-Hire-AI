@@ -17,6 +17,7 @@ import { getSafeExternalUrl, openExternalUrl } from "@/lib/externalUrl";
 import { getJobMatchDecisionSummary } from "@/lib/jobMatchDecisionSummary";
 import { getJobSourcingControlSummary } from "@/lib/jobSourcingControl";
 import { getJobDiscoveryStatusSummary } from "@/lib/jobDiscoveryStatus";
+import { getJobListingDate } from "@/lib/jobListingDate";
 import {
   getJobSearchAutonomousPolicy,
   isJobSearchAutonomousPolicyDirty,
@@ -538,8 +539,11 @@ export default function JobSearch() {
     current: "border-emerald-500/40 bg-emerald-500/10 text-emerald-100",
   }[discoveryControl.status];
 
-  const JobCard = ({ job, showMatchScore = true }: { job: any; showMatchScore?: boolean }) => (
-    <Card
+  const JobCard = ({ job, showMatchScore = true }: { job: any; showMatchScore?: boolean }) => {
+    const listingDate = getJobListingDate(job);
+
+    return (
+      <Card
       data-testid="job-card"
       data-job-id={job.id}
       className="group hover:border-cyan-500/50 transition-all duration-300 cursor-pointer bg-slate-900/50 border-slate-700/50"
@@ -580,10 +584,10 @@ export default function JobSearch() {
                   {formatSalary(job.salaryMin, job.salaryMax)}
                 </Badge>
               )}
-              {job.postedAt && (
+              {listingDate && (
                 <Badge variant="secondary" className="text-xs bg-slate-800 text-slate-300">
                   <Clock className="w-3 h-3 mr-1" />
-                  {new Date(job.postedAt).toLocaleDateString()}
+                  {listingDate.source === "posted" ? "Posted" : "Discovered"} {listingDate.date.toLocaleDateString()}
                 </Badge>
               )}
             </div>
@@ -642,8 +646,9 @@ export default function JobSearch() {
           </div>
         </div>
       </CardContent>
-    </Card>
-  );
+      </Card>
+    );
+  };
 
   if (authLoading) {
     return (
